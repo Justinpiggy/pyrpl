@@ -7,7 +7,7 @@ from .test_base import TestPyrpl
 
 
 class TestLockbox(TestPyrpl):
-    source_config_file = "nosetests_source_lockbox.yml"
+    # source_config_file = "nosetests_source_lockbox.yml"
 
     #def setup(self):
     #    self.lockbox = self.pyrpl.lockbox

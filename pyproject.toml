@@ -54,3 +54,35 @@ pyrpl = ["fpga/*", "monitor_server/*", "config/*", "widgets/images/*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "pyrpl._version.__version__" }
+
+[tool.pytest.ini_options]
+# verbosity=3 → -vv or -vvv
+addopts = [
+    "-vv",                          # High verbosity
+    "-s",                           # nocapture - show print/log output
+    "--log-cli-level=INFO",         # nologcapture - show logs
+    "--log-cli-format=%(levelname)s %(name)s: %(message)s",
+    "--cov=pyrpl",                  # coverage for pyrpl package
+    "--cov-report=term-missing",    # show missing lines in terminal
+    "--cov-report=html",            # generate HTML coverage report
+    "--junit-xml=unit_tests.xml",   # xunit output file
+]
+
+# Show logs in real-time during test execution
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(levelname)s %(name)s: %(message)s"
+
+# Test discovery (equivalent to traverse-namespace)
+testpaths = ["pyrpl/test"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+source = ["pyrpl"]
+
+[tool.coverage.report]
+# Show lines that weren't covered
+show_missing = true
+

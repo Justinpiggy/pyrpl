@@ -5,16 +5,15 @@ import numpy as np
 from time import sleep
 from qtpy import QtCore, QtWidgets
 from pyrpl.test.test_base import TestPyrpl
+import pytest
 
 
 class TestInput(TestPyrpl):
-    def setup_method(self):
+    @pytest.fixture(autouse=True)
+    def setup_lockbox(self):
         self.p = self.pyrpl
         self.l = self.pyrpl.lockbox
         self.l.classname = 'Interferometer'
-
-    def teardown_method(self):
-        pass
 
     def test_input(self):
         self.p.lockbox.sequence[0].input = 'port1'

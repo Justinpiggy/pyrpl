@@ -4,19 +4,22 @@ from pyrpl.attributes import *
 from pyrpl import CurveDB
 from pyrpl.test.test_base import TestPyrpl
 from pyrpl.async_utils import sleep
+import pytest
 
 
 class TestPidNaIq(TestPyrpl):
-    def setup_method(self):
-        self.extradelay = 0.6 * 8e-9  # no idea where this comes from
-            # shortcut
+    @pytest.fixture(autouse=True)
+    def setup_na(self):
+        self.extradelay = 0.6 * 8e-9  # no idea where this delay comes from
+        # shortcuts
         self.pyrpl.na = self.pyrpl.networkanalyzer
         self.na = self.pyrpl.networkanalyzer
         # set na loglevel to DEBUG
         self.loglevel = self.na._logger.getEffectiveLevel()
         self.na._logger.setLevel(10)
 
-    def teardown_method(self):
+        yield  # Test runs here
+
         self.na.stop()
         # set na loglevel to previous one
         self.na._logger.setLevel(self.loglevel)

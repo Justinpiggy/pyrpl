@@ -8,6 +8,7 @@ import numpy as np
 from .. import global_config
 from ..async_utils import sleep
 from ..async_utils import wait
+import pytest
 try:
     raise  # disables sound output during this test
     from pysine import sine
@@ -17,21 +18,24 @@ except:
 
 
 class TestNA(TestPyrpl):
-    def setup_method(self):
+    @pytest.fixture(autouse=True)
+    def setup_na(self):
         self.na = self.pyrpl.networkanalyzer
         # stop all other instruments since something seems to read from fpga all the time
         #self.pyrpl.hide_gui()
         self.r.scope.stop()
         self.pyrpl.spectrumanalyzer.stop()
 
+        yield  # Test runs here
+        
+        # Teardown code - runs after each test
+        self.na.stop()
+
     def test_first_na_stopped_at_startup(self):
         """
         This was so hard to detect, I am making a unit test
         """
         assert(self.na.running_state=='stopped')
-
-    def teardown_method(self):
-        self.na.stop()
 
     def test_na_running_states(self):
         # make sure scope rolling_mode and running states are correctly setup
