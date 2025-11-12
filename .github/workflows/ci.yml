@@ -105,7 +105,11 @@ jobs:
         python setup.py install
 
     - name: Test RedPitaya connection
-      run: |
+      run: | # restarts ssh to try to fix potential connection issues
+        
+        sudo systemctl restart ssh
+        sudo systemctl status ssh
+
         python -c "
         import paramiko
         import sys
