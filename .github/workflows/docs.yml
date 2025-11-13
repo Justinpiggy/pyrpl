@@ -22,7 +22,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y qtbase5-dev qt5-qmake pandoc xvfb
+        sudo apt-get install -y pandoc xvfb
 
     - name: Install Python dependencies
       run: |
@@ -47,7 +47,7 @@ jobs:
 
   deploy:
     # Only deploy if docs build succeeded and on main or release
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') || github.event_name == 'release'
+    # if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') || github.event_name == 'release'
     needs: docs
     runs-on: ubuntu-latest
     permissions:
