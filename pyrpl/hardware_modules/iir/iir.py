@@ -439,7 +439,7 @@ class IIR(FilterModule):
                          stop_freq=ma,
                          points=501,
                          rbw=500,
-                         avg_per_point=1,
+                         average_per_point=1,
                          trace_average=1,
                          amplitude=1.,
                          input=self,

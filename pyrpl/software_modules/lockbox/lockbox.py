@@ -233,14 +233,14 @@ class Lockbox(LockboxModule):
             self._asg = self.pyrpl.asgs.pop(self.name)
         return self._asg
 
-    def calibrate_all(self, autosave=False):
+    def calibrate_all(self, autosave=False, timeout_min=1):
         """
         Calibrates successively all inputs
         """
         curves = []
         for input in self.inputs:
             try:
-                c = input.calibrate(autosave=autosave)
+                c = input.calibrate(autosave=autosave, timeout_min=timeout_min)
                 if c is not None:
                     curves.append(c)
             except BaseException as e:
