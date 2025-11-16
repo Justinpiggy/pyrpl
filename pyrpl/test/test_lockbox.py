@@ -42,7 +42,8 @@ def setup_fake_system_once(pyrpl_instance):
     yield
     
     # Cleanup after all tests (if needed)
-    # lockbox.unlock()
+    lockbox.unlock()
+    lockbox._clear()
 
 class TestLockbox(TestPyrpl):
     # source_config_file = "nosetests_source_lockbox.yml"
