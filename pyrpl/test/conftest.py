@@ -91,6 +91,9 @@ def _apply_keepalive(rp_object):
     # ---------------------------------------------------------
 
 @pytest.fixture(scope="session")
+def hardware_session():
+    """
+    Creates either a full Pyrpl instance OR just a RedPitaya instance 
     depending on the test requirements.
     """
     pyrpl_obj = None
