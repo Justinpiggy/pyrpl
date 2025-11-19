@@ -22,21 +22,29 @@ class TestPyrpl(object):
     OPEN_ALL_DOCKWIDGETS = False
 
     @pytest.fixture(autouse=True)
-    def _inject_pyrpl(self, pyrpl_instance):
+    def _inject_pyrpl(self, hardware_session):
         """Inject the shared pyrpl instance into each test class instance."""
-        self.pyrpl = pyrpl_instance
-        self.r = self.pyrpl.rp
-        self.read_time = pyrpl_instance._test_read_time
-        self.write_time = pyrpl_instance._test_write_time
-        self.communication_time = pyrpl_instance._test_communication_time
         
-        # Per-class setup
-        if self.OPEN_ALL_DOCKWIDGETS and not getattr(self.pyrpl, '_widgets_opened', False):
-            for name, dock_widget in self.pyrpl.widgets[0].dock_widgets.items():
-                print("Showing widget %s..." % name)
-                dock_widget.setVisible(True)
-            sleep(3.0)  # give some time for startup
-            self.pyrpl._widgets_opened = True
+        # 1. UNPACK THE SESSION CONTAINER
+        # hardware_session is the namedtuple from conftest.py
+        self.r = hardware_session.rp
+        self.pyrpl = hardware_session.pyrpl  # This is the actual Pyrpl app object (or None)
+
+        # 2. EXTRACT TIMING (Use the clean names defined in conftest.py)
+        self.read_time = hardware_session.read_time
+        self.write_time = hardware_session.write_time
+        self.communication_time = (self.read_time + self.write_time) / 2.0
+        
+        # 3. WIDGET SETUP (Only if Pyrpl app exists)
+        if self.pyrpl is not None and self.OPEN_ALL_DOCKWIDGETS:
+            if not getattr(self.pyrpl, '_widgets_opened', False):
+                # Safeguard against empty widgets list
+                if hasattr(self.pyrpl, 'widgets') and len(self.pyrpl.widgets) > 0:
+                    for name, dock_widget in self.pyrpl.widgets[0].dock_widgets.items():
+                        print("Showing widget %s..." % name)
+                        dock_widget.setVisible(True)
+                    sleep(3.0)  # give some time for startup
+                    self.pyrpl._widgets_opened = True
         
         # Initialize curves list for this test class
         if not hasattr(self, 'curves'):
@@ -45,7 +53,6 @@ class TestPyrpl(object):
         yield
         
         # Per-class teardown
-        # Delete the curves fabricated in the test
         if hasattr(self, 'curves'):
             while len(self.curves) > 0:
                 self.curves.pop().delete()

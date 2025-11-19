@@ -1,29 +1,26 @@
 # unitary test for the RedPitaya and Pyrpl modules and baseclass for all other
 # tests
-import logging
-logger = logging.getLogger(name=__name__)
-import os
-from pyrpl import Pyrpl, RedPitaya, user_config_dir
 
+import logging
+import pytest
+import os
+from pyrpl import RedPitaya
+
+logger = logging.getLogger(name=__name__)
 
 class TestRedpitaya(object):
-    _shared_r = None
-    @classmethod
-    def setup_class(cls):
-        print("=======SETTING UP TestRedpitaya===========")
-        cls.hostname = os.environ.get('REDPITAYA_HOSTNAME')
-        cls.password = os.environ.get('REDPITAYA_PASSWORD')
-        if cls._shared_r is None:
-            if cls.hostname is not None:
-                cls.r = RedPitaya()
-            else:
-                cls.r = cls._shared_r
-
-    @classmethod
-    def teardown_class(cls):
-        if cls is TestRedpitaya:
-            print("=======TEARING DOWN TestRedpitaya===========")
-            cls.r.end_all()
+    
+    @pytest.fixture(autouse=True)
+    def setup_rp(self, hardware_session):
+        """
+        Injects the RedPitaya instance from the session.
+        Works regardless of whether a full Pyrpl app was created or just the driver.
+        """
+        self.r = hardware_session.rp
+        
+        # If you need config vars that are usually in RedPitaya class:
+        self.read_time = hardware_session.read_time
+        self.write_time = hardware_session.write_time
 
     def test_redpitaya(self):
         assert (self.r is not None)

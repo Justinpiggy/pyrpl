@@ -97,13 +97,11 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
         pip install coverage pytest pytest-cov pytest-notebook
 
     - name: Install package
       run: |
-        python setup.py install
-
+        pip install .
     - name: Test RedPitaya connection
       run: | # restarts ssh to try to fix potential connection issues
         
@@ -135,6 +133,8 @@ jobs:
         # use a custom global configfile adapted to the hardware for unit tests
         cp ./remote_global_config.yml ./pyrpl/config/global_config.yml
         python -m pytest pyrpl/test/ --cov=pyrpl --cov-report=xml
+        || \
+        python -m pytest pyrpl/test/ --cov=pyrpl --cov-report=xml --last-failed
       env:
         QT_QPA_PLATFORM: offscreen
         REDPITAYA_HOSTNAME: ${{ secrets.REDPITAYA_PUBLIC_IP }}

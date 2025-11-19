@@ -3,101 +3,79 @@ import logging
 import pytest
 logger = logging.getLogger(name=__name__)
 import os
-from .. import Pyrpl, APP, user_config_dir, global_config
+import socket
+from collections import namedtuple
+
+# Import your project modules
+from .. import Pyrpl, RedPitaya, user_config_dir
 from ..pyrpl_utils import time
 from ..async_utils import sleep
-from ..errors import UnexpectedPyrplError, ExpectedPyrplError
-import socket
 
-# I don't know why, in nosetests, the logger goes to UNSET...
-logger_quamash = logging.getLogger(name='quamash')
-logger_quamash.setLevel(logging.INFO)
 
-# Global variable to store which source config to use
+# Global state to determine what we need to build
 _source_config_file = "nosetests_source.yml"
+_require_full_pyrpl = False 
 
+# A container to standardize what the fixture returns
+# rp is always present; pyrpl is None if running in light mode
+HardwareSession = namedtuple('HardwareSession', ['rp', 'pyrpl', 'read_time', 'write_time'])
 
 def pytest_collection_modifyitems(session, config, items):
     """
     Hook called after test collection. 
-    Checks if test_attribute.py or test_lockbox.py are in the session.
+    Determines if we need the full Pyrpl app or just the RedPitaya driver.
     """
     global _source_config_file
+    global _require_full_pyrpl
     
-    # Check if any collected tests are from test_attribute.py or test_lockbox.py
     found_attribute = False
     found_lockbox = False
+    found_heavy_test = False
     
     for item in items:
-        # Get the test file name
         test_file = item.fspath.basename
         
+        # If we find any file that ISN'T TestRedpitaya, we assume we need full Pyrpl
+        # (You can add more "light" files to this list if needed)
+        if test_file not in ['test_redpitaya.py', 'test_pyqtgraph_benchmark.py', 'test_registers.py']:
+            found_heavy_test = True
+
         if test_file == 'test_attribute.py':
             found_attribute = True
         elif test_file == 'test_lockbox.py':
             found_lockbox = True
     
-    # Priority: attribute > lockbox > default
-    # (Changed priority so test_attribute.py takes precedence)
+    _require_full_pyrpl = found_heavy_test
+
+    # Config selection logic
     if found_attribute:
         _source_config_file = "nosetests_source_dummy_module.yml"
-        logger.info(f"Found test_attribute.py in test session - using source config: {_source_config_file}")
     elif found_lockbox:
         _source_config_file = "nosetests_source_lockbox.yml"
-        logger.info(f"Found test_lockbox.py in test session - using source config: {_source_config_file}")
     
-    logger.info(f"Final source config file: {_source_config_file}")
+    mode = "FULL PYRPL APP" if _require_full_pyrpl else "LIGHT REDPITAYA DRIVER"
+    logger.info(f"Test Collection Complete. Mode: {mode}")
 
 
-@pytest.fixture(scope="session")
-def pyrpl_instance():
-    """Session-scoped fixture to create a single pyrpl instance for all tests."""
-    tmp_file = "nosetests_config.yml"
-    tmp_conf = os.path.join(user_config_dir, tmp_file)
-    
-    # Remove file before tests
-    if os.path.isfile(tmp_conf):
-        try:
-            os.remove(tmp_conf)
-        except (WindowsError, OSError):
-            pass
-    while os.path.exists(tmp_conf):
-        pass  # make sure the file is really gone before proceeding further
-    
-    # Create pyrpl instance with the determined source config
-    logger.info(f"Creating Pyrpl instance with source config: {_source_config_file}")
-    pyrpl = Pyrpl(config=tmp_file, source=_source_config_file)
-    r = pyrpl.rp
-
-    # ---------------------------------------------------------
-    # FIX FOR GITHUB ACTIONS / FREEBOX NAT TIMEOUTS
-    # ---------------------------------------------------------
-    
-    # 1. Fix SSH Transport (Port 22)
-    # r.ssh is an 'SshShell' wrapper, not the paramiko client itself.
-    # However, it has an 'scp' object which holds the underlying transport.
+def _apply_keepalive(rp_object):
+    """Helper to apply the GitHub Actions/NAT fix to any RedPitaya object"""
+    # 1. SSH Transport KeepAlive
     try:
-        if hasattr(r.ssh, 'scp') and hasattr(r.ssh.scp, 'transport'):
-            # Send a heartbeat every 30s (NAT usually drops at 60s or 120s)
-            r.ssh.scp.transport.set_keepalive(30)
-            logger.info("SSH KeepAlive enabled (30s interval).")
-        else:
-            logger.warning("Could not enable SSH KeepAlive: SCP transport not accessible.")
+        if hasattr(rp_object.ssh, 'scp') and hasattr(rp_object.ssh.scp, 'transport'):
+            rp_object.ssh.scp.transport.set_keepalive(30)
+            logger.info("SSH KeepAlive enabled (30s).")
     except Exception as e:
-        logger.warning(f"Error setting SSH KeepAlive: {e}")
+        logger.warning(f"SSH KeepAlive failed: {e}")
 
-    # 2. Fix Data Socket (Port 2222)
-    # r.client might be a wrapper or the socket itself. We handle both.
+    # 2. Socket KeepAlive
     try:
-        # Determine if r.client is the socket or contains it
-        sock = r.client
+        sock = rp_object.client
         if not hasattr(sock, 'setsockopt') and hasattr(sock, 'socket'):
             sock = sock.socket
 
         if hasattr(sock, 'setsockopt'):
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-            
-            # Linux/macOS specific TCP options (used by GitHub Runners)
+            # Linux/macOS specific
             if hasattr(socket, 'TCP_KEEPIDLE'):
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)
             if hasattr(socket, 'TCP_KEEPINTVL'):
@@ -112,40 +90,63 @@ def pyrpl_instance():
 
     # ---------------------------------------------------------
 
-    # Setup: Perform initial timing measurements
-    
+@pytest.fixture(scope="session")
+    depending on the test requirements.
+    """
+    pyrpl_obj = None
+    rp_obj = None
+    tmp_file = "nosetests_config.yml"
+    tmp_conf = os.path.join(user_config_dir, tmp_file)
+
+    # Cleanup start
+    if os.path.isfile(tmp_conf):
+        try: os.remove(tmp_conf)
+        except: pass
+
+    if _require_full_pyrpl:
+        # --- HEAVY PATH ---
+        logger.info(f"Initializing Full Pyrpl with source: {_source_config_file}")
+        pyrpl_obj = Pyrpl(config=tmp_file, source=_source_config_file)
+        rp_obj = pyrpl_obj.rp
+    else:
+        # --- LIGHT PATH ---
+        logger.info("Initializing Light RedPitaya (No Pyrpl App config)")
+        # This uses environment variables or defaults defined in RedPitaya class
+        # Assuming 'hostname' is handled by RedPitaya's internal logic checking env vars
+        rp_obj = RedPitaya(config=None, autostart=True) 
+
+    # --- APPLY FIXES ---
+    _apply_keepalive(rp_obj)
+
+    # --- TIMING ---
+    # We allow 'r.hk.led' to act as a warmup and timing test
     N = 10
     t0 = time()
     for i in range(N):
-        r.hk.led
+        _ = rp_obj.hk.led
     read_time = (time()-t0)/float(N)
     
     t0 = time()
     for i in range(N):
-        r.hk.led = 0
+        rp_obj.hk.led = 0
     write_time = (time()-t0)/float(N)
     
-    # Store timing info on the pyrpl object for later access
-    pyrpl._test_read_time = read_time
-    pyrpl._test_write_time = write_time
-    pyrpl._test_communication_time = (read_time + write_time)/2.0
+    print("Est. Read/Write: %.1f ms / %.1f ms" % (read_time*1000.0, write_time*1000.0))
     
-    print("Estimated time per read / write operation: %.1f ms / %.1f ms" %
-          (read_time*1000.0, write_time*1000.0))
-    sleep(0.1)  # give some time for events to get processed
+    # Yield the container
+    yield HardwareSession(rp=rp_obj, pyrpl=pyrpl_obj, read_time=read_time, write_time=write_time)
+
+    # --- TEARDOWN ---
+    logger.info("Tearing down hardware session...")
+    if pyrpl_obj:
+        try: pyrpl_obj._clear()
+        except: pass
+    else:
+        # If we only made the RP, we close it manually
+        try: rp_obj.end_all()
+        except: pass
     
-    yield pyrpl
-    
-    # Teardown: Clean up after all tests complete
-    try:
-        pyrpl._clear()
-    except (FileNotFoundError, OSError):
-        # In case the config file was already deleted or inaccessible, just continue
-        pass
-    
-    sleep(0.2)  # Give time for file operations to complete
-    
-    # Remove file after pyrpl is cleared
+    sleep(0.2)
     if os.path.isfile(tmp_conf):
         try:
             os.remove(tmp_conf)
@@ -158,20 +159,3 @@ def pyrpl_instance():
         if not os.path.exists(tmp_conf):
             break
         sleep(0.1)
-
-@pytest.fixture(autouse=True, scope="function")
-def check_connection_health(pyrpl_instance):
-    """Check SSH connection before each test"""
-    yield
-    
-    # After each test, verify connection is still alive
-    try:
-        pyrpl_instance.rp.ssh.ask()
-    except Exception as e:
-        logger.error(f"SSH connection lost after test: {e}")
-        # Try to reconnect
-        try:
-            pyrpl_instance.rp.start_ssh()
-            logger.info("Successfully reconnected to Red Pitaya")
-        except:
-            pytest.fail("SSH connection lost and could not reconnect")

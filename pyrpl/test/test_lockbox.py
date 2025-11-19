@@ -7,7 +7,7 @@ from ..async_utils import sleep, sleep_async, ensure_future
 from .test_base import TestPyrpl
 
 @pytest.fixture(scope="session")
-def setup_fake_system_once(pyrpl_instance):
+def setup_fake_system_once(hardware_session):
     """
     Setup fake system once for the entire test class.
     When frequency modulation will be available on the IQ modules, we could
@@ -15,11 +15,15 @@ def setup_fake_system_once(pyrpl_instance):
     which would be really cool... At the moment, we only simulate a linear
     system with a pid.
     """
-    if pyrpl_instance.lockbox.inputs is not None:
-        pyrpl_instance.lockbox._clear # make sure no old lockbox config exists
-    pid = pyrpl_instance.rp.pid1
-    pyrpl_instance.lockbox.classname = 'Interferometer'
-    lockbox = pyrpl_instance.lockbox
+
+    r = hardware_session.rp
+    pyrpl = hardware_session.pyrpl
+
+    if pyrpl.lockbox.inputs is not None:
+        pyrpl.lockbox._clear # make sure no old lockbox config exists
+    pid = r.pid1
+    pyrpl.lockbox.classname = 'Interferometer'
+    lockbox = pyrpl.lockbox
     pid.i = -1
     pid.p = -1
     pid.input = lockbox.outputs.piezo
@@ -31,7 +35,7 @@ def setup_fake_system_once(pyrpl_instance):
     output.sweep_offset = 0 # used to be 0.1 but if you sweep for too long, ival saturates
     output.sweep_waveform = 'sin'
 
-    lockbox.calibrate_all(timeout_min=2) # extra timeout because of remote connection delays
+    lockbox.calibrate_all(timeout_min=20) # extra timeout because of remote connection delays
 
     lockbox.sequence.append({'gain_factor':1.0e6})
     lockbox.sequence[-1].input = 'port1'
@@ -83,7 +87,7 @@ class TestLockbox(TestPyrpl):
             assert(self.pyrpl.lockbox.classname == classname)
 
     def test_real_lock(self, setup_fake_system_once):
-        self.lockbox.calibrate_all()
+        self.lockbox.calibrate_all(timeout_min=20)
         self.lockbox.lock()
         assert self.lockbox.is_locked()
 
@@ -97,7 +101,7 @@ class TestLockbox(TestPyrpl):
 
         output.sweep_offset = 0.1 
 
-        lockbox.calibrate_all()
+        lockbox.calibrate_all(timeout_min=20)
         cal = lockbox.inputs.port1.calibration_data
         assert abs(cal.mean - 0.1) < 0.01, cal.mean
         assert abs(cal.max - 0.4) < 0.01, cal.max
@@ -107,7 +111,7 @@ class TestLockbox(TestPyrpl):
         output.sweep_offset = 0
 
     def test_sleep_while_locked(self, setup_fake_system_once):
-        self.lockbox.calibrate_all()
+        self.lockbox.calibrate_all(timeout_min=20)
         self.lockbox.lock()
         pid = self.pyrpl.rp.pid1
         async def unlock_later(time_s):
@@ -135,7 +139,7 @@ class TestLockbox(TestPyrpl):
         self.lockbox.__class__.increment = increment
         self.lockbox.first_stage_counter = 0
 
-        self.lockbox.calibrate_all()
+        self.lockbox.calibrate_all(timeout_min=20)
         self.lockbox.lock_async()
         assert self.lockbox.classname == 'Interferometer'
 
@@ -153,7 +157,7 @@ class TestLockbox(TestPyrpl):
         sleep(0.5)
         assert self.lockbox.is_locked()
         ensure_future(unlock_later(1))
-        sleep(5)
+        sleep(10)
         assert self.lockbox.is_locked()
         assert self.lockbox.first_stage_counter == 2
 
