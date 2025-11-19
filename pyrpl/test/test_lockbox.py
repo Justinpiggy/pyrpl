@@ -15,7 +15,8 @@ def setup_fake_system_once(pyrpl_instance):
     which would be really cool... At the moment, we only simulate a linear
     system with a pid.
     """
-
+    if pyrpl_instance.lockbox.inputs is not None:
+        pyrpl_instance.lockbox._clear # make sure no old lockbox config exists
     pid = pyrpl_instance.rp.pid1
     pyrpl_instance.lockbox.classname = 'Interferometer'
     lockbox = pyrpl_instance.lockbox
@@ -44,6 +45,9 @@ def setup_fake_system_once(pyrpl_instance):
     # Cleanup after all tests (if needed)
     lockbox.unlock()
     lockbox._clear()
+    pid.p = 0
+    pid.i = 0
+    pid.ival = 0
 
 class TestLockbox(TestPyrpl):
     # source_config_file = "nosetests_source_lockbox.yml"
@@ -79,6 +83,7 @@ class TestLockbox(TestPyrpl):
             assert(self.pyrpl.lockbox.classname == classname)
 
     def test_real_lock(self, setup_fake_system_once):
+        self.lockbox.calibrate_all()
         self.lockbox.lock()
         assert self.lockbox.is_locked()
 
@@ -87,6 +92,11 @@ class TestLockbox(TestPyrpl):
         self.pyrpl.rp.pid1.i = 0
         self.pyrpl.rp.pid1.p = 1
         self.pyrpl.rp.pid1.ival = 0
+
+        output = lockbox.outputs.values()[0]
+
+        output.sweep_offset = 0.1 
+
         lockbox.calibrate_all()
         cal = lockbox.inputs.port1.calibration_data
         assert abs(cal.mean - 0.1) < 0.01, cal.mean
@@ -94,7 +104,10 @@ class TestLockbox(TestPyrpl):
         assert abs(cal.min - (-0.2)) < 0.01, cal.min
         assert abs(cal.amplitude - (0.3)) < 0.01, cal.amplitude
 
+        output.sweep_offset = 0
+
     def test_sleep_while_locked(self, setup_fake_system_once):
+        self.lockbox.calibrate_all()
         self.lockbox.lock()
         pid = self.pyrpl.rp.pid1
         async def unlock_later(time_s):
@@ -107,6 +120,9 @@ class TestLockbox(TestPyrpl):
         ensure_future(unlock_later(0.5))
         res = self.lockbox.sleep_while_locked(10)
         assert not res
+        pid.ival = 0
+        pid.p = -1
+        pid.i = -1
 
     def test_auto_relock(self, setup_fake_system_once):
         self.lockbox.auto_lock = True
@@ -119,6 +135,7 @@ class TestLockbox(TestPyrpl):
         self.lockbox.__class__.increment = increment
         self.lockbox.first_stage_counter = 0
 
+        self.lockbox.calibrate_all()
         self.lockbox.lock_async()
         assert self.lockbox.classname == 'Interferometer'
 

@@ -17,6 +17,8 @@ class TestIir(TestPyrpl):
         # set na loglevel to DEBUG
         self.loglevel = self.na._logger.getEffectiveLevel()
         self.na._logger.setLevel(10)
+        self.na.auto_bandwidth = False
+        self.na.auto_amplitude = False
         self.iir = self.pyrpl.rp.iir
         yield
         

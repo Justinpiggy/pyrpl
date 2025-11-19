@@ -7,6 +7,7 @@ from .. import Pyrpl, APP, user_config_dir, global_config
 from ..pyrpl_utils import time
 from ..async_utils import sleep
 from ..errors import UnexpectedPyrplError, ExpectedPyrplError
+import socket
 
 # I don't know why, in nosetests, the logger goes to UNSET...
 logger_quamash = logging.getLogger(name='quamash')
@@ -66,9 +67,53 @@ def pyrpl_instance():
     # Create pyrpl instance with the determined source config
     logger.info(f"Creating Pyrpl instance with source config: {_source_config_file}")
     pyrpl = Pyrpl(config=tmp_file, source=_source_config_file)
-    
-    # Setup: Perform initial timing measurements
     r = pyrpl.rp
+
+    # ---------------------------------------------------------
+    # FIX FOR GITHUB ACTIONS / FREEBOX NAT TIMEOUTS
+    # ---------------------------------------------------------
+    
+    # 1. Fix SSH Transport (Port 22)
+    # r.ssh is an 'SshShell' wrapper, not the paramiko client itself.
+    # However, it has an 'scp' object which holds the underlying transport.
+    try:
+        if hasattr(r.ssh, 'scp') and hasattr(r.ssh.scp, 'transport'):
+            # Send a heartbeat every 30s (NAT usually drops at 60s or 120s)
+            r.ssh.scp.transport.set_keepalive(30)
+            logger.info("SSH KeepAlive enabled (30s interval).")
+        else:
+            logger.warning("Could not enable SSH KeepAlive: SCP transport not accessible.")
+    except Exception as e:
+        logger.warning(f"Error setting SSH KeepAlive: {e}")
+
+    # 2. Fix Data Socket (Port 2222)
+    # r.client might be a wrapper or the socket itself. We handle both.
+    try:
+        # Determine if r.client is the socket or contains it
+        sock = r.client
+        if not hasattr(sock, 'setsockopt') and hasattr(sock, 'socket'):
+            sock = sock.socket
+
+        if hasattr(sock, 'setsockopt'):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            
+            # Linux/macOS specific TCP options (used by GitHub Runners)
+            if hasattr(socket, 'TCP_KEEPIDLE'):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)
+            if hasattr(socket, 'TCP_KEEPINTVL'):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+            if hasattr(socket, 'TCP_KEEPCNT'):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+            logger.info("Socket (Port 2222) KeepAlive enabled.")
+        else:
+            logger.warning("Could not enable Socket KeepAlive: setsockopt method missing.")
+    except Exception as e:
+        logger.warning(f"Error setting Socket KeepAlive: {e}")
+
+    # ---------------------------------------------------------
+
+    # Setup: Perform initial timing measurements
+    
     N = 10
     t0 = time()
     for i in range(N):
@@ -113,3 +158,20 @@ def pyrpl_instance():
         if not os.path.exists(tmp_conf):
             break
         sleep(0.1)
+
+@pytest.fixture(autouse=True, scope="function")
+def check_connection_health(pyrpl_instance):
+    """Check SSH connection before each test"""
+    yield
+    
+    # After each test, verify connection is still alive
+    try:
+        pyrpl_instance.rp.ssh.ask()
+    except Exception as e:
+        logger.error(f"SSH connection lost after test: {e}")
+        # Try to reconnect
+        try:
+            pyrpl_instance.rp.start_ssh()
+            logger.info("Successfully reconnected to Red Pitaya")
+        except:
+            pytest.fail("SSH connection lost and could not reconnect")

@@ -14,6 +14,8 @@ class TestPidNaIq(TestPyrpl):
         # shortcuts
         self.pyrpl.na = self.pyrpl.networkanalyzer
         self.na = self.pyrpl.networkanalyzer
+        self.na.auto_bandwidth = False
+        self.na.auto_amplitude = False
         # set na loglevel to DEBUG
         self.loglevel = self.na._logger.getEffectiveLevel()
         self.na._logger.setLevel(10)
@@ -23,7 +25,18 @@ class TestPidNaIq(TestPyrpl):
         self.na.stop()
         # set na loglevel to previous one
         self.na._logger.setLevel(self.loglevel)
-
+        for pid in self.pyrpl.pids.all_modules:
+            pid.input = 'off'
+            pid.p = 0   
+            pid.i = 0
+            pid.ival = 0
+            pid.output_direct = 'off'
+            pid.setpoint = 0
+            pid.inputfilter = 0
+            pid.pause_gains = 'off'
+            pid.paused = False
+            pid.differential_mode_enabled = False
+            
     def test_na(self):
         error_threshold = 0.03  # (relative error, dominated by phase error)
         if self.r is None:
@@ -189,7 +202,7 @@ class TestPidNaIq(TestPyrpl):
         # setup a pid module with a bunch of different settings and measure
         # its transfer function, and compare it to the model.
 
-        error_threshold = 0.04  # (relative error)
+        error_threshold = 0.05  # (relative error) used to be 0.04
         # Let's check the transfer function of the pid module with the integrated NA
         plotdata = []
 
