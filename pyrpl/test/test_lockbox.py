@@ -47,6 +47,7 @@ def setup_fake_system_once(hardware_session):
     yield
     
     # Cleanup after all tests (if needed)
+    lockbox.auto_lock = False
     lockbox.unlock()
     lockbox._clear()
     pid.p = 0
