@@ -18,6 +18,9 @@ scipy
 scp
 qasync
 pytest
+pytest-cov
+pytest-notebook
+pytest-subtests
 nbconvert
 matplotlib
 nbformat

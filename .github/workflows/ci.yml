@@ -98,7 +98,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install coverage pytest pytest-cov pytest-notebook
+        pip install coverage pytest pytest-cov pytest-notebook pytest-subtests
 
     - name: Install package
       run: |
