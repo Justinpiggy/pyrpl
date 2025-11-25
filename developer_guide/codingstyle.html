@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>5.4. Coding style guidelines &#8212; pyrpl 0.9.7.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../_static/bootstrap-sphinx.css?v=4468db6d" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=fd3f3429" />
+    <script src="../_static/documentation_options.js?v=cf93a8f2"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="icon" href="../_static/icon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="5.5. Workflow to submit code changes" href="codingworkflow.html" />
+    <link rel="prev" title="5.3. Unittests" href="unittests.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script type="text/javascript" src="../_static/js/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="../_static/js/jquery-fix.js"></script>
+<script type="text/javascript" src="../_static/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="../_static/bootstrap-sphinx.js"></script>
+
+  </head><body>
+  
+
+  <style id="ribbon">
+    #forkongithub a{background:#c11;color:#fff;text-decoration:none;font-family:arial,sans-serif;text-align:center;font-weight:bold;padding:5px 40px;font-size:1rem;line-height:2rem;position:relative;transition:0.5s;}
+    #forkongithub a:hover{background:#1c1;color:#fff;}
+    #forkongithub a::before,
+    #forkongithub a::after{content:"";width:100%;display:block;position:absolute;top:1px;left:0;height:1px;background:#fff;}
+    #forkongithub a::after{bottom:1px;top:auto;}@media screen and (min-width:800px)
+    { #forkongithub{position:fixed;display:block;top:0;right:0;width:200px;overflow:hidden;height:200px;z-index:9999;}#forkongithub a{width:200px;position:absolute;top:45px;right:-45px;transform:rotate(45deg);-webkit-transform:rotate(45deg);-ms-transform:rotate(45deg);-moz-transform:rotate(45deg);-o-transform:rotate(45deg);box-shadow:4px 4px 10px rgba(0,0,0,0.8);}}
+  </style>
+  <span id="forkongithub"><a href="https://www.github.com/lneuhaus/pyrpl#fork-destination-box">Fork PyRPL on GitHub</a></span>
+
+  <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-102689373-2', 'auto');
+    ga('send', 'pageview');
+
+  </script>
+
+
+  <div id="navbar" class="navbar navbar-inverse navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../index.html">
+          PyRPL</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.9.7.0</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../index.html">Home</a></li>
+                <li><a href="../installation.html">Installation</a></li>
+                <li><a href="../gui.html">Graphical user interface</a></li>
+                <li><a href="../api.html">API</a></li>
+                <li><a href="../basics.html">How PyRPL works</a></li>
+                <li><a href="index.html">Infos for Developers</a></li>
+            
+            
+              
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+      <div class="col-md-3">
+        <div id="sidebar" class="bs-sidenav" role="complementary"><ul>
+<li><a class="reference internal" href="#">5.4. Coding style guidelines</a><ul>
+<li><a class="reference internal" href="#general-guidelines">5.4.1. General guidelines</a></li>
+<li><a class="reference internal" href="#naming-conventions">5.4.2. Naming conventions</a></li>
+<li><a class="reference internal" href="#docstrings">5.4.3. Docstrings</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    <div class="body col-md-9 content" role="main">
+      
+  <section id="coding-style-guidelines">
+<h1><span class="section-number">5.4. </span>Coding style guidelines<a class="headerlink" href="#coding-style-guidelines" title="Link to this heading">¶</a></h1>
+<section id="general-guidelines">
+<h2><span class="section-number">5.4.1. </span>General guidelines<a class="headerlink" href="#general-guidelines" title="Link to this heading">¶</a></h2>
+<p>We follow the recommendations from <a class="reference external" href="https://www.python.org/dev/peps/pep-0008/">PEP8</a>.</p>
+<p>Concerning <strong>line length</strong>, we have tried to stick to the 79 characters allowed by PEP8 so far. However, since this definitely restricts the readability of our code, we will accept 119 characters in the future (but please keep this at least consistent within the entire function or class). See the section on <a class="reference internal" href="#docstrings">Docstrings</a> below.</p>
+<p>Other interesting policies that we should gladly accept are given here.
+- <a class="reference external" href="https://docs.djangoproject.com/en/dev/internals/contributing/writing-code/coding-style/">Django style guide</a></p>
+</section>
+<section id="naming-conventions">
+<h2><span class="section-number">5.4.2. </span>Naming conventions<a class="headerlink" href="#naming-conventions" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Capital letters for each new word in class names, such as <cite>class TestMyClass(object):</cite>.</p></li>
+<li><p>Lowercase letters with underscores for functions, such as <cite>def test_my_class():</cite>.</p></li>
+<li><p>Any methods or attributes of objects that might be visible in the user API (i.e. which are not themselves hidden) should serve an actual purpose, i.e. <cite>pyrpl.lockbox.lock()</cite>, <cite>pyrpl.rp.iq.bandwidth</cite> and so on.</p></li>
+<li><p>Any methods or attributes that are only used internally should be hidden from the API by preceeding the name with an underscore, such as <cite>pyrpl.rp.scope._hidden_attribute</cite> or <cite>pyrpl.spectrum_analyzer._setup_something_for_the_measurement()</cite>.</p></li>
+<li><p>Anything that is expected to return immediately and does not require an argument should be a property, asynchronous function calls or one that must pass arguments are implemented as methods.</p></li>
+</ul>
+</section>
+<section id="docstrings">
+<h2><span class="section-number">5.4.3. </span>Docstrings<a class="headerlink" href="#docstrings" title="Link to this heading">¶</a></h2>
+<p>Since we use sphinx for automatic documentation generation, we must ensure
+consistency of docstrings among all files in order to generate a nice
+documentation:</p>
+<ul>
+<li><p>follow <a class="reference external" href="https://www.python.org/dev/peps/pep-0257/">PEP257</a> and <a class="reference external" href="http://google.github.io/styleguide/pyguide.html?showone=Comments#Comments">docstrings in google-style</a> — please read these documents <strong>now</strong>!!!</p></li>
+<li><p>keep the maximum width of docstring lines to 79 characters (i.e. 79 characters counted from the first non-whitespace character of the line)</p></li>
+<li><p>stay consistent with existing docstrings</p></li>
+<li><p>you should make use of the <a class="reference external" href="https://pythonhosted.org/an_example_pypi_project/sphinx.html">markup syntax</a> allowed by sphinx</p></li>
+<li><p>we use <a class="reference external" href="http://google.github.io/styleguide/pyguide.html?showone=Comments#Comments">docstrings in google-style</a>, together with the <a class="reference external" href="http://www.sphinx-doc.org/en/stable/ext/napoleon.html">sphinx-extension napoleon</a> to format them as nice as the <a class="reference external" href="https://pythonhosted.org/an_example_pypi_project/sphinx.html#function-definitions">harder-to-read (in the source code) sphinx docstrings</a></p></li>
+<li><p>the guidelines are summarized in the <a class="reference external" href="http://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html#example-google">napoleon/sphinx documentation example</a> or in the example below:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">SoundScope</span><span class="p">(</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    An oscilloscope that converts measured data into sound.</span>
+
+<span class="sd">    The oscilloscope works by acquiring the data from the redpitaya scope</span>
+<span class="sd">    implemented in pyrpl/fpga/rtl/red_pitaya_scope_block.v, subsequent</span>
+<span class="sd">    conversion through the commonly-known `Kolmogorov-Audio algorithm</span>
+<span class="sd">    &lt;http://www.wikipedia.org/Kolmogorov&gt;`_ and finally outputting sound</span>
+<span class="sd">    with the python package &quot;PyAudio&quot;.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">        play_sound: start sending data to speaker</span>
+<span class="sd">        stop: stop the sound output</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        volume (float): Current volume</span>
+<span class="sd">        channel (int): Current channel</span>
+<span class="sd">        current_state (str): One of ``current_state_options``</span>
+<span class="sd">        current_state_options (list of str): [&#39;playing&#39;, &#39;stopped&#39;]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">play_sound</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">channel</span><span class="p">,</span> <span class="n">lowpass</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">volume</span><span class="o">=</span><span class="mf">0.5</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Start sending data of a scope channel to a speaker.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            channel (int): Scope channel to use as data input</span>
+<span class="sd">            lowpass (bool, optional): Turns on a 10 kHz lowpass</span>
+<span class="sd">                filter before data sent to the output. Defaults to True.</span>
+<span class="sd">            volume (float, optional): volume for sound output.</span>
+<span class="sd">                Defaults to 0.5.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            bool: True for success, False otherwise.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            NotImplementedError: The given channel is not available.</span>
+<span class="sd">            CannotHearAnythingException: Selected volume is too loud.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+</pre></div>
+</div>
+</li>
+</ul>
+</section>
+</section>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="../_sources/developer_guide/codingstyle.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2014-2025, Leonhard Neuhaus, Samuel Deléglise, Michaël Croquette .<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 7.4.7.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>

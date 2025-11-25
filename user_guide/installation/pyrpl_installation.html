@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Installing PyRPL &#8212; pyrpl 0.9.7.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../_static/bootstrap-sphinx.css?v=4468db6d" />
+    <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=fd3f3429" />
+    <script src="../../_static/documentation_options.js?v=cf93a8f2"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="icon" href="../../_static/icon.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script type="text/javascript" src="../../_static/js/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="../../_static/js/jquery-fix.js"></script>
+<script type="text/javascript" src="../../_static/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="../../_static/bootstrap-sphinx.js"></script>
+
+  </head><body>
+  
+
+  <style id="ribbon">
+    #forkongithub a{background:#c11;color:#fff;text-decoration:none;font-family:arial,sans-serif;text-align:center;font-weight:bold;padding:5px 40px;font-size:1rem;line-height:2rem;position:relative;transition:0.5s;}
+    #forkongithub a:hover{background:#1c1;color:#fff;}
+    #forkongithub a::before,
+    #forkongithub a::after{content:"";width:100%;display:block;position:absolute;top:1px;left:0;height:1px;background:#fff;}
+    #forkongithub a::after{bottom:1px;top:auto;}@media screen and (min-width:800px)
+    { #forkongithub{position:fixed;display:block;top:0;right:0;width:200px;overflow:hidden;height:200px;z-index:9999;}#forkongithub a{width:200px;position:absolute;top:45px;right:-45px;transform:rotate(45deg);-webkit-transform:rotate(45deg);-ms-transform:rotate(45deg);-moz-transform:rotate(45deg);-o-transform:rotate(45deg);box-shadow:4px 4px 10px rgba(0,0,0,0.8);}}
+  </style>
+  <span id="forkongithub"><a href="https://www.github.com/lneuhaus/pyrpl#fork-destination-box">Fork PyRPL on GitHub</a></span>
+
+  <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-102689373-2', 'auto');
+    ga('send', 'pageview');
+
+  </script>
+
+
+  <div id="navbar" class="navbar navbar-inverse navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../../index.html">
+          PyRPL</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.9.7.0</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../../index.html">Home</a></li>
+                <li><a href="../../installation.html">Installation</a></li>
+                <li><a href="../../gui.html">Graphical user interface</a></li>
+                <li><a href="../../api.html">API</a></li>
+                <li><a href="../../basics.html">How PyRPL works</a></li>
+                <li><a href="../../developer_guide/index.html">Infos for Developers</a></li>
+            
+            
+              
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+      <div class="col-md-3">
+        <div id="sidebar" class="bs-sidenav" role="complementary"><ul>
+<li><a class="reference internal" href="#">Installing PyRPL</a><ul>
+<li><a class="reference internal" href="#running-from-binary-files-fastest">Running from binary files (fastest)</a></li>
+<li><a class="reference internal" href="#running-the-python-source-code">Running the Python source code</a><ul>
+<li><a class="reference internal" href="#prerequisites-getting-the-right-python-installation">Prerequisites: Getting the right Python installation</a><ul>
+<li><a class="reference internal" href="#option-1-installation-from-anaconda">Option 1: Installation from Anaconda</a></li>
+<li><a class="reference internal" href="#option-2-installation-on-a-regular-non-anaconda-python-version">Option 2: Installation on a regular (non-Anaconda) python version</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#downloading-and-installing-pyrpl-from-source">Downloading and installing PyRPL from source</a><ul>
+<li><a class="reference internal" href="#option-1-installation-with-pip-not-recommended-as-the-version-on-pypi-is-outdated">Option 1: Installation with pip (Not recommended as the version on pypi is outdated ! )</a></li>
+<li><a class="reference internal" href="#option-2-from-github-com-for-developers-and-tinkerers">Option 2: From github.com (for developers and tinkerers)</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    <div class="body col-md-9 content" role="main">
+      
+  <section id="installing-pyrpl">
+<h1>Installing PyRPL<a class="headerlink" href="#installing-pyrpl" title="Link to this heading">¶</a></h1>
+<section id="running-from-binary-files-fastest">
+<h2>Running from binary files (fastest)<a class="headerlink" href="#running-from-binary-files-fastest" title="Link to this heading">¶</a></h2>
+<p>The easiest and fastest way to get PyRPL running is to download and execute the <a class="reference external" href="https://sourceforge.net/projects/pyrpl/files/pyrpl-windows.exe">precompiled executable for windows “pyrpl-windows.exe”</a> or <a class="reference external" href="https://sourceforge.net/projects/pyrpl/files/pyrpl-linux">linux “pyrpl-linux”</a>. This option requires no extra programs to be installed on the computer. If you want the Pyrpl binaries for a Mac, please let us know <a class="reference external" href="https://www.github.com/lneuhaus/pyrpl/issues/new">by creating a new issue</a> and we will prepare them for you.</p>
+</section>
+<section id="running-the-python-source-code">
+<span id="installation-from-source"></span><h2>Running the Python source code<a class="headerlink" href="#running-the-python-source-code" title="Link to this heading">¶</a></h2>
+<p>If you would like to use and/or modify the source code, make sure you have an installation of Python (tested up to python 3.13).</p>
+<section id="prerequisites-getting-the-right-python-installation">
+<h3>Prerequisites: Getting the right Python installation<a class="headerlink" href="#prerequisites-getting-the-right-python-installation" title="Link to this heading">¶</a></h3>
+<p>There are many ways to get the Python working with Pyrpl. The following list is non-exhaustive</p>
+<section id="option-1-installation-from-anaconda">
+<span id="anaconda-installation"></span><h4>Option 1: Installation from Anaconda<a class="headerlink" href="#option-1-installation-from-anaconda" title="Link to this heading">¶</a></h4>
+<p>If you are new to Python or unexperienced with fighting installation issues, it is recommended to install the <a class="reference external" href="https://www.continuum.io/downloads">Anaconda</a> Python distribution, which allows to install all PyRPL dependencies via:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">conda</span> <span class="n">install</span> <span class="n">numpy</span> <span class="n">scipy</span> <span class="n">paramiko</span> <span class="n">pandas</span> <span class="n">nose</span> <span class="n">pip</span> <span class="n">pyqt</span> <span class="n">qtpy</span> <span class="n">pyqtgraph</span> <span class="n">pyyaml</span> <span class="n">nbconvert</span> <span class="n">qasync</span>
+</pre></div>
+</div>
+<p>Check <a class="reference internal" href="common_problems.html#anaconda-problems"><span class="std std-ref">Common issues with Anaconda</span></a> for hints if you cannot execute conda in a terminal. Alternatively, if you prefer creating a virtual environment for pyrpl, do so with the following two commands:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">conda</span> <span class="n">create</span> <span class="o">-</span><span class="n">y</span> <span class="o">-</span><span class="n">n</span> <span class="n">pyrpl</span><span class="o">-</span><span class="n">env</span> <span class="n">numpy</span> <span class="n">scipy</span> <span class="n">paramiko</span> <span class="n">pandas</span> <span class="n">nose</span> <span class="n">pip</span> <span class="n">pyqt</span> <span class="n">qtpy</span> <span class="n">pyqtgraph</span> <span class="n">pyyaml</span> <span class="n">nbconvert</span> <span class="n">qasync</span>
+<span class="n">activate</span> <span class="n">pyrpl</span><span class="o">-</span><span class="n">env</span>
+</pre></div>
+</div>
+</section>
+<section id="option-2-installation-on-a-regular-non-anaconda-python-version">
+<h4>Option 2: Installation on a regular (non-Anaconda) python version<a class="headerlink" href="#option-2-installation-on-a-regular-non-anaconda-python-version" title="Link to this heading">¶</a></h4>
+<p>If you are not using Anaconda, I recommend navigating to the pyrpl directory and running</p>
+<blockquote>
+<div><p>pip install -r requirements.txt</p>
+</div></blockquote>
+</section>
+</section>
+<section id="downloading-and-installing-pyrpl-from-source">
+<span id="actual-installation"></span><h3>Downloading and installing PyRPL from source<a class="headerlink" href="#downloading-and-installing-pyrpl-from-source" title="Link to this heading">¶</a></h3>
+<p>Various channels are available to obtain the PyRPL source code.</p>
+<section id="option-1-installation-with-pip-not-recommended-as-the-version-on-pypi-is-outdated">
+<h4>Option 1: Installation with pip (Not recommended as the version on pypi is outdated ! )<a class="headerlink" href="#option-1-installation-with-pip-not-recommended-as-the-version-on-pypi-is-outdated" title="Link to this heading">¶</a></h4>
+<p>If you have pip correctly installed, executing the following line in a command line should install pyrpl and all missing dependencies:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">pip</span> <span class="n">install</span> <span class="n">pyrpl</span>
+</pre></div>
+</div>
+</section>
+<section id="option-2-from-github-com-for-developers-and-tinkerers">
+<h4>Option 2: From github.com (for developers and tinkerers)<a class="headerlink" href="#option-2-from-github-com-for-developers-and-tinkerers" title="Link to this heading">¶</a></h4>
+<p>If you have a <a class="reference external" href="https://git-scm.com/downloads">git client</a> installed (recommended), clone the pyrpl repository to your computer with:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">git</span> <span class="n">clone</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pyrpl</span><span class="o">-</span><span class="n">fpga</span><span class="o">/</span><span class="n">pyrpl</span><span class="o">.</span><span class="n">git</span> <span class="n">YOUR_PYRPL_DESTINATION_FOLDER</span>
+</pre></div>
+</div>
+<p>If you do not want to install git on your computer, just download and extract the repository <a class="reference external" href="https://github.com/lneuhaus/pyrpl/archive/master.zip">from github.com</a> () the repository.</p>
+</section>
+</section>
+</section>
+</section>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="../../_sources/user_guide/installation/pyrpl_installation.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2014-2025, Leonhard Neuhaus, Samuel Deléglise, Michaël Croquette .<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 7.4.7.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>

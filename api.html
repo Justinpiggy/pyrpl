@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>3. API manual &#8212; pyrpl 0.9.7.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="_static/bootstrap-sphinx.css?v=4468db6d" />
+    <link rel="stylesheet" type="text/css" href="_static/graphviz.css?v=fd3f3429" />
+    <script src="_static/documentation_options.js?v=cf93a8f2"></script>
+    <script src="_static/doctools.js?v=9a2dae69"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="icon" href="_static/icon.ico"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="4. Basics of the PyRPL Architecture" href="basics.html" />
+    <link rel="prev" title="2. GUI instruments manual" href="gui.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script type="text/javascript" src="_static/js/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="_static/js/jquery-fix.js"></script>
+<script type="text/javascript" src="_static/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="_static/bootstrap-sphinx.js"></script>
+
+  </head><body>
+  
+
+  <style id="ribbon">
+    #forkongithub a{background:#c11;color:#fff;text-decoration:none;font-family:arial,sans-serif;text-align:center;font-weight:bold;padding:5px 40px;font-size:1rem;line-height:2rem;position:relative;transition:0.5s;}
+    #forkongithub a:hover{background:#1c1;color:#fff;}
+    #forkongithub a::before,
+    #forkongithub a::after{content:"";width:100%;display:block;position:absolute;top:1px;left:0;height:1px;background:#fff;}
+    #forkongithub a::after{bottom:1px;top:auto;}@media screen and (min-width:800px)
+    { #forkongithub{position:fixed;display:block;top:0;right:0;width:200px;overflow:hidden;height:200px;z-index:9999;}#forkongithub a{width:200px;position:absolute;top:45px;right:-45px;transform:rotate(45deg);-webkit-transform:rotate(45deg);-ms-transform:rotate(45deg);-moz-transform:rotate(45deg);-o-transform:rotate(45deg);box-shadow:4px 4px 10px rgba(0,0,0,0.8);}}
+  </style>
+  <span id="forkongithub"><a href="https://www.github.com/lneuhaus/pyrpl#fork-destination-box">Fork PyRPL on GitHub</a></span>
+
+  <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-102689373-2', 'auto');
+    ga('send', 'pageview');
+
+  </script>
+
+
+  <div id="navbar" class="navbar navbar-inverse navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="index.html">
+          PyRPL</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.9.7.0</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="index.html">Home</a></li>
+                <li><a href="installation.html">Installation</a></li>
+                <li><a href="gui.html">Graphical user interface</a></li>
+                <li><a href="#">API</a></li>
+                <li><a href="basics.html">How PyRPL works</a></li>
+                <li><a href="developer_guide/index.html">Infos for Developers</a></li>
+            
+            
+              
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+      <div class="col-md-3">
+        <div id="sidebar" class="bs-sidenav" role="complementary"><ul>
+<li><a class="reference internal" href="#">3. API manual</a><ul>
+<li><a class="reference internal" href="#first-steps">3.1. 1 First steps</a><ul>
+<li><a class="reference internal" href="#connecting-to-the-redpitaya">3.1.1. Connecting to the RedPitaya</a></li>
+<li><a class="reference internal" href="#basic-communication-with-your-redpitaya">3.1.2. Basic communication with your RedPitaya</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#redpitaya-or-hardware-modules">3.2. 2 RedPitaya (or Hardware) modules</a><ul>
+<li><a class="reference internal" href="#asg-and-scope-module">3.2.1. ASG and Scope module</a></li>
+<li><a class="reference internal" href="#arbitrary-signal-generator">3.2.2. Arbitrary Signal Generator</a></li>
+<li><a class="reference internal" href="#oscilloscope">3.2.3. Oscilloscope</a></li>
+<li><a class="reference internal" href="#pid-module">3.2.4. PID module</a></li>
+<li><a class="reference internal" href="#iq-module">3.2.5. IQ module</a></li>
+<li><a class="reference internal" href="#iir-module">3.2.6. IIR module</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pyrpl-or-software-modules">3.3. 3 Pyrpl (or Software) modules</a><ul>
+<li><a class="reference internal" href="#using-module-managers">3.3.1. Using Module Managers</a></li>
+<li><a class="reference internal" href="#spectrum-analyzer">3.3.2. Spectrum Analyzer</a></li>
+<li><a class="reference internal" href="#lockbox">3.3.3. Lockbox</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    <div class="body col-md-9 content" role="main">
+      
+  <section id="api-manual">
+<h1><span class="section-number">3. </span>API manual<a class="headerlink" href="#api-manual" title="Link to this heading">¶</a></h1>
+<p>This manual will guide you step-by-step through the programming interface of each PyRPL modules.</p>
+<section id="first-steps">
+<h2><span class="section-number">3.1. </span>1 First steps<a class="headerlink" href="#first-steps" title="Link to this heading">¶</a></h2>
+<p>If the installation went well, you should now be able to load the
+package in python. If that works you can pass directly to the next
+section ‘Connecting to the RedPitaya’.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pyrpl</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pyrpl</span>
+</pre></div>
+</div>
+<p>Sometimes, python has problems finding the path to pyrpl. In that
+case you should add the pyrplockbox directory to your pythonpath
+environment variable
+(<a class="reference external" href="http://stackoverflow.com/questions/3402168/permanently-add-a-directory-to-pythonpath">http://stackoverflow.com/questions/3402168/permanently-add-a-directory-to-pythonpath</a>).
+If you do not know how to do that, just manually navigate the ipython
+console to the directory, for example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">c</span><span class="p">:</span>\<span class="n">lneuhaus</span>\<span class="n">github</span>\<span class="n">pyrpl</span>
+</pre></div>
+</div>
+<p>Now retry to load the module. It should really work now.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pyrpl</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pyrpl</span>
+</pre></div>
+</div>
+<section id="connecting-to-the-redpitaya">
+<h3><span class="section-number">3.1.1. </span>Connecting to the RedPitaya<a class="headerlink" href="#connecting-to-the-redpitaya" title="Link to this heading">¶</a></h3>
+<p>You should have a working SD card (any version of the SD card content is
+okay) in your RedPitaya (for instructions see
+<a class="reference external" href="http://redpitaya.com/quick-start/">http://redpitaya.com/quick-start/</a>). The RedPitaya should be connected
+via ethernet to your computer. To set this up, there is plenty of
+instructions on the RedPitaya website
+(<a class="reference external" href="http://redpitaya.com/quick-start/">http://redpitaya.com/quick-start/</a>). If you type the ip address of your
+module in a browser, you should be able to start the different apps from
+the manufacturer. The default address is <a class="reference external" href="http://192.168.1.100">http://192.168.1.100</a>. If this
+works, we can load the python interface of pyrplockbox by specifying the
+RedPitaya’s ip address.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">HOSTNAME</span> <span class="o">=</span> <span class="s2">&quot;192.168.1.100&quot;</span>
+</pre></div>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pyrpl</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pyrpl</span>
+<span class="n">p</span> <span class="o">=</span> <span class="n">Pyrpl</span><span class="p">(</span><span class="n">hostname</span><span class="o">=</span><span class="n">HOSTNAME</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>If you see at least one ‘&gt;’ symbol, your computer has successfully
+connected to your RedPitaya via SSH. This means that your connection
+works. The message ‘Server application started on port 2222’ means that
+your computer has successfully installed and started a server application
+on your RedPitaya. Once you get ‘Client started with success’, your
+python session has successfully connected to that server and all things
+are in place to get started.</p>
+</section>
+<section id="basic-communication-with-your-redpitaya">
+<h3><span class="section-number">3.1.2. </span>Basic communication with your RedPitaya<a class="headerlink" href="#basic-communication-with-your-redpitaya" title="Link to this heading">¶</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Access the RedPitaya object in charge of communicating with the board</span>
+<span class="n">r</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">rp</span>
+
+<span class="c1">#check the value of input1</span>
+<span class="nb">print</span> <span class="n">r</span><span class="o">.</span><span class="n">scope</span><span class="o">.</span><span class="n">voltage1</span>
+</pre></div>
+</div>
+<p>With the last command, you have successfully retrieved a value from an
+FPGA register. This operation takes about 300 �s on my computer. So
+there is enough time to repeat the reading n times.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># see how the adc reading fluctuates over time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">pyplot</span> <span class="k">as</span> <span class="n">plt</span>
+<span class="n">times</span><span class="p">,</span> <span class="n">data</span> <span class="o">=</span> <span class="p">[],[]</span>
+<span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+<span class="n">n</span> <span class="o">=</span> <span class="mi">3000</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="n">times</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span><span class="o">-</span><span class="n">t0</span><span class="p">)</span>
+    <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">scope</span><span class="o">.</span><span class="n">voltage_in1</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Rough time to read one FPGA register: &quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span><span class="o">-</span><span class="n">t0</span><span class="p">)</span><span class="o">/</span><span class="n">n</span><span class="o">*</span><span class="mf">1e6</span><span class="p">,</span> <span class="s2">&quot;�s&quot;</span><span class="p">)</span>
+<span class="o">%</span><span class="n">matplotlib</span> <span class="n">inline</span>
+<span class="n">f</span><span class="p">,</span> <span class="n">axarr</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span> <span class="n">sharey</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">axarr</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">times</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;+&quot;</span><span class="p">)</span>
+<span class="n">axarr</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;ADC voltage vs time&quot;</span><span class="p">)</span>
+<span class="n">axarr</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span><span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">orientation</span><span class="o">=</span><span class="s2">&quot;horizontal&quot;</span><span class="p">)</span>
+<span class="n">axarr</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;ADC voltage histogram&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>You see that the input values are not exactly zero. This is normal with
+all RedPitayas as some offsets are hard to keep zero when the
+environment changes (temperature etc.). So we will have to compensate
+for the offsets with our software. Another thing is that you see quite a
+bit of scatter beetween the points - almost as much that you do not see
+that the datapoints are quantized. The conclusion here is that the input
+noise is typically not totally negligible. Therefore we will need to use
+every trick at hand to get optimal noise performance.</p>
+<p>After reading from the RedPitaya, let’s now try to write to the register
+controlling the first 8 yellow LED’s on the board. The number written to
+the LED register is displayed on the LED array in binary representation.
+You should see some fast flashing of the yellow leds for a few seconds
+when you execute the next block.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1">#blink some leds for 5 seconds</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">time</span><span class="w"> </span><span class="kn">import</span> <span class="n">sleep</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1025</span><span class="p">):</span>
+    <span class="n">r</span><span class="o">.</span><span class="n">hk</span><span class="o">.</span><span class="n">led</span><span class="o">=</span><span class="n">i</span>
+    <span class="n">sleep</span><span class="p">(</span><span class="mf">0.005</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># now feel free to play around a little to get familiar with binary representation by looking at the leds.</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">time</span><span class="w"> </span><span class="kn">import</span> <span class="n">sleep</span>
+<span class="n">r</span><span class="o">.</span><span class="n">hk</span><span class="o">.</span><span class="n">led</span> <span class="o">=</span> <span class="mb">0b00000001</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
+    <span class="n">r</span><span class="o">.</span><span class="n">hk</span><span class="o">.</span><span class="n">led</span> <span class="o">=</span> <span class="o">~</span><span class="n">r</span><span class="o">.</span><span class="n">hk</span><span class="o">.</span><span class="n">led</span><span class="o">&gt;&gt;</span><span class="mi">1</span>
+    <span class="n">sleep</span><span class="p">(</span><span class="mf">0.2</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">):</span>
+    <span class="n">r</span><span class="o">.</span><span class="n">hk</span><span class="o">.</span><span class="n">led</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">255</span><span class="p">)</span>
+    <span class="n">sleep</span><span class="p">(</span><span class="mf">0.02</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="redpitaya-or-hardware-modules">
+<h2><span class="section-number">3.2. </span>2 RedPitaya (or Hardware) modules<a class="headerlink" href="#redpitaya-or-hardware-modules" title="Link to this heading">¶</a></h2>
+<p>Let’s now look a bit closer at the class RedPitaya. Besides managing the
+communication with your board, it contains different modules that
+represent the different sections of the FPGA. You already encountered
+two of them in the example above: “hk” and “scope”. Here is the full
+list of modules:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">r</span><span class="o">.</span><span class="n">hk</span> <span class="c1">#&quot;housekeeping&quot; = LEDs and digital inputs/outputs</span>
+<span class="n">r</span><span class="o">.</span><span class="n">ams</span> <span class="c1">#&quot;analog mixed signals&quot; = auxiliary ADCs and DACs.</span>
+
+<span class="n">r</span><span class="o">.</span><span class="n">scope</span> <span class="c1">#oscilloscope interface</span>
+
+<span class="n">r</span><span class="o">.</span><span class="n">asg0</span> <span class="c1">#&quot;arbitrary signal generator&quot; channel 0</span>
+<span class="n">r</span><span class="o">.</span><span class="n">asg1</span> <span class="c1">#&quot;arbitrary signal generator&quot; channel 1</span>
+
+<span class="n">r</span><span class="o">.</span><span class="n">pid0</span> <span class="c1">#first of three PID modules</span>
+<span class="n">r</span><span class="o">.</span><span class="n">pid1</span>
+<span class="n">r</span><span class="o">.</span><span class="n">pid2</span>
+
+<span class="n">r</span><span class="o">.</span><span class="n">iq0</span> <span class="c1">#first of three I+Q quadrature demodulation/modulation modules</span>
+<span class="n">r</span><span class="o">.</span><span class="n">iq1</span>
+<span class="n">r</span><span class="o">.</span><span class="n">iq2</span>
+
+<span class="n">r</span><span class="o">.</span><span class="n">iir</span> <span class="c1">#&quot;infinite impulse response&quot; filter module that can realize complex transfer functions</span>
+</pre></div>
+</div>
+<section id="asg-and-scope-module">
+<h3><span class="section-number">3.2.1. </span>ASG and Scope module<a class="headerlink" href="#asg-and-scope-module" title="Link to this heading">¶</a></h3>
+</section>
+<section id="arbitrary-signal-generator">
+<h3><span class="section-number">3.2.2. </span>Arbitrary Signal Generator<a class="headerlink" href="#arbitrary-signal-generator" title="Link to this heading">¶</a></h3>
+</section>
+<section id="oscilloscope">
+<h3><span class="section-number">3.2.3. </span>Oscilloscope<a class="headerlink" href="#oscilloscope" title="Link to this heading">¶</a></h3>
+</section>
+<section id="pid-module">
+<h3><span class="section-number">3.2.4. </span>PID module<a class="headerlink" href="#pid-module" title="Link to this heading">¶</a></h3>
+</section>
+<section id="iq-module">
+<h3><span class="section-number">3.2.5. </span>IQ module<a class="headerlink" href="#iq-module" title="Link to this heading">¶</a></h3>
+</section>
+<section id="iir-module">
+<h3><span class="section-number">3.2.6. </span>IIR module<a class="headerlink" href="#iir-module" title="Link to this heading">¶</a></h3>
+</section>
+</section>
+<section id="pyrpl-or-software-modules">
+<h2><span class="section-number">3.3. </span>3 Pyrpl (or Software) modules<a class="headerlink" href="#pyrpl-or-software-modules" title="Link to this heading">¶</a></h2>
+<p>Software modules are modules that don’t have an FPGA counterpart. They are directly accessible at the root pyrpl object
+(no need to go through the redpitaya object). We have already encountered a software module above. Remember how we accessed the
+network analyzer module:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">HOSTNAME</span> <span class="o">=</span> <span class="s2">&quot;192.168.1.100&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pyrpl</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pyrpl</span>
+<span class="n">p</span> <span class="o">=</span> <span class="n">Pyrpl</span><span class="p">(</span><span class="n">hostname</span><span class="o">=</span><span class="n">HOSTNAME</span><span class="p">)</span>
+
+<span class="c1"># hardware modules are members of the redpitaya object</span>
+<span class="n">p</span><span class="o">.</span><span class="n">rp</span><span class="o">.</span><span class="n">iq0</span>
+
+<span class="c1"># software modules are members of the root pyrpl object</span>
+<span class="n">p</span><span class="o">.</span><span class="n">networkanalyzer</span>
+</pre></div>
+</div>
+<p>Software modules usually perform higher-level tasks than hardware modules. Moreover, accessing a hardware module without
+care could be harmful to some acquisition already running on the redpitaya. For this reason, it is advisable to access hardware modules
+via module managers only.</p>
+<section id="using-module-managers">
+<h3><span class="section-number">3.3.1. </span>Using Module Managers<a class="headerlink" href="#using-module-managers" title="Link to this heading">¶</a></h3>
+</section>
+<section id="spectrum-analyzer">
+<h3><span class="section-number">3.3.2. </span>Spectrum Analyzer<a class="headerlink" href="#spectrum-analyzer" title="Link to this heading">¶</a></h3>
+</section>
+<section id="lockbox">
+<h3><span class="section-number">3.3.3. </span>Lockbox<a class="headerlink" href="#lockbox" title="Link to this heading">¶</a></h3>
+<p>Coming soon</p>
+</section>
+</section>
+</section>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="_sources/api.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2014-2025, Leonhard Neuhaus, Samuel Deléglise, Michaël Croquette .<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 7.4.7.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>

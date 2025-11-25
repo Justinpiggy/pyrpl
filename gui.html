@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>2. GUI instruments manual &#8212; pyrpl 0.9.7.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="_static/bootstrap-sphinx.css?v=4468db6d" />
+    <link rel="stylesheet" type="text/css" href="_static/graphviz.css?v=fd3f3429" />
+    <script src="_static/documentation_options.js?v=cf93a8f2"></script>
+    <script src="_static/doctools.js?v=9a2dae69"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="icon" href="_static/icon.ico"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="3. API manual" href="api.html" />
+    <link rel="prev" title="1. Installation" href="installation.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script type="text/javascript" src="_static/js/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="_static/js/jquery-fix.js"></script>
+<script type="text/javascript" src="_static/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="_static/bootstrap-sphinx.js"></script>
+
+  </head><body>
+  
+
+  <style id="ribbon">
+    #forkongithub a{background:#c11;color:#fff;text-decoration:none;font-family:arial,sans-serif;text-align:center;font-weight:bold;padding:5px 40px;font-size:1rem;line-height:2rem;position:relative;transition:0.5s;}
+    #forkongithub a:hover{background:#1c1;color:#fff;}
+    #forkongithub a::before,
+    #forkongithub a::after{content:"";width:100%;display:block;position:absolute;top:1px;left:0;height:1px;background:#fff;}
+    #forkongithub a::after{bottom:1px;top:auto;}@media screen and (min-width:800px)
+    { #forkongithub{position:fixed;display:block;top:0;right:0;width:200px;overflow:hidden;height:200px;z-index:9999;}#forkongithub a{width:200px;position:absolute;top:45px;right:-45px;transform:rotate(45deg);-webkit-transform:rotate(45deg);-ms-transform:rotate(45deg);-moz-transform:rotate(45deg);-o-transform:rotate(45deg);box-shadow:4px 4px 10px rgba(0,0,0,0.8);}}
+  </style>
+  <span id="forkongithub"><a href="https://www.github.com/lneuhaus/pyrpl#fork-destination-box">Fork PyRPL on GitHub</a></span>
+
+  <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-102689373-2', 'auto');
+    ga('send', 'pageview');
+
+  </script>
+
+
+  <div id="navbar" class="navbar navbar-inverse navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="index.html">
+          PyRPL</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.9.7.0</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="index.html">Home</a></li>
+                <li><a href="installation.html">Installation</a></li>
+                <li><a href="#">Graphical user interface</a></li>
+                <li><a href="api.html">API</a></li>
+                <li><a href="basics.html">How PyRPL works</a></li>
+                <li><a href="developer_guide/index.html">Infos for Developers</a></li>
+            
+            
+              
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+      <div class="col-md-3">
+        <div id="sidebar" class="bs-sidenav" role="complementary"><ul>
+<li><a class="reference internal" href="#">2. GUI instruments manual</a><ul>
+<li><a class="reference internal" href="#video-tutorial">2.1. Video tutorial</a></li>
+<li><a class="reference internal" href="#starting-the-gui">2.2. Starting the GUI</a></li>
+<li><a class="reference internal" href="#a-typical-module-widget-pid-module">2.3. A typical module widget: PID module</a></li>
+<li><a class="reference internal" href="#acquisition-module-widgets">2.4. Acquisition Module Widgets</a><ul>
+<li><a class="reference internal" href="#scope-widget">2.4.1. Scope Widget</a></li>
+<li><a class="reference internal" href="#network-analyzer-widget">2.4.2. Network Analyzer Widget</a></li>
+<li><a class="reference internal" href="#spectrum-analyzer-widget">2.4.3. Spectrum Analyzer Widget</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#iq-widget">2.5. Iq Widget</a></li>
+<li><a class="reference internal" href="#lockbox-widget">2.6. Lockbox Widget</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    <div class="body col-md-9 content" role="main">
+      
+  <section id="gui-instruments-manual">
+<h1><span class="section-number">2. </span>GUI instruments manual<a class="headerlink" href="#gui-instruments-manual" title="Link to this heading">¶</a></h1>
+<p>In this section, we show how to control the main modules of Pyrpl with the Graphical User Interface (GUI).</p>
+<section id="video-tutorial">
+<h2><span class="section-number">2.1. </span>Video tutorial<a class="headerlink" href="#video-tutorial" title="Link to this heading">¶</a></h2>
+<p>Get started by watching the video tutorial below on locking a Michelson
+interferometer with PyRPL. The video covers:</p>
+<ul class="simple">
+<li><p>how to set up the hardware for a typical Red Pitaya use case (interferometer locking)</p></li>
+<li><p>how to get started by <a class="reference internal" href="#start-gui-label"><span class="std std-ref">Starting the GUI</span></a></p></li>
+<li><p>how to use the <a class="reference internal" href="#scope-widget-label"><span class="std std-ref">Scope Widget</span></a> and Arbitrary Signal Generator GUI</p></li>
+<li><p>how to set up and configure the <a class="reference internal" href="#lockbox-widget-label"><span class="std std-ref">Lockbox Widget</span></a></p></li>
+<li><p>how to measure a transfer function with the <a class="reference internal" href="#na-widget-label"><span class="std std-ref">Network Analyzer Widget</span></a></p></li>
+</ul>
+<iframe width="560" height="315" src="http://www.youtube.com/embed/WnFkz1adhgs?rel=0" frameborder="0" allowfullscreen></iframe></section>
+<section id="starting-the-gui">
+<span id="start-gui-label"></span><h2><span class="section-number">2.2. </span>Starting the GUI<a class="headerlink" href="#starting-the-gui" title="Link to this heading">¶</a></h2>
+<p>If you use the <a class="reference external" href="https://sourceforge.net/projects/pyrpl/files/">windows or linux binary files</a>,
+just launch the executable and the GUI should start. Passing the command-line
+argument <code class="code docutils literal notranslate"><span class="pre">--help</span></code> to the executable shows a list of optional
+command-line arguments.</p>
+<p>If instead you have <span class="xref std std-ref">a source code installation</span>,
+then you can either launch PyRPL from a terminal with</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>pyrpl<span class="w"> </span>example_filename
+</pre></div>
+</div>
+<p>or execute the following code block in Python:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># import pyrpl library</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyrpl</span>
+
+<span class="c1"># create a Pyrpl object and store the configuration in a file &#39;example_filename.yml&#39;</span>
+<span class="c1"># by default, the parameter &#39;gui&#39; is set to True</span>
+<span class="n">p</span> <span class="o">=</span> <span class="n">pyrpl</span><span class="o">.</span><span class="n">Pyrpl</span><span class="p">(</span><span class="n">config</span><span class="o">=</span><span class="s1">&#39;example_filename&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>If you are using the file ‘example_filename.yml’ for the first time, a screen will pop-up
+asking you to choose among the different RedPitayas connected to your local network. After that,
+the main Pyrpl widget should appear:</p>
+<a class="reference internal image-reference" href="_images/pyrpl_widget.jpg"><img alt="The main pyrpl widget" class="align-center" src="_images/pyrpl_widget.jpg" style="width: 60%;" />
+</a>
+<p>The main pyrpl widget is initially empty, however, you can use the “modules” menu to populate it
+with module widgets. The module widgets can be closed or reopened at any time, docked/undocked
+from the main module window by drag-and-drop on their sidebar, and their position on screen will be
+saved in the config file for the next startup.</p>
+<p>We explain the operation of the most useful module widgets in the following sections.</p>
+</section>
+<section id="a-typical-module-widget-pid-module">
+<span id="typical-widget-label"></span><h2><span class="section-number">2.3. </span>A typical module widget: PID module<a class="headerlink" href="#a-typical-module-widget-pid-module" title="Link to this heading">¶</a></h2>
+<p>The image below shows a typical module widget, here for the PID modules.</p>
+<a class="reference internal image-reference" href="_images/pid_widget.jpg"><img alt="A typical module widget" class="align-center" src="_images/pid_widget.jpg" style="width: 100%;" />
+</a>
+</section>
+<section id="acquisition-module-widgets">
+<span id="acquisition-widget-label"></span><h2><span class="section-number">2.4. </span>Acquisition Module Widgets<a class="headerlink" href="#acquisition-module-widgets" title="Link to this heading">¶</a></h2>
+<section id="scope-widget">
+<span id="scope-widget-label"></span><h3><span class="section-number">2.4.1. </span>Scope Widget<a class="headerlink" href="#scope-widget" title="Link to this heading">¶</a></h3>
+<p>The scope widget is represented in the image below.</p>
+<a class="reference internal image-reference" href="_images/scope_widget.jpg"><img alt="scope module widget" class="align-center" src="_images/scope_widget.jpg" style="width: 100%;" />
+</a>
+</section>
+<section id="network-analyzer-widget">
+<span id="na-widget-label"></span><h3><span class="section-number">2.4.2. </span>Network Analyzer Widget<a class="headerlink" href="#network-analyzer-widget" title="Link to this heading">¶</a></h3>
+<p>The network analyzer widget is represented in the image below.</p>
+<a class="reference internal image-reference" href="_images/network_analyzer_widget.jpg"><img alt="scope module widget" class="align-center" src="_images/network_analyzer_widget.jpg" style="width: 100%;" />
+</a>
+</section>
+<section id="spectrum-analyzer-widget">
+<span id="specan-widget-label"></span><h3><span class="section-number">2.4.3. </span>Spectrum Analyzer Widget<a class="headerlink" href="#spectrum-analyzer-widget" title="Link to this heading">¶</a></h3>
+<p>The spectrum analyzer widget is represented in the image below.</p>
+<a class="reference internal image-reference" href="_images/spectrum_analyzer_widget.jpg"><img alt="scope module widget" class="align-center" src="_images/spectrum_analyzer_widget.jpg" style="width: 100%;" />
+</a>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Because the spectrum analyzer uses the data sampled by the scope to perform measurements,
+it is not possible to use both instruments simultaneaously. When the spectrum-analyzer is running,
+the scope-widget appears greyed-out to show that it is not available.</p>
+</div>
+</section>
+</section>
+<section id="iq-widget">
+<span id="iq-widget-label"></span><h2><span class="section-number">2.5. </span>Iq Widget<a class="headerlink" href="#iq-widget" title="Link to this heading">¶</a></h2>
+<p>The iq widget is represented in the image below. A schematic of the internal connection of the IQ-module can be
+shown or hidden with the arrow button.</p>
+<a class="reference internal image-reference" href="_images/iq_widget.gif"><img alt="scope module widget" class="align-center" src="_images/iq_widget.gif" style="width: 100%;" />
+</a>
+</section>
+<section id="lockbox-widget">
+<span id="lockbox-widget-label"></span><h2><span class="section-number">2.6. </span>Lockbox Widget<a class="headerlink" href="#lockbox-widget" title="Link to this heading">¶</a></h2>
+<p>The lockbox widget is represented in the image below.</p>
+<a class="reference internal image-reference" href="_images/lockbox_widget.jpg"><img alt="lockbox module widget" class="align-center" src="_images/lockbox_widget.jpg" style="width: 100%;" />
+</a>
+</section>
+</section>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="_sources/gui.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2014-2025, Leonhard Neuhaus, Samuel Deléglise, Michaël Croquette .<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 7.4.7.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>

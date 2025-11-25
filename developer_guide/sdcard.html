@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>5.8. SD card preparation &#8212; pyrpl 0.9.7.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../_static/bootstrap-sphinx.css?v=4468db6d" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=fd3f3429" />
+    <script src="../_static/documentation_options.js?v=cf93a8f2"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="icon" href="../_static/icon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Full documentation structure" href="../contents.html" />
+    <link rel="prev" title="5.7.3. Prepare a new release" href="dist/release.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script type="text/javascript" src="../_static/js/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="../_static/js/jquery-fix.js"></script>
+<script type="text/javascript" src="../_static/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="../_static/bootstrap-sphinx.js"></script>
+
+  </head><body>
+  
+
+  <style id="ribbon">
+    #forkongithub a{background:#c11;color:#fff;text-decoration:none;font-family:arial,sans-serif;text-align:center;font-weight:bold;padding:5px 40px;font-size:1rem;line-height:2rem;position:relative;transition:0.5s;}
+    #forkongithub a:hover{background:#1c1;color:#fff;}
+    #forkongithub a::before,
+    #forkongithub a::after{content:"";width:100%;display:block;position:absolute;top:1px;left:0;height:1px;background:#fff;}
+    #forkongithub a::after{bottom:1px;top:auto;}@media screen and (min-width:800px)
+    { #forkongithub{position:fixed;display:block;top:0;right:0;width:200px;overflow:hidden;height:200px;z-index:9999;}#forkongithub a{width:200px;position:absolute;top:45px;right:-45px;transform:rotate(45deg);-webkit-transform:rotate(45deg);-ms-transform:rotate(45deg);-moz-transform:rotate(45deg);-o-transform:rotate(45deg);box-shadow:4px 4px 10px rgba(0,0,0,0.8);}}
+  </style>
+  <span id="forkongithub"><a href="https://www.github.com/lneuhaus/pyrpl#fork-destination-box">Fork PyRPL on GitHub</a></span>
+
+  <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-102689373-2', 'auto');
+    ga('send', 'pageview');
+
+  </script>
+
+
+  <div id="navbar" class="navbar navbar-inverse navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../index.html">
+          PyRPL</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.9.7.0</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../index.html">Home</a></li>
+                <li><a href="../installation.html">Installation</a></li>
+                <li><a href="../gui.html">Graphical user interface</a></li>
+                <li><a href="../api.html">API</a></li>
+                <li><a href="../basics.html">How PyRPL works</a></li>
+                <li><a href="index.html">Infos for Developers</a></li>
+            
+            
+              
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+      <div class="col-md-3">
+        <div id="sidebar" class="bs-sidenav" role="complementary"><ul>
+<li><a class="reference internal" href="#">5.8. SD card preparation</a><ul>
+<li><a class="reference internal" href="#option-1-flash-the-full-image-at-once">5.8.1. Option 1: flash the full image at once</a></li>
+<li><a class="reference internal" href="#option-2-format-and-copy-a-list-of-files-on-the-sd-card">5.8.2. Option 2: Format and copy a list of files on the SD card</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    <div class="body col-md-9 content" role="main">
+      
+  <section id="sd-card-preparation">
+<h1><span class="section-number">5.8. </span>SD card preparation<a class="headerlink" href="#sd-card-preparation" title="Link to this heading">¶</a></h1>
+<p>Option 0:
+Download and unzip the <a class="reference external" href="https://sourceforge.net/projects/pyrpl/files/SD_Card_RedPitayaOS_v0.92.img.zip/download">Red Pitaya OS Version 0.92 image</a>. Flash this image on a &gt;= 4 GB SD card using a tool like <a class="reference external" href="https://sourceforge.net/projects/win32diskimager/">Win32DiskImager</a>, and insert the card into your Red Pitaya.</p>
+<section id="option-1-flash-the-full-image-at-once">
+<h2><span class="section-number">5.8.1. </span>Option 1: flash the full image at once<a class="headerlink" href="#option-1-flash-the-full-image-at-once" title="Link to this heading">¶</a></h2>
+<p>For the SD card to be bootable by the redpitaya, several things need to be ensured (Fat32 formatting, boot flag on the right partition…), such that simply copying all required files onto the SD card is not enough to make it bootable.
+The simplest method is to copy bit by bit the content of an image file onto the sd card (including partition table and flags). On windows, this can be done with the software <a class="reference external" href="https://sourceforge.net/projects/win32diskimager/">Win32DiskImager</a>.
+The next section provides a detailed procedure to make the SD card bootable starting from the list of files to be copied.</p>
+</section>
+<section id="option-2-format-and-copy-a-list-of-files-on-the-sd-card">
+<h2><span class="section-number">5.8.2. </span>Option 2: Format and copy a list of files on the SD card<a class="headerlink" href="#option-2-format-and-copy-a-list-of-files-on-the-sd-card" title="Link to this heading">¶</a></h2>
+<p>The previous method can be problematic, for instance, if the capacity of the SD card is too small for the provided image file (Indeed, even empty space in the original 4 GB card has been included in the image file).
+Hence, it can be advantageous to copy the files individually on the SD card, however, we need to pay attention to make the SD-card bootable. For this we need a Linux system. The following procedure assumes an <a class="reference external" href="https://www.ubuntu.com/">Ubuntu</a> system installed on a <a class="reference external" href="https://www.virtualbox.org/">virtualbox</a>:</p>
+<ol class="arabic">
+<li><p>Open the ubuntu virtualbox on a computer equipped with a SD card reader.</p></li>
+<li><p>To make sure the SD card will be visible in the virtualbox, we need to go to configuration/usb and enable the sd card reader.</p></li>
+<li><p>Open the ubuntu virtual machine and install gparted and dosfstools with the commands:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">apt</span><span class="o">-</span><span class="n">get</span> <span class="n">install</span> <span class="n">gparted</span>
+<span class="n">sudo</span> <span class="n">apt</span><span class="o">-</span><span class="n">get</span> <span class="n">install</span> <span class="n">dosfstools</span>
+</pre></div>
+</div>
+</li>
+<li><p>Insert the sd card in the reader and launch gparted on the corresponding device (/dev/sdb in this case but the correct value can be found with “dmesg | tail”):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">gparted</span> <span class="o">/</span><span class="n">dev</span><span class="o">/</span><span class="n">sdb</span>
+</pre></div>
+</div>
+</li>
+<li><p>In the gparted interface, delete all existing partitions, create a partition map if there is not already one, then create 1 fat32 partition with the maximum space available. To execute these operations, it is necessary to unmount the corresponding partitions (can be done within gparted).</p></li>
+<li><p>Once formatted, right click to set the flag “boot” to that partition.</p></li>
+<li><p>Close gparted, remount the sd card (by simply unplugging/replugging it), and copy all files at the root of the sd card (normally mounted somewhere in /media/xxxx)</p></li>
+</ol>
+</section>
+</section>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="../_sources/developer_guide/sdcard.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2014-2025, Leonhard Neuhaus, Samuel Deléglise, Michaël Croquette .<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 7.4.7.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>

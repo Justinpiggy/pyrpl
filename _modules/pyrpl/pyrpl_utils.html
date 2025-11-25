@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pyrpl.pyrpl_utils &#8212; pyrpl 0.9.7.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../_static/bootstrap-sphinx.css?v=4468db6d" />
+    <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=fd3f3429" />
+    <script src="../../_static/documentation_options.js?v=cf93a8f2"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="icon" href="../../_static/icon.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script type="text/javascript" src="../../_static/js/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="../../_static/js/jquery-fix.js"></script>
+<script type="text/javascript" src="../../_static/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="../../_static/bootstrap-sphinx.js"></script>
+
+  </head><body>
+  
+
+  <style id="ribbon">
+    #forkongithub a{background:#c11;color:#fff;text-decoration:none;font-family:arial,sans-serif;text-align:center;font-weight:bold;padding:5px 40px;font-size:1rem;line-height:2rem;position:relative;transition:0.5s;}
+    #forkongithub a:hover{background:#1c1;color:#fff;}
+    #forkongithub a::before,
+    #forkongithub a::after{content:"";width:100%;display:block;position:absolute;top:1px;left:0;height:1px;background:#fff;}
+    #forkongithub a::after{bottom:1px;top:auto;}@media screen and (min-width:800px)
+    { #forkongithub{position:fixed;display:block;top:0;right:0;width:200px;overflow:hidden;height:200px;z-index:9999;}#forkongithub a{width:200px;position:absolute;top:45px;right:-45px;transform:rotate(45deg);-webkit-transform:rotate(45deg);-ms-transform:rotate(45deg);-moz-transform:rotate(45deg);-o-transform:rotate(45deg);box-shadow:4px 4px 10px rgba(0,0,0,0.8);}}
+  </style>
+  <span id="forkongithub"><a href="https://www.github.com/lneuhaus/pyrpl#fork-destination-box">Fork PyRPL on GitHub</a></span>
+
+  <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-102689373-2', 'auto');
+    ga('send', 'pageview');
+
+  </script>
+
+
+  <div id="navbar" class="navbar navbar-inverse navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../../index.html">
+          PyRPL</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.9.7.0</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../../index.html">Home</a></li>
+                <li><a href="../../installation.html">Installation</a></li>
+                <li><a href="../../gui.html">Graphical user interface</a></li>
+                <li><a href="../../api.html">API</a></li>
+                <li><a href="../../basics.html">How PyRPL works</a></li>
+                <li><a href="../../developer_guide/index.html">Infos for Developers</a></li>
+            
+            
+              
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+      <div class="col-md-3">
+        <div id="sidebar" class="bs-sidenav" role="complementary">
+        </div>
+      </div>
+    <div class="body col-md-9 content" role="main">
+      
+  <h1>Source code for pyrpl.pyrpl_utils</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">timeit</span><span class="w"> </span><span class="kn">import</span> <span class="n">default_timer</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">OrderedDict</span><span class="p">,</span> <span class="n">Counter</span>
+
+
+<div class="viewcode-block" id="isnotebook">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.isnotebook">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">isnotebook</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; returns True if Jupyter notebook is runnung &quot;&quot;&quot;</span>
+    <span class="c1"># from https://stackoverflow.com/questions/15411967/how-can-i-check-if-code-is-executed-in-the-ipython-notebook</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">shell</span> <span class="o">=</span> <span class="n">get_ipython</span><span class="p">()</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span>
+        <span class="k">if</span> <span class="n">shell</span> <span class="o">==</span> <span class="s1">&#39;ZMQInteractiveShell&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>   <span class="c1"># Jupyter notebook or qtconsole</span>
+        <span class="k">elif</span> <span class="n">shell</span> <span class="o">==</span> <span class="s1">&#39;TerminalInteractiveShell&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>  <span class="c1"># Terminal running IPython</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>  <span class="c1"># Other type (?)</span>
+    <span class="k">except</span> <span class="ne">NameError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>      <span class="c1"># Probably standard Python interpreter</span></div>
+
+
+
+<div class="viewcode-block" id="time">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.time">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">time</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; returns the time. used instead of time.time for rapid portability&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">default_timer</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="get_unique_name_list_from_class_list">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.get_unique_name_list_from_class_list">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_unique_name_list_from_class_list</span><span class="p">(</span><span class="n">cls_list</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    returns a list of names using cls.name if unique or cls.name1, cls.name2... otherwise.</span>
+<span class="sd">    Order of the name list matches order of cls_list, such that iterating over zip(cls_list, name_list) is OK</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># cls_list is typically</span>
+    <span class="c1"># cls_modules = [rp.HK, rp.AMS, rp.Scope, rp.Sampler, rp.Asg1, rp.Asg2] + \</span>
+    <span class="c1">#              [rp.AuxOutput] * 2 + [rp.IQ] * 3 + [rp.Pid] * 4 + [rp.IIR]</span>
+
+    <span class="c1"># first, map from list of classes to a list of corresponding names</span>
+    <span class="c1"># e.g. all_names = [&#39;hk, ..., &#39;pwm&#39;, &#39;pwm&#39;, ...</span>
+    <span class="n">all_names</span> <span class="o">=</span> <span class="p">[</span><span class="bp">cls</span><span class="o">.</span><span class="vm">__name__</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="bp">cls</span> <span class="ow">in</span> <span class="n">cls_list</span><span class="p">]</span>
+    <span class="n">final_names</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">all_names</span><span class="p">:</span>
+        <span class="c1"># how many times does the name occur?</span>
+        <span class="n">occurences</span> <span class="o">=</span> <span class="n">all_names</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">occurences</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="c1"># for single names, leave as-is</span>
+            <span class="n">final_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># for multiple name, assign name+str(lowest_free_number)</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">occurences</span><span class="p">):</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="ow">in</span> <span class="n">final_names</span><span class="p">:</span>
+                    <span class="n">final_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+                    <span class="k">break</span>
+    <span class="k">return</span> <span class="n">final_names</span></div>
+
+
+
+<div class="viewcode-block" id="get_class_name_from_module_name">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.get_class_name_from_module_name">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_class_name_from_module_name</span><span class="p">(</span><span class="n">module_name</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; returns the class name corresponding to a module_name &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">module_name</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="o">+</span> <span class="p">(</span><span class="n">module_name</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s1">&#39;1234567890&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="get_base_module_class">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.get_base_module_class">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_base_module_class</span><span class="p">(</span><span class="n">module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; returns the base class of module that has the same name as module &quot;&quot;&quot;</span>
+    <span class="n">base_module_class_name</span> <span class="o">=</span> <span class="n">get_class_name_from_module_name</span><span class="p">(</span><span class="n">module</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">base_module_class</span> <span class="ow">in</span> <span class="nb">type</span><span class="p">(</span><span class="n">module</span><span class="p">)</span><span class="o">.</span><span class="vm">__mro__</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">base_module_class</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">==</span> <span class="n">base_module_class_name</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">base_module_class</span></div>
+
+
+
+<span class="c1"># see http://stackoverflow.com/questions/3862310/how-can-i-find-all-subclasses-of-a-class-given-its-name</span>
+<div class="viewcode-block" id="all_subclasses">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.all_subclasses">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">all_subclasses</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; returns a list of all subclasses of cls &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">__subclasses__</span><span class="p">()</span> <span class="o">+</span> <span class="p">[</span><span class="n">g</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="bp">cls</span><span class="o">.</span><span class="n">__subclasses__</span><span class="p">()</span>
+                                   <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">all_subclasses</span><span class="p">(</span><span class="n">s</span><span class="p">)]</span></div>
+
+
+
+<div class="viewcode-block" id="recursive_getattr">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.recursive_getattr">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">recursive_getattr</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; returns root.path (i.e. root.attr1.attr2) &quot;&quot;&quot;</span>
+    <span class="n">attribute</span> <span class="o">=</span> <span class="n">root</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+            <span class="n">attribute</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">attribute</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">attribute</span></div>
+
+
+
+<div class="viewcode-block" id="recursive_setattr">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.recursive_setattr">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">recursive_setattr</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; returns root.path = value (i.e. root.attr1.attr2 = value) &quot;&quot;&quot;</span>
+    <span class="n">attribute</span> <span class="o">=</span> <span class="n">root</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+        <span class="n">attribute</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">attribute</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+    <span class="nb">setattr</span><span class="p">(</span><span class="n">attribute</span><span class="p">,</span> <span class="n">names</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">value</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="setloglevel">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.setloglevel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">setloglevel</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="s1">&#39;info&#39;</span><span class="p">,</span> <span class="n">loggername</span><span class="o">=</span><span class="s1">&#39;pyrpl&#39;</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; sets the log level to the one specified in config file&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">loglevels</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;notset&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">NOTSET</span><span class="p">,</span>
+                     <span class="s2">&quot;debug&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">,</span>
+                     <span class="s2">&quot;info&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span>
+                     <span class="s2">&quot;warning&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">WARNING</span><span class="p">,</span>
+                     <span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">ERROR</span><span class="p">,</span>
+                     <span class="s2">&quot;critical&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">CRITICAL</span><span class="p">}</span>
+        <span class="n">level</span> <span class="o">=</span> <span class="n">loglevels</span><span class="p">[</span><span class="n">level</span><span class="p">]</span>
+    <span class="k">except</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">loggername</span><span class="p">)</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">level</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="DuplicateFilter">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.DuplicateFilter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DuplicateFilter</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Filter</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Prevent multiple repeated logging message from polluting the console</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="DuplicateFilter.filter">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.DuplicateFilter.filter">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record</span><span class="p">):</span>
+        <span class="c1"># add other fields if you need more granular comparison, depends on your app</span>
+        <span class="n">current_log</span> <span class="o">=</span> <span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">record</span><span class="o">.</span><span class="n">levelno</span><span class="p">,</span> <span class="n">record</span><span class="o">.</span><span class="n">msg</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">current_log</span> <span class="o">!=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;last_log&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">last_log</span> <span class="o">=</span> <span class="n">current_log</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="sorted_dict">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.sorted_dict">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">sorted_dict</span><span class="p">(</span><span class="n">dict_to_sort</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_by_values</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">dict_to_sort</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">dict_to_sort</span> <span class="o">=</span> <span class="n">kwargs</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">sort_by_values</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">OrderedDict</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">dict_to_sort</span><span class="o">.</span><span class="n">items</span><span class="p">()))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">OrderedDict</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">dict_to_sort</span><span class="o">.</span><span class="n">items</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span></div>
+
+
+
+<div class="viewcode-block" id="update_with_typeconversion">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.update_with_typeconversion">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">update_with_typeconversion</span><span class="p">(</span><span class="n">dictionary</span><span class="p">,</span> <span class="n">update</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">update</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">dictionary</span><span class="p">:</span>
+            <span class="c1"># perform type conversion if appropriate</span>
+            <span class="n">v</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">dictionary</span><span class="p">[</span><span class="n">k</span><span class="p">])(</span><span class="n">v</span><span class="p">)</span>
+        <span class="n">dictionary</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+    <span class="k">return</span> <span class="n">dictionary</span></div>
+
+
+
+<div class="viewcode-block" id="unique_list">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.unique_list">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">unique_list</span><span class="p">(</span><span class="n">nonunique_list</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; Returns a list where each element of nonunique_list occurs exactly once.</span>
+<span class="sd">    The last occurence of an element defines its position in the returned list.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">unique_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">attr</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">nonunique_list</span><span class="p">):</span>
+        <span class="c1"># remove all previous occurences</span>
+        <span class="k">if</span> <span class="n">attr</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">unique_list</span><span class="p">:</span>
+            <span class="n">unique_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">attr</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">unique_list</span></div>
+
+
+
+<div class="viewcode-block" id="Bijection">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.Bijection">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Bijection</span><span class="p">(</span><span class="nb">dict</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; This class defines a bijection object based on dict</span>
+
+<span class="sd">    It can be used exactly like dict, but additionally has a property</span>
+<span class="sd">    &#39;inverse&#39; which contains the inverted {value: key} dict. &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Bijection</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inverse</span> <span class="o">=</span> <span class="p">{</span><span class="n">v</span><span class="p">:</span> <span class="n">k</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Bijection</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__setitem__</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inverse</span><span class="p">[</span><span class="n">value</span><span class="p">]</span> <span class="o">=</span> <span class="n">key</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inverse</span><span class="o">.</span><span class="fm">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="fm">__getitem__</span><span class="p">(</span><span class="n">key</span><span class="p">))</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Bijection</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__delitem__</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Bijection.pop">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.Bijection.pop">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">pop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inverse</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="fm">__getitem__</span><span class="p">(</span><span class="n">key</span><span class="p">))</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Bijection</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">key</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Bijection.update">
+<a class="viewcode-back" href="../../indices_and_tables/pyrpl.html#pyrpl.pyrpl_utils.Bijection.update">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Bijection</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inverse</span> <span class="o">=</span> <span class="p">{</span><span class="n">v</span><span class="p">:</span> <span class="n">k</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span></div>
+</div>
+
+</pre></div>
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+      
+    </p>
+    <p>
+        &copy; Copyright 2014-2025, Leonhard Neuhaus, Samuel Deléglise, Michaël Croquette .<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 7.4.7.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>

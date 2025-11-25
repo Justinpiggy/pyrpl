@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>pyrpl &#8212; pyrpl 0.9.7.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../_static/bootstrap-sphinx.css?v=4468db6d" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=fd3f3429" />
+    <script src="../_static/documentation_options.js?v=cf93a8f2"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="icon" href="../_static/icon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script type="text/javascript" src="../_static/js/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="../_static/js/jquery-fix.js"></script>
+<script type="text/javascript" src="../_static/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="../_static/bootstrap-sphinx.js"></script>
+
+  </head><body>
+  
+
+  <style id="ribbon">
+    #forkongithub a{background:#c11;color:#fff;text-decoration:none;font-family:arial,sans-serif;text-align:center;font-weight:bold;padding:5px 40px;font-size:1rem;line-height:2rem;position:relative;transition:0.5s;}
+    #forkongithub a:hover{background:#1c1;color:#fff;}
+    #forkongithub a::before,
+    #forkongithub a::after{content:"";width:100%;display:block;position:absolute;top:1px;left:0;height:1px;background:#fff;}
+    #forkongithub a::after{bottom:1px;top:auto;}@media screen and (min-width:800px)
+    { #forkongithub{position:fixed;display:block;top:0;right:0;width:200px;overflow:hidden;height:200px;z-index:9999;}#forkongithub a{width:200px;position:absolute;top:45px;right:-45px;transform:rotate(45deg);-webkit-transform:rotate(45deg);-ms-transform:rotate(45deg);-moz-transform:rotate(45deg);-o-transform:rotate(45deg);box-shadow:4px 4px 10px rgba(0,0,0,0.8);}}
+  </style>
+  <span id="forkongithub"><a href="https://www.github.com/lneuhaus/pyrpl#fork-destination-box">Fork PyRPL on GitHub</a></span>
+
+  <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-102689373-2', 'auto');
+    ga('send', 'pageview');
+
+  </script>
+
+
+  <div id="navbar" class="navbar navbar-inverse navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../index.html">
+          PyRPL</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.9.7.0</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../index.html">Home</a></li>
+                <li><a href="../installation.html">Installation</a></li>
+                <li><a href="../gui.html">Graphical user interface</a></li>
+                <li><a href="../api.html">API</a></li>
+                <li><a href="../basics.html">How PyRPL works</a></li>
+                <li><a href="../developer_guide/index.html">Infos for Developers</a></li>
+            
+            
+              
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+      <div class="col-md-3">
+        <div id="sidebar" class="bs-sidenav" role="complementary"><ul>
+<li><a class="reference internal" href="#">pyrpl</a></li>
+</ul>
+
+        </div>
+      </div>
+    <div class="body col-md-9 content" role="main">
+      
+  <section id="pyrpl">
+<h1>pyrpl<a class="headerlink" href="#pyrpl" title="Link to this heading">¶</a></h1>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="pyrpl.html">pyrpl package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#subpackages">Subpackages</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.hardware_modules.html">pyrpl.hardware_modules package</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#subpackages">Subpackages</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#submodules">Submodules</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#pyrpl-hardware-modules-ams-module">pyrpl.hardware_modules.ams module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#pyrpl-hardware-modules-asg-module">pyrpl.hardware_modules.asg module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#pyrpl-hardware-modules-dsp-module">pyrpl.hardware_modules.dsp module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#pyrpl-hardware-modules-filter-module">pyrpl.hardware_modules.filter module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#pyrpl-hardware-modules-hk-module">pyrpl.hardware_modules.hk module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#pyrpl-hardware-modules-iq-module">pyrpl.hardware_modules.iq module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#pyrpl-hardware-modules-pid-module">pyrpl.hardware_modules.pid module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#pyrpl-hardware-modules-pwm-module">pyrpl.hardware_modules.pwm module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#pyrpl-hardware-modules-sampler-module">pyrpl.hardware_modules.sampler module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#pyrpl-hardware-modules-scope-module">pyrpl.hardware_modules.scope module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#pyrpl-hardware-modules-trig-module">pyrpl.hardware_modules.trig module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.hardware_modules.html#module-contents">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.software_modules.html">pyrpl.software_modules package</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.software_modules.html#subpackages">Subpackages</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.software_modules.html#submodules">Submodules</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.software_modules.html#pyrpl-software-modules-curve-viewer-module">pyrpl.software_modules.curve_viewer module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.software_modules.html#pyrpl-software-modules-loop-module">pyrpl.software_modules.loop module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.software_modules.html#pyrpl-software-modules-module-managers-module">pyrpl.software_modules.module_managers module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.software_modules.html#pyrpl-software-modules-network-analyzer-module">pyrpl.software_modules.network_analyzer module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.software_modules.html#pyrpl-software-modules-pyrpl-config-module">pyrpl.software_modules.pyrpl_config module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.software_modules.html#pyrpl-software-modules-software-pid-module">pyrpl.software_modules.software_pid module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.software_modules.html#pyrpl-software-modules-spectrum-analyzer-module">pyrpl.software_modules.spectrum_analyzer module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.software_modules.html#module-contents">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.test.html">pyrpl.test package</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#subpackages">Subpackages</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#submodules">Submodules</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#module-pyrpl.test.debug_timer">pyrpl.test.debug_timer module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-attribute-module">pyrpl.test.test_attribute module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-base-module">pyrpl.test.test_base module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-example-module">pyrpl.test.test_example module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-load-save-module">pyrpl.test.test_load_save module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-lockbox-module">pyrpl.test.test_lockbox module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-memory-module">pyrpl.test.test_memory module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-module-widgets-module">pyrpl.test.test_module_widgets module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-na-module">pyrpl.test.test_na module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-ownership-module">pyrpl.test.test_ownership module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-proxyproperty-module">pyrpl.test.test_proxyproperty module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-pyqtgraph-benchmark-module">pyrpl.test.test_pyqtgraph_benchmark module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-redpitaya-module">pyrpl.test.test_redpitaya module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-registers-module">pyrpl.test.test_registers module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#pyrpl-test-test-spectrum-analyzer-module">pyrpl.test.test_spectrum_analyzer module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.test.html#module-pyrpl.test">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.widgets.html">pyrpl.widgets package</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.widgets.html#subpackages">Subpackages</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.widgets.html#submodules">Submodules</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.widgets.html#pyrpl-widgets-attribute-widgets-module">pyrpl.widgets.attribute_widgets module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.widgets.html#pyrpl-widgets-pyrpl-widget-module">pyrpl.widgets.pyrpl_widget module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.widgets.html#module-pyrpl.widgets.spinbox">pyrpl.widgets.spinbox module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.widgets.html#module-pyrpl.widgets.startup_widget">pyrpl.widgets.startup_widget module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.widgets.html#module-pyrpl.widgets.yml_editor">pyrpl.widgets.yml_editor module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.widgets.html#module-pyrpl.widgets">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#pyrpl-acquisition-module-module">pyrpl.acquisition_module module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#pyrpl-async-utils-module">pyrpl.async_utils module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#pyrpl-attributes-module">pyrpl.attributes module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#pyrpl-curvedb-module">pyrpl.curvedb module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#module-pyrpl.errors">pyrpl.errors module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.errors.ExpectedPyrplError"><code class="docutils literal notranslate"><span class="pre">ExpectedPyrplError</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.errors.ExpectedPyrplError.ENDC"><code class="docutils literal notranslate"><span class="pre">ExpectedPyrplError.ENDC</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.errors.ExpectedPyrplError.STARTC"><code class="docutils literal notranslate"><span class="pre">ExpectedPyrplError.STARTC</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.errors.ExpectedPyrplError.pyrpl_error_message"><code class="docutils literal notranslate"><span class="pre">ExpectedPyrplError.pyrpl_error_message</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.errors.NotReadyError"><code class="docutils literal notranslate"><span class="pre">NotReadyError</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.errors.UnexpectedPyrplError"><code class="docutils literal notranslate"><span class="pre">UnexpectedPyrplError</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.errors.UnexpectedPyrplError.ENDC"><code class="docutils literal notranslate"><span class="pre">UnexpectedPyrplError.ENDC</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.errors.UnexpectedPyrplError.STARTC"><code class="docutils literal notranslate"><span class="pre">UnexpectedPyrplError.STARTC</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.errors.UnexpectedPyrplError.pyrpl_error_message"><code class="docutils literal notranslate"><span class="pre">UnexpectedPyrplError.pyrpl_error_message</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#pyrpl-memory-module">pyrpl.memory module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#pyrpl-module-attributes-module">pyrpl.module_attributes module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#pyrpl-modules-module">pyrpl.modules module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#pyrpl-pyrpl-module">pyrpl.pyrpl module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#module-pyrpl.pyrpl_utils">pyrpl.pyrpl_utils module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.Bijection"><code class="docutils literal notranslate"><span class="pre">Bijection</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.Bijection.pop"><code class="docutils literal notranslate"><span class="pre">Bijection.pop()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.Bijection.update"><code class="docutils literal notranslate"><span class="pre">Bijection.update()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.DuplicateFilter"><code class="docutils literal notranslate"><span class="pre">DuplicateFilter</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.DuplicateFilter.filter"><code class="docutils literal notranslate"><span class="pre">DuplicateFilter.filter()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.all_subclasses"><code class="docutils literal notranslate"><span class="pre">all_subclasses()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.get_base_module_class"><code class="docutils literal notranslate"><span class="pre">get_base_module_class()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.get_class_name_from_module_name"><code class="docutils literal notranslate"><span class="pre">get_class_name_from_module_name()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.get_unique_name_list_from_class_list"><code class="docutils literal notranslate"><span class="pre">get_unique_name_list_from_class_list()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.isnotebook"><code class="docutils literal notranslate"><span class="pre">isnotebook()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.recursive_getattr"><code class="docutils literal notranslate"><span class="pre">recursive_getattr()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.recursive_setattr"><code class="docutils literal notranslate"><span class="pre">recursive_setattr()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.setloglevel"><code class="docutils literal notranslate"><span class="pre">setloglevel()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.sorted_dict"><code class="docutils literal notranslate"><span class="pre">sorted_dict()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.time"><code class="docutils literal notranslate"><span class="pre">time()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.unique_list"><code class="docutils literal notranslate"><span class="pre">unique_list()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.pyrpl_utils.update_with_typeconversion"><code class="docutils literal notranslate"><span class="pre">update_with_typeconversion()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#pyrpl-redpitaya-module">pyrpl.redpitaya module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#pyrpl-redpitaya-client-module">pyrpl.redpitaya_client module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#pyrpl-sound-module">pyrpl.sound module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#module-pyrpl.sshshell">pyrpl.sshshell module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="pyrpl.html#pyrpl.sshshell.SshShell"><code class="docutils literal notranslate"><span class="pre">SshShell</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.sshshell.SshShell.ask"><code class="docutils literal notranslate"><span class="pre">SshShell.ask()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.sshshell.SshShell.askraw"><code class="docutils literal notranslate"><span class="pre">SshShell.askraw()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.sshshell.SshShell.endapp"><code class="docutils literal notranslate"><span class="pre">SshShell.endapp()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.sshshell.SshShell.get_mac_addresses"><code class="docutils literal notranslate"><span class="pre">SshShell.get_mac_addresses()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.sshshell.SshShell.read"><code class="docutils literal notranslate"><span class="pre">SshShell.read()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.sshshell.SshShell.read_nbytes"><code class="docutils literal notranslate"><span class="pre">SshShell.read_nbytes()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.sshshell.SshShell.reboot"><code class="docutils literal notranslate"><span class="pre">SshShell.reboot()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.sshshell.SshShell.shutdown"><code class="docutils literal notranslate"><span class="pre">SshShell.shutdown()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.sshshell.SshShell.startscp"><code class="docutils literal notranslate"><span class="pre">SshShell.startscp()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyrpl.html#pyrpl.sshshell.SshShell.write"><code class="docutils literal notranslate"><span class="pre">SshShell.write()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="pyrpl.html#module-pyrpl">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="../_sources/indices_and_tables/modules.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2014-2025, Leonhard Neuhaus, Samuel Deléglise, Michaël Croquette .<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 7.4.7.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>

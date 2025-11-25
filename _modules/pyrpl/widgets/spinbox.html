@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pyrpl.widgets.spinbox &#8212; pyrpl 0.9.7.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/bootstrap-sphinx.css?v=4468db6d" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=fd3f3429" />
+    <script src="../../../_static/documentation_options.js?v=cf93a8f2"></script>
+    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="icon" href="../../../_static/icon.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script type="text/javascript" src="../../../_static/js/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="../../../_static/js/jquery-fix.js"></script>
+<script type="text/javascript" src="../../../_static/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="../../../_static/bootstrap-sphinx.js"></script>
+
+  </head><body>
+  
+
+  <style id="ribbon">
+    #forkongithub a{background:#c11;color:#fff;text-decoration:none;font-family:arial,sans-serif;text-align:center;font-weight:bold;padding:5px 40px;font-size:1rem;line-height:2rem;position:relative;transition:0.5s;}
+    #forkongithub a:hover{background:#1c1;color:#fff;}
+    #forkongithub a::before,
+    #forkongithub a::after{content:"";width:100%;display:block;position:absolute;top:1px;left:0;height:1px;background:#fff;}
+    #forkongithub a::after{bottom:1px;top:auto;}@media screen and (min-width:800px)
+    { #forkongithub{position:fixed;display:block;top:0;right:0;width:200px;overflow:hidden;height:200px;z-index:9999;}#forkongithub a{width:200px;position:absolute;top:45px;right:-45px;transform:rotate(45deg);-webkit-transform:rotate(45deg);-ms-transform:rotate(45deg);-moz-transform:rotate(45deg);-o-transform:rotate(45deg);box-shadow:4px 4px 10px rgba(0,0,0,0.8);}}
+  </style>
+  <span id="forkongithub"><a href="https://www.github.com/lneuhaus/pyrpl#fork-destination-box">Fork PyRPL on GitHub</a></span>
+
+  <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-102689373-2', 'auto');
+    ga('send', 'pageview');
+
+  </script>
+
+
+  <div id="navbar" class="navbar navbar-inverse navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../../../index.html">
+          PyRPL</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.9.7.0</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../../../index.html">Home</a></li>
+                <li><a href="../../../installation.html">Installation</a></li>
+                <li><a href="../../../gui.html">Graphical user interface</a></li>
+                <li><a href="../../../api.html">API</a></li>
+                <li><a href="../../../basics.html">How PyRPL works</a></li>
+                <li><a href="../../../developer_guide/index.html">Infos for Developers</a></li>
+            
+            
+              
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../../../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+      <div class="col-md-3">
+        <div id="sidebar" class="bs-sidenav" role="complementary">
+        </div>
+      </div>
+    <div class="body col-md-9 content" role="main">
+      
+  <h1>Source code for pyrpl.widgets.spinbox</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qtpy</span><span class="w"> </span><span class="kn">import</span> <span class="n">QtCore</span><span class="p">,</span> <span class="n">QtWidgets</span><span class="p">,</span> <span class="n">QtGui</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+
+<span class="n">integer_types</span> <span class="o">=</span> <span class="p">(</span><span class="nb">int</span><span class="p">,)</span>
+
+
+<div class="viewcode-block" id="NumberSpinBox">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">NumberSpinBox</span><span class="p">(</span><span class="n">QtWidgets</span><span class="o">.</span><span class="n">QWidget</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Base class for spinbox with numerical value.</span>
+
+<span class="sd">    The button can be either in log_increment mode, or linear increment.</span>
+<span class="sd">       - In log_increment: the halflife_seconds value determines how long it</span>
+<span class="sd">         takes when the user keeps clicking on the &quot;*&quot;/&quot;/&quot; buttons to change</span>
+<span class="sd">         the value by a factor 2. Since the underlying register is assumed to</span>
+<span class="sd">         be represented by an int, its values are separated by a minimal</span>
+<span class="sd">         separation, called &quot;increment&quot;. The time to wait before refreshing</span>
+<span class="sd">         the value is adjusted automatically so that the log behavior is still</span>
+<span class="sd">         correct, even when the value becomes comparable to the increment.</span>
+<span class="sd">       - In linear increment, the value is immediately incremented by the</span>
+<span class="sd">        increment, then, nothing happens during a time given by</span>
+<span class="sd">        timer_initial_latency. Only after that the value is incremented by</span>
+<span class="sd">        &quot;increment&quot; every timer_min_interval.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">MOUSE_WHEEL_ACTIVATED</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">value_changed</span> <span class="o">=</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Signal</span><span class="p">()</span>
+    <span class="n">selected</span> <span class="o">=</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Signal</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
+    <span class="c1"># timeouts for updating values when mouse button / key is pessed</span>
+    <span class="n">change_interval</span> <span class="o">=</span> <span class="mf">0.02</span>
+    <span class="n">_change_initial_latency</span> <span class="o">=</span> <span class="mf">0.1</span> <span class="c1"># 100 ms before starting to update continuously.</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">change_initial_latency</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot; latency for continuous update when a button is pressed &quot;&quot;&quot;</span>
+        <span class="c1"># if sigleStep is zero, there is no need to wait for continuous update</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">singleStep</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_change_initial_latency</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+<div class="viewcode-block" id="NumberSpinBox.forward_to_subspinboxes">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.forward_to_subspinboxes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward_to_subspinboxes</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        a decorator that forwards function calls to subspinboxes</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># in base class, the trivial forwarder is chosen</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">func_wrapper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">func_wrapper</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">increment</span><span class="o">=</span><span class="mf">2.</span><span class="o">**</span><span class="p">(</span><span class="o">-</span><span class="mi">13</span><span class="p">),</span>
+                 <span class="n">log_increment</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">halflife_seconds</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">per_second</span><span class="o">=</span><span class="mf">0.2</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param label: label of the button</span>
+<span class="sd">        :param min: min value</span>
+<span class="sd">        :param max: max value</span>
+<span class="sd">        :param increment: increment of the underlying register</span>
+<span class="sd">        :param log_increment: boolean: when buttons up/down are pressed, should the value change linearly or log</span>
+<span class="sd">        :param halflife_seconds: when button is in log, how long to change the value by a factor 2.</span>
+<span class="sd">        :param per_second: when button is in lin, how long to change the value by 1 unit.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">NumberSpinBox</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="vm">__name__</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_val</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># internal storage for value with best-possible accuracy</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">labeltext</span> <span class="o">=</span> <span class="n">label</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_increment</span> <span class="o">=</span> <span class="n">log_increment</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_log_increment</span> <span class="o">=</span> <span class="n">log_increment</span>  <span class="c1"># for ComplexSpinbox</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">minimum</span> <span class="o">=</span> <span class="nb">min</span>  <span class="c1"># imitates original QSpinBox API</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">maximum</span> <span class="o">=</span> <span class="nb">max</span>  <span class="c1"># imitates original QSpinBox API</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">halflife_seconds</span> <span class="o">=</span> <span class="n">halflife_seconds</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_halflife_seconds</span> <span class="o">=</span> <span class="n">halflife_seconds</span>  <span class="c1"># for ComplexSpinbox</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">per_second</span> <span class="o">=</span> <span class="n">per_second</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">singleStep</span> <span class="o">=</span> <span class="n">increment</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">change_timer</span> <span class="o">=</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">QTimer</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">change_timer</span><span class="o">.</span><span class="n">setSingleShot</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">change_timer</span><span class="o">.</span><span class="n">setInterval</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">change_interval</span><span class="o">*</span><span class="mi">1000</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">change_timer</span><span class="o">.</span><span class="n">timeout</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">continue_step</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">make_layout</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">update_tooltip</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_min_size</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">val</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_halflife_seconds</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">halflife_seconds</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_per_second</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">per_second</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">setSingleStep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">singleStep</span><span class="p">)</span>
+
+<div class="viewcode-block" id="NumberSpinBox.make_layout">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.make_layout">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">make_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lay</span> <span class="o">=</span> <span class="n">QtWidgets</span><span class="o">.</span><span class="n">QHBoxLayout</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="o">.</span><span class="n">setContentsMargins</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="o">.</span><span class="n">setSpacing</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">setLayout</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">labeltext</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">label</span> <span class="o">=</span> <span class="n">QtWidgets</span><span class="o">.</span><span class="n">QLabel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">labeltext</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="o">.</span><span class="n">addWidget</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">log_increment</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">up</span> <span class="o">=</span> <span class="n">QtWidgets</span><span class="o">.</span><span class="n">QPushButton</span><span class="p">(</span><span class="s1">&#39;*&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">down</span> <span class="o">=</span> <span class="n">QtWidgets</span><span class="o">.</span><span class="n">QPushButton</span><span class="p">(</span><span class="s1">&#39;/&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">up</span> <span class="o">=</span> <span class="n">QtWidgets</span><span class="o">.</span><span class="n">QPushButton</span><span class="p">(</span><span class="s1">&#39;+&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">down</span> <span class="o">=</span> <span class="n">QtWidgets</span><span class="o">.</span><span class="n">QPushButton</span><span class="p">(</span><span class="s1">&#39;-&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line</span> <span class="o">=</span> <span class="n">QtWidgets</span><span class="o">.</span><span class="n">QLineEdit</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">setStyleSheet</span><span class="p">(</span><span class="s2">&quot;QLineEdit { qproperty-cursorPosition: 0; }&quot;</span><span class="p">)</span> <span class="c1"># align text on the left</span>
+        <span class="c1"># http://stackoverflow.com/questions/18662157/qt-qlineedit-widget-to-get-long-text-left-aligned</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="o">.</span><span class="n">addWidget</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">down</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="o">.</span><span class="n">addWidget</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="o">.</span><span class="n">addWidget</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">up</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">up</span><span class="o">.</span><span class="n">setMaximumWidth</span><span class="p">(</span><span class="mi">15</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">down</span><span class="o">.</span><span class="n">setMaximumWidth</span><span class="p">(</span><span class="mi">15</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">up</span><span class="o">.</span><span class="n">pressed</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">first_step</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">down</span><span class="o">.</span><span class="n">pressed</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">first_step</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">up</span><span class="o">.</span><span class="n">released</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">finish_step</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">down</span><span class="o">.</span><span class="n">released</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">finish_step</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">editingFinished</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">validate</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_button_up_down</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_button_down_down</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+
+    <span class="c1"># keyboard interface</span>
+<div class="viewcode-block" id="NumberSpinBox.keyPressEvent">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.keyPressEvent">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">keyPressEvent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">event</span><span class="o">.</span><span class="n">isAutoRepeat</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">key</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Up</span><span class="p">,</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Right</span><span class="p">]:</span>
+                <span class="c1"># ordinary value increment</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_button_up_down</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_button_down_down</span> <span class="o">=</span> <span class="kc">False</span>  <span class="c1"># avoids going left &amp; right</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">first_step</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">key</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Down</span><span class="p">,</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Left</span><span class="p">]:</span>
+                <span class="c1"># ordinary value decrement</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_button_down_down</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_button_up_down</span> <span class="o">=</span> <span class="kc">False</span>  <span class="c1"># avoids going left &amp; right</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">first_step</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">key</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_PageUp</span><span class="p">,</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_PageDown</span><span class="p">]:</span>
+                <span class="c1"># PageUp increases increment by a factor of 10</span>
+                <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">key</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_PageUp</span><span class="p">]:</span>\
+                    <span class="n">factor</span> <span class="o">=</span> <span class="mi">2</span>
+                <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">key</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_PageDown</span><span class="p">]:</span>
+                    <span class="n">factor</span> <span class="o">=</span> <span class="mf">0.5</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Unclear KeyPressEvent&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">log_increment</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">set_halflife_seconds</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">halflife_seconds</span><span class="o">/</span><span class="n">factor</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Spinbox inverse halflife changed to </span><span class="si">%.2e</span><span class="s2"> Hz.&quot;</span><span class="p">,</span>
+                                      <span class="mf">1.</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">halflife_seconds</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">set_per_second</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">per_second</span><span class="o">*</span><span class="n">factor</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Spinbox tuning rate changed to </span><span class="si">%.2e</span><span class="s2"> Hz.&quot;</span><span class="p">,</span>
+                                      <span class="bp">self</span><span class="o">.</span><span class="n">per_second</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">update_tooltip</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">NumberSpinBox</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">keyPressEvent</span><span class="p">(</span><span class="n">event</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.keyReleaseEvent">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.keyReleaseEvent">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">keyReleaseEvent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">event</span><span class="o">.</span><span class="n">isAutoRepeat</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">key</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Up</span><span class="p">,</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Right</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_button_up_down</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">finish_step</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">key</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Down</span><span class="p">,</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Left</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_button_down_down</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">finish_step</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">NumberSpinBox</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">keyReleaseEvent</span><span class="p">(</span><span class="n">event</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.mousePressEvent">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.mousePressEvent">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">mousePressEvent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">button</span><span class="p">()</span> <span class="o">==</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">RightButton</span><span class="p">:</span>
+            <span class="k">pass</span>  <span class="c1"># no functionality so far</span>
+            <span class="c1"># right button opens context menu for setting scanning speed etc.</span>
+            <span class="c1">#res, okPressed = QtWidgets.QInputDialog.getDouble(self.widget.parent, &quot;Pyrpl GUI settings&quot;, &quot;Scanning speed&quot;, 5)</span>
+            <span class="c1">#if okPressed:</span>
+            <span class="c1">#    self.module._logger.warning(&quot;Number: %d&quot;, res)</span>
+        <span class="c1">#else:</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">NumberSpinBox</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">mousePressEvent</span><span class="p">(</span><span class="n">event</span><span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_increasing</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">up</span><span class="o">.</span><span class="n">isDown</span><span class="p">()</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_button_up_down</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_decreasing</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">down</span><span class="o">.</span><span class="n">isDown</span><span class="p">()</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_button_down_down</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">change_sign</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_increasing</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">1.0</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_decreasing</span><span class="p">:</span>
+            <span class="k">return</span> <span class="o">-</span><span class="mf">1.0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+
+<div class="viewcode-block" id="NumberSpinBox.wheelEvent">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.wheelEvent">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">wheelEvent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Handle mouse wheel event. No distinction between linear and log.</span>
+<span class="sd">        :param event:</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">MOUSE_WHEEL_ACTIVATED</span><span class="p">:</span>
+            <span class="n">nsteps</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">delta</span><span class="p">()</span> <span class="o">/</span> <span class="mi">120</span><span class="p">)</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_up</span> <span class="k">if</span> <span class="n">nsteps</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_down</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">nsteps</span><span class="p">)):</span>
+                <span class="n">func</span><span class="p">(</span><span class="n">single_increment</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+
+    <span class="c1"># def sizeHint(self): #doesn t do anything, probably need to change</span>
+    <span class="c1">#    # sizePolicy</span>
+    <span class="c1">#    return QtCore.QSize(200, 20)</span>
+
+<div class="viewcode-block" id="NumberSpinBox.set_min_size">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.set_min_size">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_min_size</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        sets the min size for content to fit.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">font</span> <span class="o">=</span> <span class="n">QtGui</span><span class="o">.</span><span class="n">QFont</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">font_metric</span> <span class="o">=</span> <span class="n">QtGui</span><span class="o">.</span><span class="n">QFontMetrics</span><span class="p">(</span><span class="n">font</span><span class="p">)</span>
+        <span class="n">pixel_wide</span> <span class="o">=</span> <span class="n">font_metric</span><span class="o">.</span><span class="n">width</span><span class="p">(</span><span class="s2">&quot;0&quot;</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">max_num_letter</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">setFixedWidth</span><span class="p">(</span><span class="n">pixel_wide</span><span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">max_num_letter</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the maximum number of letters</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="mi">5</span>
+
+<div class="viewcode-block" id="NumberSpinBox.set_log_increment">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.set_log_increment">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_log_increment</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1">#self.up.setText(&quot;*&quot;)</span>
+        <span class="c1">#self.down.setText(&quot;/&quot;)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">up</span><span class="o">.</span><span class="n">setText</span><span class="p">(</span><span class="sa">u</span><span class="s1">&#39;</span><span class="se">\u2191</span><span class="s1">&#39;</span><span class="p">)</span>  <span class="c1"># up arrow unicode symbol</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">down</span><span class="o">.</span><span class="n">setText</span><span class="p">(</span><span class="sa">u</span><span class="s1">&#39;</span><span class="se">\u2193</span><span class="s1">&#39;</span><span class="p">)</span>  <span class="c1"># down arrow unicode symbol</span>
+        <span class="c1">#self.up.setStyleSheet(&quot;font-weight: italic; font-size: 8pt&quot;)</span>
+        <span class="c1">#self.down.setStyleSheet(&quot;font-weight: bold; font-size: 8pt&quot;)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_increment</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.update_tooltip">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.update_tooltip">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update_tooltip</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The tooltip uses the values of min/max/increment...</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">string</span> <span class="o">=</span> <span class="s2">&quot;Increment is </span><span class="si">%.5e</span><span class="se">\n</span><span class="s2">min value: </span><span class="si">%.1e</span><span class="se">\n</span><span class="s2">max value: </span><span class="si">%.1e</span><span class="se">\n</span><span class="s2">&quot;</span>\
+                 <span class="o">%</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">singleStep</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">minimum</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">maximum</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">log_increment</span><span class="p">:</span>
+            <span class="n">string</span> <span class="o">+=</span> <span class="s2">&quot;Tuning speed (1/halflife): </span><span class="si">%.1e</span><span class="s2"> Hz.</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="mf">1.0</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">halflife_seconds</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">string</span> <span class="o">+=</span> <span class="s2">&quot;Tuning speed (linear): </span><span class="si">%.1e</span><span class="s2"> Hz.</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">per_second</span>
+        <span class="n">string</span> <span class="o">+=</span> <span class="s2">&quot;Press up/down to tune.</span><span class="se">\n</span><span class="s2">Press Page up/Page down to modify tuning speed.&quot;</span> <span class="c1">#  or mouse wheel</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">setToolTip</span><span class="p">(</span><span class="n">string</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.setDecimals">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.setDecimals">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setDecimals</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">decimals</span> <span class="o">=</span> <span class="n">val</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_min_size</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.validate">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.validate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot; make sure a new value is inside the allowed bounds after a</span>
+<span class="sd">        manual change of the value &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">isModified</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">setValue</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">saturate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">val</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">value_changed</span><span class="o">.</span><span class="n">emit</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.saturate">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.saturate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">saturate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">val</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">maximum</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">maximum</span>
+        <span class="k">elif</span> <span class="n">val</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">minimum</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">minimum</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">val</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.setMaximum">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.setMaximum">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setMaximum</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>  <span class="c1"># imitates original QSpinBox API</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">maximum</span> <span class="o">=</span> <span class="n">val</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">update_tooltip</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.setMinimum">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.setMinimum">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setMinimum</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>  <span class="c1"># imitates original QSpinBox API</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">minimum</span> <span class="o">=</span> <span class="n">val</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">update_tooltip</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.setSingleStep">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.setSingleStep">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setSingleStep</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>  <span class="c1"># imitates original QSpinBox API</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">singleStep</span> <span class="o">=</span> <span class="n">val</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.set_per_second">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.set_per_second">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_per_second</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">per_second</span> <span class="o">=</span> <span class="n">val</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.set_halflife_seconds">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.set_halflife_seconds">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_halflife_seconds</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">halflife_seconds</span> <span class="o">=</span> <span class="n">val</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.setValue">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.setValue">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setValue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>  <span class="c1"># imitates original QSpinBox API</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot; replace this function with something useful in derived classes &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">val</span> <span class="o">=</span> <span class="n">val</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.value">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.value">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>  <span class="c1"># imitates original QSpinBox API</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot; replace this function with something useful in derived classes &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">val</span></div>
+
+
+    <span class="c1"># code for managing value change with buttons or keyboard</span>
+<div class="viewcode-block" id="NumberSpinBox.first_step">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.first_step">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">first_step</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Once +/- pressed for timer_initial_latency ms, start to update continuously</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">()</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_value</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">singleStep</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">change_sign</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">start_value</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># zero passage occured, make sure to stop at exactly 0</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">setValue</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">saturate</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">log_increment</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_value</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># avoid zero start_value when in log mode</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">start_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">change_timer</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.continue_step">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.continue_step">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">continue_step</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">dt</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_time</span>
+        <span class="k">if</span> <span class="n">dt</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">change_initial_latency</span><span class="p">:</span>  <span class="c1"># only do if pressed long enough</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">log_increment</span><span class="p">:</span>
+                <span class="c1"># ensure proper behavior for zero</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_value</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">first_step</span><span class="p">()</span>  <span class="c1"># start over when zero is crossed</span>
+                <span class="n">sign</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">change_sign</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">start_value</span><span class="p">)</span>
+                <span class="n">halflifes</span> <span class="o">=</span> <span class="n">dt</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">halflife_seconds</span> <span class="o">*</span> <span class="n">sign</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_value</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">**</span> <span class="n">halflifes</span>
+                <span class="c1"># change behavior when value is effectively zero</span>
+                <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">singleStep</span> <span class="o">/</span> <span class="mf">2.0</span> <span class="ow">and</span> <span class="n">sign</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">start_value</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>  <span class="c1"># ensures to stay 0 some time</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># delta for linear sweep</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_value</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">per_second</span> <span class="o">*</span> <span class="n">dt</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">change_sign</span>
+                <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">start_value</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="c1"># change of sign occured, make a stop at zero</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">start_value</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>  <span class="c1"># ensures to stay 0 some time</span>
+
+            <span class="c1"># don&#39;t do anything if the change is smaller than singleStep</span>
+            <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">val</span> <span class="o">-</span> <span class="n">value</span><span class="p">)</span><span class="o">&gt;</span><span class="bp">self</span><span class="o">.</span><span class="n">singleStep</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setValue</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">saturate</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">change_timer</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="NumberSpinBox.finish_step">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.NumberSpinBox.finish_step">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">finish_step</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">change_timer</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;start_time&#39;</span><span class="p">):</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_time</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">if</span> <span class="n">dt</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">change_initial_latency</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>  <span class="c1"># make sure we validate if continue_step was on</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="IntSpinBox">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.IntSpinBox">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">IntSpinBox</span><span class="p">(</span><span class="n">NumberSpinBox</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Number spin box for integer values</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="nb">min</span><span class="o">=-</span><span class="mi">2</span><span class="o">**</span><span class="mi">13</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">2</span><span class="o">**</span><span class="mi">13</span><span class="p">,</span> <span class="n">increment</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                 <span class="n">per_second</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">IntSpinBox</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span>
+                                         <span class="nb">min</span><span class="o">=</span><span class="nb">min</span><span class="p">,</span>
+                                         <span class="nb">max</span><span class="o">=</span><span class="nb">max</span><span class="p">,</span>
+                                         <span class="n">increment</span><span class="o">=</span><span class="n">increment</span><span class="p">,</span>
+                                         <span class="n">per_second</span><span class="o">=</span><span class="n">per_second</span><span class="p">,</span>
+                                         <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">val</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">text</span><span class="p">()))</span>
+
+    <span class="nd">@val</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">val</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_val</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">setText</span><span class="p">((</span><span class="s2">&quot;%.i&quot;</span><span class="p">)</span><span class="o">%</span><span class="nb">round</span><span class="p">(</span><span class="n">new_val</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">value_changed</span><span class="o">.</span><span class="n">emit</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">new_val</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">max_num_letter</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Maximum number of letters in line</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isinf</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">maximum</span><span class="p">):</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">IntSpinBox</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">max_num_letter</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">maximum</span><span class="p">))</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+
+<div class="viewcode-block" id="IntSpinBox.setMaximum">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.IntSpinBox.setMaximum">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setMaximum</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>  <span class="c1"># imitates original QSpinBox API</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">IntSpinBox</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">setMaximum</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_min_size</span><span class="p">()</span>  <span class="c1"># changes with maximum</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="FloatSpinBox">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.FloatSpinBox">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FloatSpinBox</span><span class="p">(</span><span class="n">NumberSpinBox</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Number spin box for float values</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">decimals</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="nb">min</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                 <span class="n">increment</span><span class="o">=</span><span class="mf">2.</span><span class="o">**</span><span class="p">(</span><span class="o">-</span><span class="mi">13</span><span class="p">),</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">decimals</span> <span class="o">=</span> <span class="n">decimals</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">FloatSpinBox</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span>
+                                           <span class="nb">min</span><span class="o">=</span><span class="nb">min</span><span class="p">,</span>
+                                           <span class="nb">max</span><span class="o">=</span><span class="nb">max</span><span class="p">,</span>
+                                           <span class="n">increment</span><span class="o">=</span><span class="n">increment</span><span class="p">,</span>
+                                           <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">val</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">text</span><span class="p">())</span><span class="o">!=</span><span class="p">(</span><span class="s2">&quot;%.&quot;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">decimals</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;e&quot;</span><span class="p">)</span><span class="o">%</span><span class="bp">self</span><span class="o">.</span><span class="n">_val</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">text</span><span class="p">()))</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_val</span> <span class="c1"># the value needs to be known to a precision better</span>
+        <span class="c1"># than the display to avoid deadlocks in increments</span>
+
+    <span class="nd">@val</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">val</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_val</span><span class="p">):</span>
+        <span class="c1"># We have a cached value _val that gives finer control over the</span>
+        <span class="c1"># value than what is displayed. In this way, clicking up/down can</span>
+        <span class="c1"># change the value without apparent changes of the display.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">saturate</span><span class="p">(</span><span class="n">new_val</span><span class="p">)</span>
+
+        <span class="c1"># block signal otherwise validate will be called there, however,</span>
+        <span class="c1"># we want to use the cached value rather than the corase grained</span>
+        <span class="c1"># value read-out from the lineedit.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">blockSignals</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">setText</span><span class="p">((</span><span class="s1">&#39;{:.&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">decimals</span><span class="p">)</span><span class="o">+</span><span class="s1">&#39;e}&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+            <span class="nb">float</span><span class="p">(</span><span class="n">new_val</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">blockSignals</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="c1"># This will cause a write of the value to the redpitaya, and in turns</span>
+        <span class="c1"># another read from the fpga (this function will be called a second</span>
+        <span class="c1"># time here)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">value_changed</span><span class="o">.</span><span class="n">emit</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">new_val</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">max_num_letter</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the maximum number of letters</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># example: -1.123e-23 has 7+decimals(3) letters</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">decimals</span> <span class="o">+</span> <span class="mi">7</span></div>
+
+
+
+<div class="viewcode-block" id="ComplexSpinBox">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ComplexSpinBox</span><span class="p">(</span><span class="n">FloatSpinBox</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Two spinboxes representing a complex number, with the right keyboard</span>
+<span class="sd">    shortcuts (up down for imag, left/right for real).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="ComplexSpinBox.forward_to_subspinboxes">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.forward_to_subspinboxes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward_to_subspinboxes</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        a decorator that forwards function calls to subspinboxes</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># in base class, the trivial forwarder is chosen</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">func_wrapper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">func_wrapper</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">ComplexSpinBox</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ComplexSpinBox.make_layout">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.make_layout">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">make_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lay</span> <span class="o">=</span> <span class="n">QtWidgets</span><span class="o">.</span><span class="n">QHBoxLayout</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="o">.</span><span class="n">setContentsMargins</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span> <span class="o">=</span> <span class="n">FloatSpinBox</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">labeltext</span><span class="p">,</span>
+                                 <span class="nb">min</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">minimum</span><span class="p">,</span>
+                                 <span class="nb">max</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">maximum</span><span class="p">,</span>
+                                 <span class="n">increment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">singleStep</span><span class="p">,</span>
+                                 <span class="n">log_increment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_log_increment</span><span class="p">,</span>
+                                 <span class="n">halflife_seconds</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_halflife_seconds</span><span class="p">,</span>
+                                 <span class="n">decimals</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">decimals</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">imag</span> <span class="o">=</span> <span class="n">FloatSpinBox</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">labeltext</span><span class="p">,</span>
+                                 <span class="nb">min</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">minimum</span><span class="p">,</span>
+                                 <span class="nb">max</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">maximum</span><span class="p">,</span>
+                                 <span class="n">increment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">singleStep</span><span class="p">,</span>
+                                 <span class="n">log_increment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_log_increment</span><span class="p">,</span>
+                                 <span class="n">halflife_seconds</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_halflife_seconds</span><span class="p">,</span>
+                                 <span class="n">decimals</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">decimals</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">value_changed</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">value_changed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="o">.</span><span class="n">addWidget</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">label</span> <span class="o">=</span> <span class="n">QtWidgets</span><span class="o">.</span><span class="n">QLabel</span><span class="p">(</span><span class="s2">&quot;+j&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="o">.</span><span class="n">addWidget</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">value_changed</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">value_changed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="o">.</span><span class="n">addWidget</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">setLayout</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lay</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">setFocusPolicy</span><span class="p">(</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">ClickFocus</span><span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">val</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">complex</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">val</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">val</span><span class="p">)</span>
+
+    <span class="nd">@val</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">val</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_val</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">val</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">new_val</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">val</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">imag</span><span class="p">(</span><span class="n">new_val</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">new_val</span>
+
+<div class="viewcode-block" id="ComplexSpinBox.keyPressEvent">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.keyPressEvent">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">keyPressEvent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">key</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Right</span><span class="p">,</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Left</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">keyPressEvent</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">key</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Up</span><span class="p">,</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Down</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">keyPressEvent</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">ComplexSpinBox</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">keyPressEvent</span><span class="p">(</span><span class="n">event</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ComplexSpinBox.keyReleaseEvent">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.keyReleaseEvent">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">keyReleaseEvent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">key</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Right</span><span class="p">,</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Left</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">keyReleaseEvent</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">key</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Up</span><span class="p">,</span> <span class="n">QtCore</span><span class="o">.</span><span class="n">Qt</span><span class="o">.</span><span class="n">Key_Down</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">keyReleaseEvent</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">ComplexSpinBox</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">keyReleaseEvent</span><span class="p">(</span><span class="n">event</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ComplexSpinBox.wheelEvent">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.wheelEvent">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">wheelEvent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">wheelEvent</span><span class="p">(</span><span class="n">event</span><span class="p">)</span></div>
+
+
+    <span class="c1"># forward calls to real and imaginary part</span>
+    <span class="c1"># for function in [&#39;set_min_size&#39;, &#39;update_tooltip&#39;, &#39;setDecimals&#39;,</span>
+    <span class="c1">#                  &#39;set_per_second&#39;, &#39;setMaximum&#39;, &#39;setMinimum&#39;,</span>
+    <span class="c1">#                  &#39;setSingleStep&#39;, &#39;set_log_increment&#39;]:</span>
+<div class="viewcode-block" id="ComplexSpinBox.setFixedWidth">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.setFixedWidth">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setFixedWidth</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">setFixedWidth</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">setFixedWidth</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ComplexSpinBox.set_min_size">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.set_min_size">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_min_size</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">set_min_size</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">set_min_size</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ComplexSpinBox.update_tooltip">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.update_tooltip">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update_tooltip</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">update_tooltip</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">update_tooltip</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ComplexSpinBox.setDecimals">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.setDecimals">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setDecimals</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">setDecimals</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">setDecimals</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ComplexSpinBox.set_per_second">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.set_per_second">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_per_second</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">set_per_second</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">set_per_second</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ComplexSpinBox.set_halflife_seconds">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.set_halflife_seconds">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_halflife_seconds</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">set_halflife_seconds</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">set_halflife_seconds</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">halflife_seconds</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">halflife_seconds</span>
+
+<div class="viewcode-block" id="ComplexSpinBox.setMaximum">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.setMaximum">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setMaximum</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">setMaximum</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">setMaximum</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ComplexSpinBox.setMinimum">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.setMinimum">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setMinimum</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">setMinimum</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">setMinimum</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ComplexSpinBox.setSingleStep">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.setSingleStep">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setSingleStep</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">setSingleStep</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">setSingleStep</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ComplexSpinBox.set_log_increment">
+<a class="viewcode-back" href="../../../indices_and_tables/pyrpl.widgets.html#pyrpl.widgets.spinbox.ComplexSpinBox.set_log_increment">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_log_increment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">set_log_increment</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">set_log_increment</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">up</span><span class="o">.</span><span class="n">setText</span><span class="p">(</span><span class="sa">u</span><span class="s1">&#39;</span><span class="se">\u2192</span><span class="s1">&#39;</span><span class="p">)</span>  <span class="c1"># right arrow unicode symbol</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">down</span><span class="o">.</span><span class="n">setText</span><span class="p">(</span><span class="sa">u</span><span class="s1">&#39;</span><span class="se">\u2190</span><span class="s1">&#39;</span><span class="p">)</span>  <span class="c1"># left arrow unicode symbol</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">log_increment</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">log_increment</span></div>
+
+</pre></div>
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+      
+    </p>
+    <p>
+        &copy; Copyright 2014-2025, Leonhard Neuhaus, Samuel Deléglise, Michaël Croquette .<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 7.4.7.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>

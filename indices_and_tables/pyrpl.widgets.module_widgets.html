@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>pyrpl.widgets.module_widgets package &#8212; pyrpl 0.9.7.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../_static/bootstrap-sphinx.css?v=4468db6d" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=fd3f3429" />
+    <script src="../_static/documentation_options.js?v=cf93a8f2"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="icon" href="../_static/icon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script type="text/javascript" src="../_static/js/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="../_static/js/jquery-fix.js"></script>
+<script type="text/javascript" src="../_static/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="../_static/bootstrap-sphinx.js"></script>
+
+  </head><body>
+  
+
+  <style id="ribbon">
+    #forkongithub a{background:#c11;color:#fff;text-decoration:none;font-family:arial,sans-serif;text-align:center;font-weight:bold;padding:5px 40px;font-size:1rem;line-height:2rem;position:relative;transition:0.5s;}
+    #forkongithub a:hover{background:#1c1;color:#fff;}
+    #forkongithub a::before,
+    #forkongithub a::after{content:"";width:100%;display:block;position:absolute;top:1px;left:0;height:1px;background:#fff;}
+    #forkongithub a::after{bottom:1px;top:auto;}@media screen and (min-width:800px)
+    { #forkongithub{position:fixed;display:block;top:0;right:0;width:200px;overflow:hidden;height:200px;z-index:9999;}#forkongithub a{width:200px;position:absolute;top:45px;right:-45px;transform:rotate(45deg);-webkit-transform:rotate(45deg);-ms-transform:rotate(45deg);-moz-transform:rotate(45deg);-o-transform:rotate(45deg);box-shadow:4px 4px 10px rgba(0,0,0,0.8);}}
+  </style>
+  <span id="forkongithub"><a href="https://www.github.com/lneuhaus/pyrpl#fork-destination-box">Fork PyRPL on GitHub</a></span>
+
+  <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-102689373-2', 'auto');
+    ga('send', 'pageview');
+
+  </script>
+
+
+  <div id="navbar" class="navbar navbar-inverse navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../index.html">
+          PyRPL</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.9.7.0</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../index.html">Home</a></li>
+                <li><a href="../installation.html">Installation</a></li>
+                <li><a href="../gui.html">Graphical user interface</a></li>
+                <li><a href="../api.html">API</a></li>
+                <li><a href="../basics.html">How PyRPL works</a></li>
+                <li><a href="../developer_guide/index.html">Infos for Developers</a></li>
+            
+            
+              
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+      <div class="col-md-3">
+        <div id="sidebar" class="bs-sidenav" role="complementary"><ul>
+<li><a class="reference internal" href="#">pyrpl.widgets.module_widgets package</a><ul>
+<li><a class="reference internal" href="#submodules">Submodules</a></li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-acquisition-module-widget-module">pyrpl.widgets.module_widgets.acquisition_module_widget module</a></li>
+<li><a class="reference internal" href="#module-pyrpl.widgets.module_widgets.asg_widget">pyrpl.widgets.module_widgets.asg_widget module</a><ul>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.asg_widget.AsgWidget"><code class="docutils literal notranslate"><span class="pre">AsgWidget</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-pyrpl.widgets.module_widgets.base_module_widget">pyrpl.widgets.module_widgets.base_module_widget module</a><ul>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.EditLabel"><code class="docutils literal notranslate"><span class="pre">EditLabel</span></code></a><ul>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.EditLabel.func"><code class="docutils literal notranslate"><span class="pre">EditLabel.func()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.EditLabel.get_menu"><code class="docutils literal notranslate"><span class="pre">EditLabel.get_menu()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.EditLabel.text"><code class="docutils literal notranslate"><span class="pre">EditLabel.text</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.EraseLabel"><code class="docutils literal notranslate"><span class="pre">EraseLabel</span></code></a><ul>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.EraseLabel.func"><code class="docutils literal notranslate"><span class="pre">EraseLabel.func()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.EraseLabel.text"><code class="docutils literal notranslate"><span class="pre">EraseLabel.text</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.HideShowLabel"><code class="docutils literal notranslate"><span class="pre">HideShowLabel</span></code></a><ul>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.HideShowLabel.get_menu"><code class="docutils literal notranslate"><span class="pre">HideShowLabel.get_menu()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.HideShowLabel.text"><code class="docutils literal notranslate"><span class="pre">HideShowLabel.text</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.LoadLabel"><code class="docutils literal notranslate"><span class="pre">LoadLabel</span></code></a><ul>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.LoadLabel.func"><code class="docutils literal notranslate"><span class="pre">LoadLabel.func()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.LoadLabel.text"><code class="docutils literal notranslate"><span class="pre">LoadLabel.text</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget"><code class="docutils literal notranslate"><span class="pre">ModuleWidget</span></code></a><ul>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget.create_title_bar"><code class="docutils literal notranslate"><span class="pre">ModuleWidget.create_title_bar()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget.set_title"><code class="docutils literal notranslate"><span class="pre">ModuleWidget.set_title()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel"><code class="docutils literal notranslate"><span class="pre">MyMenuLabel</span></code></a><ul>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel.contextMenuEvent"><code class="docutils literal notranslate"><span class="pre">MyMenuLabel.contextMenuEvent()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel.get_menu"><code class="docutils literal notranslate"><span class="pre">MyMenuLabel.get_menu()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget</span></code></a><ul>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.attribute_changed"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.attribute_changed</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.change_options"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.change_options()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.change_ownership"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.change_ownership()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.create_title_bar"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.create_title_bar()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.hide_widget"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.hide_widget()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.init_attribute_layout"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.init_attribute_layout()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.init_gui"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.init_gui()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.init_main_layout"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.init_main_layout()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.refresh_filter_options"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.refresh_filter_options()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.save_curve"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.save_curve()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.set_title"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.set_title()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.show_widget"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.show_widget()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.title_pos"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.title_pos</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.update_attribute_by_name"><code class="docutils literal notranslate"><span class="pre">ReducedModuleWidget.update_attribute_by_name()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.SaveLabel"><code class="docutils literal notranslate"><span class="pre">SaveLabel</span></code></a><ul>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.func"><code class="docutils literal notranslate"><span class="pre">SaveLabel.func()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.get_menu"><code class="docutils literal notranslate"><span class="pre">SaveLabel.get_menu()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.new_state"><code class="docutils literal notranslate"><span class="pre">SaveLabel.new_state()</span></code></a></li>
+<li><a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.text"><code class="docutils literal notranslate"><span class="pre">SaveLabel.text</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-curve-viewer-widget-module">pyrpl.widgets.module_widgets.curve_viewer_widget module</a></li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-iir-widget-module">pyrpl.widgets.module_widgets.iir_widget module</a></li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-iq-widget-module">pyrpl.widgets.module_widgets.iq_widget module</a></li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-lockbox-widget-module">pyrpl.widgets.module_widgets.lockbox_widget module</a></li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-module-manager-widget-module">pyrpl.widgets.module_widgets.module_manager_widget module</a></li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-na-widget-module">pyrpl.widgets.module_widgets.na_widget module</a></li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-pid-widget-module">pyrpl.widgets.module_widgets.pid_widget module</a></li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-pyrpl-config-widget-module">pyrpl.widgets.module_widgets.pyrpl_config_widget module</a></li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-schematics-module">pyrpl.widgets.module_widgets.schematics module</a></li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-scope-widget-module">pyrpl.widgets.module_widgets.scope_widget module</a></li>
+<li><a class="reference internal" href="#pyrpl-widgets-module-widgets-spec-an-widget-module">pyrpl.widgets.module_widgets.spec_an_widget module</a></li>
+<li><a class="reference internal" href="#module-contents">Module contents</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    <div class="body col-md-9 content" role="main">
+      
+  <section id="pyrpl-widgets-module-widgets-package">
+<h1>pyrpl.widgets.module_widgets package<a class="headerlink" href="#pyrpl-widgets-module-widgets-package" title="Link to this heading">¶</a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading">¶</a></h2>
+</section>
+<section id="pyrpl-widgets-module-widgets-acquisition-module-widget-module">
+<h2>pyrpl.widgets.module_widgets.acquisition_module_widget module<a class="headerlink" href="#pyrpl-widgets-module-widgets-acquisition-module-widget-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="module-pyrpl.widgets.module_widgets.asg_widget">
+<span id="pyrpl-widgets-module-widgets-asg-widget-module"></span><h2>pyrpl.widgets.module_widgets.asg_widget module<a class="headerlink" href="#module-pyrpl.widgets.module_widgets.asg_widget" title="Link to this heading">¶</a></h2>
+<p>A widget for the scope module</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.asg_widget.AsgWidget">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrpl.widgets.module_widgets.asg_widget.</span></span><span class="sig-name descname"><span class="pre">AsgWidget</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwds</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/asg_widget.html#AsgWidget"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.asg_widget.AsgWidget" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget" title="pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModuleWidget</span></code></a></p>
+</dd></dl>
+
+</section>
+<section id="module-pyrpl.widgets.module_widgets.base_module_widget">
+<span id="pyrpl-widgets-module-widgets-base-module-widget-module"></span><h2>pyrpl.widgets.module_widgets.base_module_widget module<a class="headerlink" href="#module-pyrpl.widgets.module_widgets.base_module_widget" title="Link to this heading">¶</a></h2>
+<p>The basic functionality of all module widgets are inherited from the base
+class <a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget" title="pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModuleWidget</span></code></a>.</p>
+<p>A module widget is delimited by a dashed-line (a QGroupBox). The following
+menu is available on the top part of each ModuleWidget, directly behind the
+name of the module (e.g. <code class="code docutils literal notranslate"><span class="pre">pid0</span></code>, <code class="code docutils literal notranslate"><span class="pre">pid1</span></code>, …). Right click on
+the item (e.g. <code class="code docutils literal notranslate"><span class="pre">.:Load:.</span></code>, <code class="code docutils literal notranslate"><span class="pre">.:Save:.</span></code>, …) to access the associated
+submenu:</p>
+<ul class="simple">
+<li><p><code class="code docutils literal notranslate"><span class="pre">.:Load:.</span></code> Loads the state of the module from a list of previously saved states.</p></li>
+<li><p><code class="code docutils literal notranslate"><span class="pre">.:Save:.</span></code> Saves the current state under a given state name.</p></li>
+<li><p><code class="code docutils literal notranslate"><span class="pre">.:Erase:.</span></code> Erases one of the previously saved states.</p></li>
+<li><p><code class="code docutils literal notranslate"><span class="pre">.:Edit:.</span></code> Opens a text window to edit the yml code of a state.</p></li>
+<li><p><code class="code docutils literal notranslate"><span class="pre">.:Hide/Show:.</span></code> Hides or shows the content of the module widget.</p></li>
+</ul>
+<p>Inside the module widget, different attribute values can be manipulated using
+the shown sub-widgets (e.g. <code class="code docutils literal notranslate"><span class="pre">input</span></code>, <code class="code docutils literal notranslate"><span class="pre">setpoint</span></code>, <code class="code docutils literal notranslate"><span class="pre">max_voltage</span></code>, …). The
+modifications will take effect immediately. Only the module state
+<code class="code docutils literal notranslate"><span class="pre">&lt;current</span> <span class="pre">state&gt;</span></code> is affected by these changes. Saving the state under
+a different name only preserves the state at the moment of saving for later
+retrieval.</p>
+<p>At the next startup with the same config file, the :code:&lt;current state&gt; of
+all modules is loaded.</p>
+<p>If a module-widget is grayed out completely, it has been reserved by another,
+higher-level module whose name appears in parentheses after the name of the
+module (e.g. <code class="code docutils literal notranslate"><span class="pre">pid2</span> <span class="pre">(output1)</span></code> means that the module <code class="code docutils literal notranslate"><span class="pre">pid2</span></code> is
+being used by the module <code class="code docutils literal notranslate"><span class="pre">output1</span></code>, which is actually a submodule of the
+<code class="code docutils literal notranslate"><span class="pre">lockbox</span></code> module). You can right-click anywhere on the grayed out
+widget and click on “Free” to override that reservation and use the module
+for your own purposes.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>If you override a module reservation, the module in parenthesis
+might stop to function properly. A better practice is to identify
+the top-level module responsible for the reservation, remove its
+name from the list in your configuration file (located at
+/HOME/pyrpl_user_dir/config/&lt;string_shown_in_top_bar_of_the_gui&gt;.yml)
+and restart PyRPL with that configuration.</p>
+</div>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.EditLabel">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrpl.widgets.module_widgets.base_module_widget.</span></span><span class="sig-name descname"><span class="pre">EditLabel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module_widget</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#EditLabel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.EditLabel" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel" title="pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel"><code class="xref py py-class docutils literal notranslate"><span class="pre">MyMenuLabel</span></code></a></p>
+<p>“Edit” label</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.EditLabel.func">
+<span class="sig-name descname"><span class="pre">func</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">state</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#EditLabel.func"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.EditLabel.func" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.EditLabel.get_menu">
+<span class="sig-name descname"><span class="pre">get_menu</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#EditLabel.get_menu"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.EditLabel.get_menu" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.EditLabel.text">
+<span class="sig-name descname"><span class="pre">text</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'</span> <span class="pre">.:Edit:.</span> <span class="pre">'</span></em><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.EditLabel.text" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.EraseLabel">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrpl.widgets.module_widgets.base_module_widget.</span></span><span class="sig-name descname"><span class="pre">EraseLabel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module_widget</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#EraseLabel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.EraseLabel" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel" title="pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel"><code class="xref py py-class docutils literal notranslate"><span class="pre">MyMenuLabel</span></code></a></p>
+<p>“Erase” label</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.EraseLabel.func">
+<span class="sig-name descname"><span class="pre">func</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">state</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#EraseLabel.func"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.EraseLabel.func" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.EraseLabel.text">
+<span class="sig-name descname"><span class="pre">text</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'</span> <span class="pre">.:Erase:.</span> <span class="pre">'</span></em><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.EraseLabel.text" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.HideShowLabel">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrpl.widgets.module_widgets.base_module_widget.</span></span><span class="sig-name descname"><span class="pre">HideShowLabel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module_widget</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#HideShowLabel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.HideShowLabel" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel" title="pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel"><code class="xref py py-class docutils literal notranslate"><span class="pre">MyMenuLabel</span></code></a></p>
+<p>“Hide/Show” label</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.HideShowLabel.get_menu">
+<span class="sig-name descname"><span class="pre">get_menu</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#HideShowLabel.get_menu"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.HideShowLabel.get_menu" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.HideShowLabel.text">
+<span class="sig-name descname"><span class="pre">text</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'</span> <span class="pre">.:Hide/Show:.</span> <span class="pre">'</span></em><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.HideShowLabel.text" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.LoadLabel">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrpl.widgets.module_widgets.base_module_widget.</span></span><span class="sig-name descname"><span class="pre">LoadLabel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module_widget</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#LoadLabel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.LoadLabel" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel" title="pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel"><code class="xref py py-class docutils literal notranslate"><span class="pre">MyMenuLabel</span></code></a></p>
+<p>“Load” label</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.LoadLabel.func">
+<span class="sig-name descname"><span class="pre">func</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">state</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#LoadLabel.func"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.LoadLabel.func" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.LoadLabel.text">
+<span class="sig-name descname"><span class="pre">text</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'</span> <span class="pre">.:Load:.</span> <span class="pre">'</span></em><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.LoadLabel.text" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrpl.widgets.module_widgets.base_module_widget.</span></span><span class="sig-name descname"><span class="pre">ModuleWidget</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ModuleWidget"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget" title="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget"><code class="xref py py-class docutils literal notranslate"><span class="pre">ReducedModuleWidget</span></code></a></p>
+<p>Base class for a module Widget. In general, this is one of the DockWidget of the Pyrpl MainWindow.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget.create_title_bar">
+<span class="sig-name descname"><span class="pre">create_title_bar</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ModuleWidget.create_title_bar"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget.create_title_bar" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget.set_title">
+<span class="sig-name descname"><span class="pre">set_title</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">title</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ModuleWidget.set_title"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ModuleWidget.set_title" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrpl.widgets.module_widgets.base_module_widget.</span></span><span class="sig-name descname"><span class="pre">MyMenuLabel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module_widget</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#MyMenuLabel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">QLabel</span></code></p>
+<p>A label on top of the menu widget that is able to display save or load menu.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel.contextMenuEvent">
+<span class="sig-name descname"><span class="pre">contextMenuEvent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#MyMenuLabel.contextMenuEvent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel.contextMenuEvent" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel.get_menu">
+<span class="sig-name descname"><span class="pre">get_menu</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#MyMenuLabel.get_menu"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel.get_menu" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrpl.widgets.module_widgets.base_module_widget.</span></span><span class="sig-name descname"><span class="pre">ReducedModuleWidget</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">QGroupBox</span></code></p>
+<p>Base class for a module Widget.</p>
+<p>In general, this is one of the DockWidget of the Pyrpl MainWindow.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.attribute_changed">
+<span class="sig-name descname"><span class="pre">attribute_changed</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">&lt;MagicMock</span> <span class="pre">name='mock.QtCore.Signal()'</span> <span class="pre">id='139976362356448'&gt;</span></em><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.attribute_changed" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.change_options">
+<span class="sig-name descname"><span class="pre">change_options</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">select_attribute_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_options</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.change_options"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.change_options" title="Link to this definition">¶</a></dt>
+<dd><p>SLOT: don’t change name unless you know what you are doing
+New options should be displayed for some SelectAttribute.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.change_ownership">
+<span class="sig-name descname"><span class="pre">change_ownership</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.change_ownership"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.change_ownership" title="Link to this definition">¶</a></dt>
+<dd><p>SLOT: don’t change name unless you know what you are doing
+Display the new ownership</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.create_title_bar">
+<span class="sig-name descname"><span class="pre">create_title_bar</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.create_title_bar"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.create_title_bar" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.hide_widget">
+<span class="sig-name descname"><span class="pre">hide_widget</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.hide_widget"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.hide_widget" title="Link to this definition">¶</a></dt>
+<dd><p>shows the widget after it has been hidden</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.init_attribute_layout">
+<span class="sig-name descname"><span class="pre">init_attribute_layout</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.init_attribute_layout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.init_attribute_layout" title="Link to this definition">¶</a></dt>
+<dd><p>Automatically creates the gui properties for the register_widgets in register_names.
+:return:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.init_gui">
+<span class="sig-name descname"><span class="pre">init_gui</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.init_gui"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.init_gui" title="Link to this definition">¶</a></dt>
+<dd><p>To be overwritten in derived class
+:return:</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.init_main_layout">
+<span class="sig-name descname"><span class="pre">init_main_layout</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">orientation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'horizontal'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.init_main_layout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.init_main_layout" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.refresh_filter_options">
+<span class="sig-name descname"><span class="pre">refresh_filter_options</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filter_attribute_name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.refresh_filter_options"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.refresh_filter_options" title="Link to this definition">¶</a></dt>
+<dd><p>SLOT: don’t change name unless you know what you are doing
+New options should be displayed for some FilterProperty.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.save_curve">
+<span class="sig-name descname"><span class="pre">save_curve</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x_values</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_values</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">attributes</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.save_curve"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.save_curve" title="Link to this definition">¶</a></dt>
+<dd><p>Saves the curve in some database system.
+To change the database system, overwrite this function
+or patch Module.curvedb if the interface is identical.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x_values</strong> – numpy array with x values</p></li>
+<li><p><strong>y_values</strong> – numpy array with y values</p></li>
+<li><p><strong>attributes</strong> – extra curve parameters (such as relevant module settings)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.set_title">
+<span class="sig-name descname"><span class="pre">set_title</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">title</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.set_title"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.set_title" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.show_widget">
+<span class="sig-name descname"><span class="pre">show_widget</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.show_widget"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.show_widget" title="Link to this definition">¶</a></dt>
+<dd><p>shows the widget after it has been hidden</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.title_pos">
+<span class="sig-name descname"><span class="pre">title_pos</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">(12,</span> <span class="pre">0)</span></em><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.title_pos" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.update_attribute_by_name">
+<span class="sig-name descname"><span class="pre">update_attribute_by_name</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_value_list</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#ReducedModuleWidget.update_attribute_by_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.ReducedModuleWidget.update_attribute_by_name" title="Link to this definition">¶</a></dt>
+<dd><p>SLOT: don’t change name unless you know what you are doing
+Updates a specific attribute. New value is passed as a 1-element list
+to avoid typing problems in signal-slot.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.SaveLabel">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyrpl.widgets.module_widgets.base_module_widget.</span></span><span class="sig-name descname"><span class="pre">SaveLabel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module_widget</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#SaveLabel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.SaveLabel" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel" title="pyrpl.widgets.module_widgets.base_module_widget.MyMenuLabel"><code class="xref py py-class docutils literal notranslate"><span class="pre">MyMenuLabel</span></code></a></p>
+<p>“Save” label</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.func">
+<span class="sig-name descname"><span class="pre">func</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">state</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#SaveLabel.func"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.func" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.get_menu">
+<span class="sig-name descname"><span class="pre">get_menu</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#SaveLabel.get_menu"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.get_menu" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.new_state">
+<span class="sig-name descname"><span class="pre">new_state</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/pyrpl/widgets/module_widgets/base_module_widget.html#SaveLabel.new_state"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.new_state" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.text">
+<span class="sig-name descname"><span class="pre">text</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'</span> <span class="pre">.:Save:.</span> <span class="pre">'</span></em><a class="headerlink" href="#pyrpl.widgets.module_widgets.base_module_widget.SaveLabel.text" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="pyrpl-widgets-module-widgets-curve-viewer-widget-module">
+<h2>pyrpl.widgets.module_widgets.curve_viewer_widget module<a class="headerlink" href="#pyrpl-widgets-module-widgets-curve-viewer-widget-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="pyrpl-widgets-module-widgets-iir-widget-module">
+<h2>pyrpl.widgets.module_widgets.iir_widget module<a class="headerlink" href="#pyrpl-widgets-module-widgets-iir-widget-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="pyrpl-widgets-module-widgets-iq-widget-module">
+<h2>pyrpl.widgets.module_widgets.iq_widget module<a class="headerlink" href="#pyrpl-widgets-module-widgets-iq-widget-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="pyrpl-widgets-module-widgets-lockbox-widget-module">
+<h2>pyrpl.widgets.module_widgets.lockbox_widget module<a class="headerlink" href="#pyrpl-widgets-module-widgets-lockbox-widget-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="pyrpl-widgets-module-widgets-module-manager-widget-module">
+<h2>pyrpl.widgets.module_widgets.module_manager_widget module<a class="headerlink" href="#pyrpl-widgets-module-widgets-module-manager-widget-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="pyrpl-widgets-module-widgets-na-widget-module">
+<h2>pyrpl.widgets.module_widgets.na_widget module<a class="headerlink" href="#pyrpl-widgets-module-widgets-na-widget-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="pyrpl-widgets-module-widgets-pid-widget-module">
+<h2>pyrpl.widgets.module_widgets.pid_widget module<a class="headerlink" href="#pyrpl-widgets-module-widgets-pid-widget-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="pyrpl-widgets-module-widgets-pyrpl-config-widget-module">
+<h2>pyrpl.widgets.module_widgets.pyrpl_config_widget module<a class="headerlink" href="#pyrpl-widgets-module-widgets-pyrpl-config-widget-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="pyrpl-widgets-module-widgets-schematics-module">
+<h2>pyrpl.widgets.module_widgets.schematics module<a class="headerlink" href="#pyrpl-widgets-module-widgets-schematics-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="pyrpl-widgets-module-widgets-scope-widget-module">
+<h2>pyrpl.widgets.module_widgets.scope_widget module<a class="headerlink" href="#pyrpl-widgets-module-widgets-scope-widget-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="pyrpl-widgets-module-widgets-spec-an-widget-module">
+<h2>pyrpl.widgets.module_widgets.spec_an_widget module<a class="headerlink" href="#pyrpl-widgets-module-widgets-spec-an-widget-module" title="Link to this heading">¶</a></h2>
+</section>
+<section id="module-contents">
+<h2>Module contents<a class="headerlink" href="#module-contents" title="Link to this heading">¶</a></h2>
+</section>
+</section>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="../_sources/indices_and_tables/pyrpl.widgets.module_widgets.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2014-2025, Leonhard Neuhaus, Samuel Deléglise, Michaël Croquette .<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 7.4.7.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>

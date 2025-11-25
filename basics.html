@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>4. Basics of the PyRPL Architecture &#8212; pyrpl 0.9.7.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="_static/bootstrap-sphinx.css?v=4468db6d" />
+    <link rel="stylesheet" type="text/css" href="_static/graphviz.css?v=fd3f3429" />
+    <script src="_static/documentation_options.js?v=cf93a8f2"></script>
+    <script src="_static/doctools.js?v=9a2dae69"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="icon" href="_static/icon.ico"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="5. Notes for developers" href="developer_guide/index.html" />
+    <link rel="prev" title="3. API manual" href="api.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script type="text/javascript" src="_static/js/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="_static/js/jquery-fix.js"></script>
+<script type="text/javascript" src="_static/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="_static/bootstrap-sphinx.js"></script>
+
+  </head><body>
+  
+
+  <style id="ribbon">
+    #forkongithub a{background:#c11;color:#fff;text-decoration:none;font-family:arial,sans-serif;text-align:center;font-weight:bold;padding:5px 40px;font-size:1rem;line-height:2rem;position:relative;transition:0.5s;}
+    #forkongithub a:hover{background:#1c1;color:#fff;}
+    #forkongithub a::before,
+    #forkongithub a::after{content:"";width:100%;display:block;position:absolute;top:1px;left:0;height:1px;background:#fff;}
+    #forkongithub a::after{bottom:1px;top:auto;}@media screen and (min-width:800px)
+    { #forkongithub{position:fixed;display:block;top:0;right:0;width:200px;overflow:hidden;height:200px;z-index:9999;}#forkongithub a{width:200px;position:absolute;top:45px;right:-45px;transform:rotate(45deg);-webkit-transform:rotate(45deg);-ms-transform:rotate(45deg);-moz-transform:rotate(45deg);-o-transform:rotate(45deg);box-shadow:4px 4px 10px rgba(0,0,0,0.8);}}
+  </style>
+  <span id="forkongithub"><a href="https://www.github.com/lneuhaus/pyrpl#fork-destination-box">Fork PyRPL on GitHub</a></span>
+
+  <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-102689373-2', 'auto');
+    ga('send', 'pageview');
+
+  </script>
+
+
+  <div id="navbar" class="navbar navbar-inverse navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="index.html">
+          PyRPL</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.9.7.0</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="index.html">Home</a></li>
+                <li><a href="installation.html">Installation</a></li>
+                <li><a href="gui.html">Graphical user interface</a></li>
+                <li><a href="api.html">API</a></li>
+                <li><a href="#">How PyRPL works</a></li>
+                <li><a href="developer_guide/index.html">Infos for Developers</a></li>
+            
+            
+              
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+      <div class="col-md-3">
+        <div id="sidebar" class="bs-sidenav" role="complementary"><ul>
+<li><a class="reference internal" href="#">4. Basics of the PyRPL Architecture</a><ul>
+<li><a class="reference internal" href="#motivation">4.1. Motivation</a></li>
+<li><a class="reference internal" href="#hardware-platform-red-pitaya">4.2. Hardware Platform - Red Pitaya</a></li>
+<li><a class="reference internal" href="#software-infrastructure">4.3. Software Infrastructure</a><ul>
+<li><a class="reference internal" href="#fpga-modules">4.3.1. FPGA modules</a></li>
+<li><a class="reference internal" href="#monitor-server">4.3.2. Monitor Server</a></li>
+<li><a class="reference internal" href="#python-package-pyrpl">4.3.3. Python package PyRPL</a><ul>
+<li><a class="reference internal" href="#the-module-class">4.3.3.1. The Module class</a></li>
+<li><a class="reference internal" href="#the-proprety-descriptors">4.3.3.2. The Proprety descriptors</a></li>
+<li><a class="reference internal" href="#module-states">4.3.3.3. Module states</a></li>
+<li><a class="reference internal" href="#automatic-gui-creation">4.3.3.4. Automatic GUI creation</a></li>
+<li><a class="reference internal" href="#example-definition-of-the-pid-class">4.3.3.5. Example: definition of the Pid class</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    <div class="body col-md-9 content" role="main">
+      
+  <section id="basics-of-the-pyrpl-architecture">
+<h1><span class="section-number">4. </span>Basics of the PyRPL Architecture<a class="headerlink" href="#basics-of-the-pyrpl-architecture" title="Link to this heading">¶</a></h1>
+<p>This section presents the basic architecture of PyRPL. The main goal here is to quickly give a broad overview of PyRPL’s internal logic
+without distracting the reader with too many technical details. For a more detailed description of the individual components described in this page, please, refer
+to the corresponding section <a class="reference internal" href="developer_guide/index.html"><span class="doc">Notes for developers</span></a>.</p>
+<section id="motivation">
+<h2><span class="section-number">4.1. </span>Motivation<a class="headerlink" href="#motivation" title="Link to this heading">¶</a></h2>
+<p>Available hardware boards featuring FPGAs, CPUs and analog in- and outputs makes it possible to use digital signal processing (DSP)
+to control quantum optics experiments. Running open-source software on this hardware has many advantages:</p>
+<ul class="simple">
+<li><p>Lab space: small size, less different devices</p></li>
+<li><p>Money: cheap hardware, free software</p></li>
+<li><p>Time: connect cables once, re-wire digitally automate experiments work from home</p></li>
+<li><p>Automated measurements incite to take more data-points perform experiments more reproducibly
+record additional, auxiliary data</p></li>
+<li><p>Functionality beyond analog electronics</p></li>
+<li><p>Modify or customize instrument functionality</p></li>
+</ul>
+<p>However, learning all the subtleties of FPGA programming, compiling and debugging FPGA code can be extremely time consuming.
+Hence, PyRPL aims at providing a large panel of functionalities on a precompiled FPGA bitfile. These FPGA modules are highly customizable by changing
+register values without the need to recompile the FPGA code written in Hardware Description Language. High-level functionalities are implemented by a python
+package running remotely and controlling the FPGA registers.</p>
+</section>
+<section id="hardware-platform-red-pitaya">
+<h2><span class="section-number">4.2. </span>Hardware Platform - Red Pitaya<a class="headerlink" href="#hardware-platform-red-pitaya" title="Link to this heading">¶</a></h2>
+<p>At the moment, Red Pitaya is the only hardware platform supported by PyRPL.</p>
+<a class="reference internal image-reference" href="_images/redpitaya.jpg"><img alt="The redpitaya board" class="align-center" src="_images/redpitaya.jpg" style="width: 581.0px; height: 381.0px;" />
+</a>
+<p>The RedPitaya board is an affordable FPGA + CPU board running a Linux operating system. The FPGA is running at a clock rate of 125 MSps and
+it is interfaced with 2 analog inputs and 2 analog outputs (14 bits, 125 MSps). The minimum input-output latency is of the order of 200 ns and
+the effective resolution is 12 bits for inputs and 13 bits for outputs. 4 slow analog inputs and outputs and 16 I/O ports are also available.
+Visit the The Red Pitaya homepage (<a class="reference external" href="http://www.redpitaya.com">http://www.redpitaya.com</a>) for more details on the platform.</p>
+</section>
+<section id="software-infrastructure">
+<h2><span class="section-number">4.3. </span>Software Infrastructure<a class="headerlink" href="#software-infrastructure" title="Link to this heading">¶</a></h2>
+<p>The FPGA functionalities of PyRPL are organized in various DSP modules. These modules can be configured and arbitrarily connected together
+using a python package running on a client computer. This design offers a lot of flexibility in the design and control of various experimental
+setups without having to recompile the FPGA code each time a different fonctionality is needed. A fast ethernet interface maps all FPGA registers
+to Python variables. The read/write time is around 250 microseconds for a typical LAN connection. High-level functionalities are achieved by
+performing successive operations on the FPGA registers using the Python API. A Graphical User Interface is also provided to easily visualize and
+modify the different FPGA registers. We provide a description of the different software components below.</p>
+<a class="reference internal image-reference" href="_images/software_architecture.jpg"><img alt="PyRPL software architecture" class="align-center" src="_images/software_architecture.jpg" style="width: 1002.0px; height: 273.0px;" />
+</a>
+<section id="fpga-modules">
+<h3><span class="section-number">4.3.1. </span>FPGA modules<a class="headerlink" href="#fpga-modules" title="Link to this heading">¶</a></h3>
+<p>At the moment, the FPGA code provided with PyRPL implements various Digital Signal Processing modules:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Module name</p></th>
+<th class="head"><p># available</p></th>
+<th class="head"><p>Short description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Scope</p></td>
+<td><p>1</p></td>
+<td><p>A 16384 points, 2 channels oscilloscope
+capable of monitoring internal or external signals</p></td>
+</tr>
+<tr class="row-odd"><td><p>ASG</p></td>
+<td><p>2</p></td>
+<td><p>An arbitrary signal generator capable of generating
+various waveforms, and even gaussian white noise</p></td>
+</tr>
+<tr class="row-even"><td><p>IQ modulator/
+demodulator</p></td>
+<td><p>3</p></td>
+<td><p>An internal frequency reference is used to digitally
+demodulate a given input signal. The frequency
+reference can be outputed to serve as a driving signal.
+The slowly varying quadratures can also be used to
+remodulate the 2 phase-shifted internal references,
+turning the module
+into a very narrow bandpass filter. See the page
+<a class="reference internal" href="gui.html#iq-widget-label"><span class="std std-ref">Iq Widget</span></a> for more details</p></td>
+</tr>
+<tr class="row-odd"><td><p>PID</p></td>
+<td><p>3</p></td>
+<td><p>Proportional/Integrator/Differential feedback modules
+(In the current version, the differential gain is
+disabled). The gain of each parameter can be set
+independently and each module is also equiped with a
+4th order linear filter (applied before the PID
+correction)</p></td>
+</tr>
+<tr class="row-even"><td><p>IIR</p></td>
+<td><p>1</p></td>
+<td><p>An Infinite Impulse Response filter that can be used to
+realize real-time filters with comlex
+transfer-functions</p></td>
+</tr>
+<tr class="row-odd"><td><p>Trigger</p></td>
+<td><p>1</p></td>
+<td><p>A module to detect a transition on an analog signal.</p></td>
+</tr>
+<tr class="row-even"><td><p>Sampler</p></td>
+<td><p>1</p></td>
+<td><p>A module to sample each external or external signal</p></td>
+</tr>
+<tr class="row-odd"><td><p>Pwm</p></td>
+<td><p>4</p></td>
+<td><p>Modules to control the pulse width modulation pins of
+the redpitaya</p></td>
+</tr>
+<tr class="row-even"><td><p>Hk</p></td>
+<td><p>1</p></td>
+<td><p>House keeping module to monitor redpitaya constants and
+control the LED status</p></td>
+</tr>
+</tbody>
+</table>
+<p>Modules can be connected to each other arbitrarily. For this purpose, the modules contain a generic register <strong>input_select</strong> (except for ASG).
+Connecting the <strong>output_signal</strong> of submodule <strong>i</strong> to the <strong>input_signal</strong> of submodule <strong>j</strong> is done by setting the register <strong>input_select[j]</strong> to <strong>i</strong>;</p>
+<p>Similarly, a second, possibly different output is allowed for each module (except for scope and trigger): <strong>output_direct</strong>.
+This output is added to the analog output 1 and/or 2 depending on the value of the register <strong>output_select</strong>.</p>
+<p>The routing of digital signals within the different FPGA modules is handled by a DSP multiplexer coded in VHDL in the file <a class="reference external" href="https://github.com/lneuhaus/pyrpl/blob/master/pyrpl/fpga/rtl/red_pitaya_dsp.v">red_pitaya_dsp.v</a>.
+An illustration of the DSP module’s principle is provided below:</p>
+<a class="reference internal image-reference" href="_images/DSP.jpg"><img alt="DSP Signal routing in PyRPL" class="align-center" src="_images/DSP.jpg" style="width: 467.0px; height: 592.0px;" />
+</a>
+</section>
+<section id="monitor-server">
+<h3><span class="section-number">4.3.2. </span>Monitor Server<a class="headerlink" href="#monitor-server" title="Link to this heading">¶</a></h3>
+<p>The monitor server is a lightweight application written in C (the source code is in the file <a class="reference external" href="https://github.com/lneuhaus/pyrpl/blob/master/pyrpl/monitor_server/monitor_server.c">monitor_server.c</a>) and running on the redpitaya OS to allow remote writing and monitoring of FPGA registers.</p>
+<p>The program is launched on the redpitaya with (automatically done at startup):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">monitor</span><span class="o">-</span><span class="n">server</span> <span class="n">PORT</span><span class="o">-</span><span class="n">NUMBER</span><span class="p">,</span> <span class="n">where</span> <span class="n">the</span> <span class="n">default</span> <span class="n">port</span> <span class="n">number</span> <span class="ow">is</span> <span class="mf">2222.</span>
+</pre></div>
+</div>
+<p>We allow for bidirectional data transfer. The client (python program) connects to the server, which in return accepts the connection.
+The client sends 8 bytes of data:</p>
+<ul class="simple">
+<li><p>Byte 1 is interpreted as a character: ‘r’ for read and ‘w’ for write, and ‘c’ for close. All other messages are ignored.</p></li>
+<li><p>Byte 2 is reserved.</p></li>
+<li><p>Bytes 3+4 are interpreted as unsigned int. This number n is the amount of 4-byte-units to be read or written. Maximum is 2^16.</p></li>
+<li><p>Bytes 5-8 are the start address to be written to.</p></li>
+</ul>
+<p>If the command is read, the server will then send the requested 4*n bytes to the client.
+If the command is write, the server will wait for 4*n bytes of data from the server and write them to the designated FPGA address space.
+If the command is close, or if the connection is broken, the server program will terminate.</p>
+<p>After this, the server will wait for the next command.</p>
+</section>
+<section id="python-package-pyrpl">
+<h3><span class="section-number">4.3.3. </span>Python package PyRPL<a class="headerlink" href="#python-package-pyrpl" title="Link to this heading">¶</a></h3>
+<p>The python package PyRPL defines all the necessary tools to abstract the communication layer between the client-computer and the redpitaya.
+In this way, it is possible to manipulate FPGA registers transparently, as if they were simple attributes of local python objects.
+We give here a brief overview of the main python objects in PyRPL.</p>
+<section id="the-module-class">
+<h4><span class="section-number">4.3.3.1. </span>The Module class<a class="headerlink" href="#the-module-class" title="Link to this heading">¶</a></h4>
+<p>Each FPGA module has a python counterpart: an instance of the class HardwareModule. The inheritance diagram of all HardwareModules is represented below:</p>
+<p>For more complex functionalities, such as those involving the concurrent use of several FPGA modules,
+purely software modules can be created. Those modules only inherit from the base class Module and they don’t have an FPGA counterpart. Below, the inheritance diagram of all software modules:</p>
+<p>In addition, to prevent a hardware resource from being used twice, HardwareModules should be accessed via the ModuleManagers which takes care of reserving them for a specific user or Module. For example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span> <span class="c1"># import pyrpl library</span>
+ <span class="kn">from</span><span class="w"> </span><span class="nn">pyrpl</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pyrpl</span>
+
+ <span class="c1"># create an interface to the Red Pitaya</span>
+ <span class="n">pyrpl</span> <span class="o">=</span> <span class="n">Pyrpl</span><span class="p">()</span>
+
+<span class="c1"># reserve the scope for user &#39;username&#39;</span>
+ <span class="k">with</span> <span class="n">pyrpl</span><span class="o">.</span><span class="n">scopes</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;username&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">mod</span><span class="p">:</span>
+      <span class="n">curve</span> <span class="o">=</span> <span class="n">mod</span><span class="o">.</span><span class="n">single</span><span class="p">()</span> <span class="c1"># acquire a curve</span>
+<span class="c1"># The scope is freed for latter use at this point</span>
+</pre></div>
+</div>
+</section>
+<section id="the-proprety-descriptors">
+<h4><span class="section-number">4.3.3.2. </span>The Proprety descriptors<a class="headerlink" href="#the-proprety-descriptors" title="Link to this heading">¶</a></h4>
+<p>HardwareModules are essentially a list of FPGA registers that can be accessed transparently such as on the following example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># import pyrpl library</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyrpl</span>
+
+<span class="c1"># create an interface to the Red Pitaya</span>
+<span class="n">r</span> <span class="o">=</span> <span class="n">pyrpl</span><span class="o">.</span><span class="n">Pyrpl</span><span class="p">()</span><span class="o">.</span><span class="n">redpitaya</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">hk</span><span class="o">.</span><span class="n">led</span><span class="p">)</span> <span class="c1"># print the current led pattern</span>
+
+<span class="n">r</span><span class="o">.</span><span class="n">hk</span><span class="o">.</span><span class="n">led</span> <span class="o">=</span> <span class="mb">0b10101010</span>  <span class="c1"># change led pattern</span>
+</pre></div>
+</div>
+<p>Changing a register’s value should trigger the following actions:</p>
+<ul class="simple">
+<li><p>communicating the new value to the monitor_server for the FPGA update via a TCP-IP socket.</p></li>
+<li><p>the new value should be saved on-disk to restore the system in the same state at the next startup.</p></li>
+<li><p>in case a Graphical User Interface is running, the displayed value should be updated.</p></li>
+</ul>
+<p>To make sure all these actions are triggered by the simple python affectation, we use a <a class="reference external" href="https://docs.python.org/2/howto/descriptor.html">descriptor</a> pattern. The idea is to define
+setter and getter functions inside an auxilary “descriptor” class. The diagram below shows the inheritance diagram for the most common attribute descriptor types.</p>
+<p>As for the distinction between software modules and hardware modules above, the properties that inherit from BaseRegister are directly mapping an FPGA register.
+On the other hand, software modules are using properties that are not in direct correspondance with an FPGA register. However, since they inherit from BaseAttribute,
+the load/save and GUI update mechanism is still implemented.</p>
+</section>
+<section id="module-states">
+<h4><span class="section-number">4.3.3.3. </span>Module states<a class="headerlink" href="#module-states" title="Link to this heading">¶</a></h4>
+<p>An important member of the Module class is the list <strong>_setup_attributes</strong>. This is a list of attribute names forming a subset of all module attributes. The value of the attributes in
+<strong>_setup_attributes</strong> constitutes the current state of the module. When the PyRPL instance has been created with a configuration file, the current state of each module is kept in-sync
+with the configuration file. This is particularly useful for GUI users who would like to keep the previous settings of all modules from one session to the next.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>The config file is <em>not</em> kept in-sync with modules that are reserved by a user or another module. It is the responsibility of the user-script or owner module to keep track of the slave module state. Moreover, the slave-module is restored to the last current state whenever it becomes free.</p>
+</div>
+<p>The state of a module can be saved for latter use in a separate section of the config file. The following example shows the basic use of the load/save API:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># import pyrpl library</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pyrpl</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pyrpl</span>
+
+<span class="c1"># create an interface to the Red Pitaya</span>
+<span class="n">scope</span> <span class="o">=</span> <span class="n">Pyrpl</span><span class="p">(</span><span class="s1">&#39;new_config_file&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">redpitaya</span><span class="o">.</span><span class="n">scope</span>
+
+<span class="n">scope</span><span class="o">.</span><span class="n">duration</span> <span class="o">=</span> <span class="mf">1.</span> <span class="c1"># set curve duration to 1s</span>
+<span class="n">scope</span><span class="o">.</span><span class="n">save_state</span><span class="p">(</span><span class="s1">&#39;slow_scan&#39;</span><span class="p">)</span> <span class="c1"># save state with label &#39;slow_scan&#39;</span>
+<span class="n">scope</span><span class="o">.</span><span class="n">duration</span> <span class="o">=</span> <span class="mf">0.01</span> <span class="c1"># set curve duration to 0.01s</span>
+<span class="n">scope</span><span class="o">.</span><span class="n">save_state</span><span class="p">(</span><span class="s1">&#39;fast_scan&#39;</span><span class="p">)</span> <span class="c1"># save state with label &#39;fast_scan&#39;</span>
+<span class="n">scope</span><span class="o">.</span><span class="n">load_state</span><span class="p">(</span><span class="s1">&#39;slow_scan&#39;</span><span class="p">)</span> <span class="c1"># load state &#39;slow_scan&#39;</span>
+<span class="n">scope</span><span class="o">.</span><span class="n">single</span><span class="p">()</span> <span class="c1"># acquire curve with a 1s duration</span>
+</pre></div>
+</div>
+</section>
+<section id="automatic-gui-creation">
+<h4><span class="section-number">4.3.3.4. </span>Automatic GUI creation<a class="headerlink" href="#automatic-gui-creation" title="Link to this heading">¶</a></h4>
+<p>Designing Graphical User Interface can be a tedious work. However, since module attributes are defined in a uniform fashion across the project,
+most of the GUI creation can be handled automatically. Our GUI is based on the very popular and cross platform library <a class="reference external" href="https://riverbankcomputing.com/software/pyqt/intro">PyQt</a>
+in conjonction with the <a class="reference external" href="https://pypi.python.org/pypi/QtPy">qtpy</a> abstraction layer to make PyRPL compatible with PyQt4, PyQt5 and PySide APIs.</p>
+<p>Each PyRPL module is represented by a widget in the Main PyRPL window. The list of attributes to display in the GUI is defined in the Module class by the class member <strong>_gui_attributes</strong>.
+When the module widget is created, sub-widgets are automatically created to manipulate the value of each attribute listed in <strong>_gui_attributes</strong>.</p>
+</section>
+<section id="example-definition-of-the-pid-class">
+<h4><span class="section-number">4.3.3.5. </span>Example: definition of the Pid class<a class="headerlink" href="#example-definition-of-the-pid-class" title="Link to this heading">¶</a></h4>
+<p>The following is extracted from <a class="reference external" href="https://github.com/lneuhaus/pyrpl/blob/master/pyrpl/hardware_modules/pid.py">pid.py</a></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Pid</span><span class="p">(</span><span class="n">FilterModule</span><span class="p">):</span>
+    <span class="c1"># Type of widget to use for this Module class</span>
+    <span class="c1"># should derive from ModuleWidget</span>
+    <span class="n">_widget_class</span> <span class="o">=</span> <span class="n">PidWidget</span>
+
+    <span class="c1"># QObject used to communicate with the widget</span>
+    <span class="n">_signal_launcher</span> <span class="o">=</span> <span class="n">SignalLauncherPid</span>
+
+    <span class="c1"># List of attributes forming the module state</span>
+    <span class="n">_setup_attributes</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;input&quot;</span><span class="p">,</span> <span class="c1"># defined in base class FilterModule</span>
+                         <span class="s2">&quot;output_direct&quot;</span><span class="p">,</span> <span class="c1"># defined in base class FilterModule</span>
+                         <span class="s2">&quot;setpoint&quot;</span><span class="p">,</span>
+                         <span class="s2">&quot;p&quot;</span><span class="p">,</span>
+                         <span class="s2">&quot;i&quot;</span><span class="p">,</span>
+                         <span class="c1">#&quot;d&quot;, # Not implemented in the current version of PyRPL</span>
+                         <span class="s2">&quot;inputfilter&quot;</span><span class="p">,</span>
+                         <span class="s2">&quot;max_voltage&quot;</span><span class="p">,</span>
+                         <span class="s2">&quot;min_voltage&quot;</span><span class="p">]</span>
+
+    <span class="c1"># list of attribtue to display in the GUI</span>
+    <span class="n">_gui_attributes</span> <span class="o">=</span> <span class="n">_setup_attributes</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;ival&quot;</span><span class="p">]</span>
+
+    <span class="c1"># Actions to perform immediately after a state has been loaded</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        sets up the pid (just setting the attributes is OK).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span>
+
+    <span class="c1"># Below are the different attributes of a PID module (mostly registers)</span>
+
+    <span class="n">ival</span> <span class="o">=</span> <span class="n">IValAttribute</span><span class="p">(</span><span class="nb">min</span><span class="o">=-</span><span class="mi">4</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">increment</span><span class="o">=</span> <span class="mf">8.</span> <span class="o">/</span> <span class="mi">2</span><span class="o">**</span><span class="mi">16</span><span class="p">,</span> <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;Current &quot;</span>
+            <span class="s2">&quot;value of the integrator memory (i.e. pid output voltage offset)&quot;</span><span class="p">)</span>
+
+    <span class="n">setpoint</span> <span class="o">=</span> <span class="n">FloatRegister</span><span class="p">(</span><span class="mh">0x104</span><span class="p">,</span> <span class="n">bits</span><span class="o">=</span><span class="mi">14</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span> <span class="mi">2</span> <span class="o">**</span><span class="mi">13</span><span class="p">,</span>
+                             <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;pid setpoint [volts]&quot;</span><span class="p">)</span>
+
+    <span class="n">min_voltage</span> <span class="o">=</span> <span class="n">FloatRegister</span><span class="p">(</span><span class="mh">0x124</span><span class="p">,</span> <span class="n">bits</span><span class="o">=</span><span class="mi">14</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span> <span class="mi">2</span> <span class="o">**</span><span class="mi">13</span><span class="p">,</span>
+                                <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;minimum output signal [volts]&quot;</span><span class="p">)</span>
+    <span class="n">max_voltage</span> <span class="o">=</span> <span class="n">FloatRegister</span><span class="p">(</span><span class="mh">0x128</span><span class="p">,</span> <span class="n">bits</span><span class="o">=</span><span class="mi">14</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span> <span class="mi">2</span> <span class="o">**</span><span class="mi">13</span><span class="p">,</span>
+                                <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;maximum output signal [volts]&quot;</span><span class="p">)</span>
+
+    <span class="n">p</span> <span class="o">=</span> <span class="n">GainRegister</span><span class="p">(</span><span class="mh">0x108</span><span class="p">,</span> <span class="n">bits</span><span class="o">=</span><span class="n">_GAINBITS</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span> <span class="mi">2</span> <span class="o">**</span><span class="n">_PSR</span><span class="p">,</span>
+                      <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;pid proportional gain [1]&quot;</span><span class="p">)</span>
+    <span class="n">i</span> <span class="o">=</span> <span class="n">GainRegister</span><span class="p">(</span><span class="mh">0x10C</span><span class="p">,</span> <span class="n">bits</span><span class="o">=</span><span class="n">_GAINBITS</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span> <span class="mi">2</span> <span class="o">**</span><span class="n">_ISR</span> <span class="o">*</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span>
+                                                  <span class="mf">8e-9</span><span class="p">,</span>
+                      <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;pid integral unity-gain frequency [Hz]&quot;</span><span class="p">)</span>
+    <span class="p">(</span><span class="o">...</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The generated widget is represented below:</p>
+<a class="reference internal image-reference" href="_images/pid_example.jpg"><img alt="The PID widget" class="align-center" src="_images/pid_example.jpg" style="width: 1114.0px; height: 124.0px;" />
+</a>
+</section>
+</section>
+</section>
+</section>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="_sources/basics.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2014-2025, Leonhard Neuhaus, Samuel Deléglise, Michaël Croquette .<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 7.4.7.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>

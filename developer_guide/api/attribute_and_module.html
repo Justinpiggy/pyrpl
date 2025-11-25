@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>5.6.5. Base classes Attributes and Module &#8212; pyrpl 0.9.7.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../_static/bootstrap-sphinx.css?v=4468db6d" />
+    <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=fd3f3429" />
+    <script src="../../_static/documentation_options.js?v=cf93a8f2"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="icon" href="../../_static/icon.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="5.6.6. Starting to rewrite SelectAttribute/Property" href="select_property.html" />
+    <link rel="prev" title="5.6.4. MemoryTree" href="memory_tree.html" />
+<meta charset='utf-8'>
+<meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script type="text/javascript" src="../../_static/js/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="../../_static/js/jquery-fix.js"></script>
+<script type="text/javascript" src="../../_static/bootstrap-3.4.1/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="../../_static/bootstrap-sphinx.js"></script>
+
+  </head><body>
+  
+
+  <style id="ribbon">
+    #forkongithub a{background:#c11;color:#fff;text-decoration:none;font-family:arial,sans-serif;text-align:center;font-weight:bold;padding:5px 40px;font-size:1rem;line-height:2rem;position:relative;transition:0.5s;}
+    #forkongithub a:hover{background:#1c1;color:#fff;}
+    #forkongithub a::before,
+    #forkongithub a::after{content:"";width:100%;display:block;position:absolute;top:1px;left:0;height:1px;background:#fff;}
+    #forkongithub a::after{bottom:1px;top:auto;}@media screen and (min-width:800px)
+    { #forkongithub{position:fixed;display:block;top:0;right:0;width:200px;overflow:hidden;height:200px;z-index:9999;}#forkongithub a{width:200px;position:absolute;top:45px;right:-45px;transform:rotate(45deg);-webkit-transform:rotate(45deg);-ms-transform:rotate(45deg);-moz-transform:rotate(45deg);-o-transform:rotate(45deg);box-shadow:4px 4px 10px rgba(0,0,0,0.8);}}
+  </style>
+  <span id="forkongithub"><a href="https://www.github.com/lneuhaus/pyrpl#fork-destination-box">Fork PyRPL on GitHub</a></span>
+
+  <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-102689373-2', 'auto');
+    ga('send', 'pageview');
+
+  </script>
+
+
+  <div id="navbar" class="navbar navbar-inverse navbar-default navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".nav-collapse">
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="../../index.html">
+          PyRPL</a>
+        <span class="navbar-text navbar-version pull-left"><b>0.9.7.0</b></span>
+      </div>
+
+        <div class="collapse navbar-collapse nav-collapse">
+          <ul class="nav navbar-nav">
+            
+                <li><a href="../../index.html">Home</a></li>
+                <li><a href="../../installation.html">Installation</a></li>
+                <li><a href="../../gui.html">Graphical user interface</a></li>
+                <li><a href="../../api.html">API</a></li>
+                <li><a href="../../basics.html">How PyRPL works</a></li>
+                <li><a href="../index.html">Infos for Developers</a></li>
+            
+            
+              
+              
+            
+            
+            
+            
+            
+          </ul>
+
+          
+            
+<form class="navbar-form navbar-right" action="../../search.html" method="get">
+ <div class="form-group">
+  <input type="text" name="q" class="form-control" placeholder="Search" />
+ </div>
+  <input type="hidden" name="check_keywords" value="yes" />
+  <input type="hidden" name="area" value="default" />
+</form>
+          
+        </div>
+    </div>
+  </div>
+
+<div class="container">
+  <div class="row">
+      <div class="col-md-3">
+        <div id="sidebar" class="bs-sidenav" role="complementary"><ul>
+<li><a class="reference internal" href="#">5.6.5. Base classes Attributes and Module</a><ul>
+<li><a class="reference internal" href="#module-see-basemodule-in-module-py">5.6.5.1. Module (see BaseModule in module.py)</a><ul>
+<li><a class="reference internal" href="#public-methods">5.6.5.1.1. public methods</a></li>
+<li><a class="reference internal" href="#public-attributes">5.6.5.1.2. Public attributes:</a></li>
+<li><a class="reference internal" href="#class-attributes-to-be-implemented-in-derived-class">5.6.5.1.3. class attributes to be implemented in derived class:</a></li>
+<li><a class="reference internal" href="#methods-to-implement-in-derived-class">5.6.5.1.4. methods to implement in derived class:</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#attributes">5.6.5.2. Attributes</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    <div class="body col-md-9 content" role="main">
+      
+  <section id="base-classes-attributes-and-module">
+<h1><span class="section-number">5.6.5. </span>Base classes Attributes and Module<a class="headerlink" href="#base-classes-attributes-and-module" title="Link to this heading">¶</a></h1>
+<p>Two concepts are central to almost any object in the API: Attributes and
+Modules.</p>
+<p>Attributes are essentially variables which are automatically
+synchronized between a number of devices, i.e. the value of an FPGA
+register, a config file to store the last setting on the harddisk, and
+possibly a graphical user interface.</p>
+<p>Modules are essentially collections of attributes that provide
+additional functions to usefully govern the interaction of the available
+attributes.</p>
+<p>It is recommended to read the definition of these two classes, but we
+summarize the way they are used in practice by listing the important
+methods:</p>
+<section id="module-see-basemodule-in-module-py">
+<h2><span class="section-number">5.6.5.1. </span>Module (see BaseModule in module.py)<a class="headerlink" href="#module-see-basemodule-in-module-py" title="Link to this heading">¶</a></h2>
+<p>A module is a component of pyrpl doing a specific task, such as e.g.
+Scope/Lockbox/NetworkAnalyzer. The module can have a widget to interact
+with it graphically.</p>
+<p>It is composed of attributes (see attributes.py) whose values represent
+the current state of the module (more precisely, the state is defined by
+the value of all attributes in _setup_attributes)</p>
+<p>The module can be slaved or freed by a user or another module. When the
+module is freed, it goes back to the state immediately before being
+slaved. To make sure the module is freed, use the syntax:</p>
+<p>with pyrpl.mod_mag.pop(‘owner’) as mod: mod.do_something()</p>
+<section id="public-methods">
+<h3><span class="section-number">5.6.5.1.1. </span>public methods<a class="headerlink" href="#public-methods" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>get_setup_attributes(): returns a dict with the current values of
+the setup attributes</p></li>
+<li><p>set_setup_attributes(**kwds): sets the provided setup_attributes
+(setup is not called)</p></li>
+<li><p>save_state(name): saves the current “state” (using
+get_setup_attribute) into the config file</p></li>
+<li><p>load_state(name): loads the state ‘name’ from the config file (setup
+is not called by default)</p></li>
+<li><p>create_widget(): returns a widget according to widget_class</p></li>
+<li><p>setup(<strong>kwds): first, performs set_setup_attributes(</strong>kwds),
+then calls _setup() to set the module ready for acquisition. This
+method is automatically created by ModuleMetaClass and it combines
+the docstring of individual setup_attributes with the docstring of
+_setup()</p></li>
+<li><p>free: sets the module owner to None, and brings the module back the
+state before it was slaved equivalent to module.owner = None)</p></li>
+</ul>
+</section>
+<section id="public-attributes">
+<h3><span class="section-number">5.6.5.1.2. </span>Public attributes:<a class="headerlink" href="#public-attributes" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>name: attributed based on _section_name at instance creation (also
+used as a section key in the config file)</p></li>
+<li><p>states: the list of states available in the config file</p></li>
+<li><p>owner: (string) a module can be owned (reserved) by a user or another
+module. The module is free if and only if owner is None</p></li>
+<li><p>pyrpl: recursively looks through parent modules until it reaches the
+pyrpl instance</p></li>
+</ul>
+</section>
+<section id="class-attributes-to-be-implemented-in-derived-class">
+<h3><span class="section-number">5.6.5.1.3. </span>class attributes to be implemented in derived class:<a class="headerlink" href="#class-attributes-to-be-implemented-in-derived-class" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>individual attributes (instances of BaseAttribute)</p></li>
+<li><p>_setup_attributes: attribute names that are touched by
+setup(**kwds)/ saved/restored upon module creation</p></li>
+<li><p>_gui_attributes: attribute names to be displayed by the widget</p></li>
+<li><p>_callback_attributes: attribute_names that triggers a callback
+when their value is changed in the base class, _callback just calls
+setup()</p></li>
+<li><p>_widget_class: class of the widget to use to represent the module
+in the gui(a child of ModuleWidget)</p></li>
+<li><p>_section_name: the name under which all instances of the class
+should be stored in the config file</p></li>
+</ul>
+</section>
+<section id="methods-to-implement-in-derived-class">
+<h3><span class="section-number">5.6.5.1.4. </span>methods to implement in derived class:<a class="headerlink" href="#methods-to-implement-in-derived-class" title="Link to this heading">¶</a></h3>
+<ul>
+<li><p>_init_module(): initializes the module at startup. During this
+initialization, attributes can be initialized without overwriting
+config file values. Practical to use instead of <strong>init</strong> to avoid
+calling super().<strong>init</strong>()</p></li>
+<li><p>_setup(): sets the module ready for acquisition/output with the
+current attribute’s values. The metaclass of the module autogenerates
+a function like this: def setup(self, <strong>kwds): *** docstring of
+function _setup *</strong> <a href="#id1"><span class="problematic" id="id2">**</span></a>* for attribute in self.setup_attributes:
+print-attribute-docstring-here ****</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="bp">self</span><span class="o">.</span><span class="n">set_setup_attributes</span><span class="p">(</span><span class="n">kwds</span><span class="p">)</span>
+<span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_setup</span><span class="p">()</span>
+</pre></div>
+</div>
+</li>
+<li><p>_ownership_changed(old, new): this function is called when the
+module owner changes it can be used to stop the acquisition for
+instance.</p></li>
+</ul>
+</section>
+</section>
+<section id="attributes">
+<h2><span class="section-number">5.6.5.2. </span>Attributes<a class="headerlink" href="#attributes" title="Link to this heading">¶</a></h2>
+<p>The parameters of the modules are controlled by descriptors deriving
+from BaseAttribute.</p>
+<p>An attribute is a field that can be set or get by several means:</p>
+<ul class="simple">
+<li><p>programmatically: module.attribute = value</p></li>
+<li><p>graphically: attribute.create_widget(module) returns a widget to
+manipulate the value</p></li>
+<li><p>via loading the value in a config file for permanent value
+preservation</p></li>
+</ul>
+<p>Attributes have a type (BoolAttribute, FloatAttribute…), and they are
+actually separated in two categories:</p>
+<ul class="simple">
+<li><p>Registers: the attributes that are stored in the FPGA itself</p></li>
+<li><p>Properties: the attributes that are only stored in the computer and
+that are not representing an FPGA register</p></li>
+</ul>
+<p>A common mistake is to use the Attribute class instead of the
+corresponding Register or Property class (FloatAttribute instead of
+FloatRegister or FloatProperty for instance): this class is abstract
+since it doesn’t define a set_value/get_value method to specify how
+the data is stored in practice.</p>
+</section>
+</section>
+
+
+    </div>
+      
+  </div>
+</div>
+<footer class="footer">
+  <div class="container">
+    <p class="pull-right">
+      <a href="#">Back to top</a>
+      
+        <br/>
+        
+<div id="sourcelink">
+  <a href="../../_sources/developer_guide/api/attribute_and_module.rst.txt"
+     rel="nofollow">Source</a>
+</div>
+      
+    </p>
+    <p>
+        &copy; Copyright 2014-2025, Leonhard Neuhaus, Samuel Deléglise, Michaël Croquette .<br/>
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 7.4.7.<br/>
+    </p>
+  </div>
+</footer>
+  </body>
+</html>
