@@ -402,11 +402,11 @@ red_pitaya_hk i_hk (
   .digital_loop    (  digital_loop               ),
   // Expansion connector
   .exp_p_dat_i     (  exp_p_in                   ),  // input data
-  .exp_p_dat_o     (  exp_p_out                  ),  // output data
-  .exp_p_dir_o     (  exp_p_dir                  ),  // 1-output enable
+  .exp_p_dat_o     (),  // output data
+  .exp_p_dir_o     (),  // 1-output enable
   .exp_n_dat_i     (  exp_n_in                   ),
-  .exp_n_dat_o     (  exp_n_out                  ),
-  .exp_n_dir_o     (  exp_n_dir                  ),
+  .exp_n_dat_o     (),
+  .exp_n_dir_o     (),
    // System bus
   .sys_addr        (  sys_addr                   ),  // address
   .sys_wdata       (  sys_wdata                  ),  // write data
@@ -417,9 +417,25 @@ red_pitaya_hk i_hk (
   .sys_err         (  sys_err[0]                 ),  // error indicator
   .sys_ack         (  sys_ack[0]                 )   // acknowledge signal
 );
+assign exp_p_dir=8'b00000111;
+assign exp_n_dir=8'b00000101;
 
-IOBUF i_iobufp [8-1:0] (.O(exp_p_in), .IO(exp_p_io), .I(exp_p_out), .T(~exp_p_dir) );
-IOBUF i_iobufn [8-1:0] (.O(exp_n_in), .IO(exp_n_io), .I(exp_n_out), .T(~exp_n_dir) );
+IOBUF i_iobufp [8-1:3] (.O(exp_p_in), .IO(exp_p_io), .I(exp_p_out), .T(~exp_p_dir) );
+IOBUF i_iobufn [8-1:3] (.O(exp_n_in), .IO(exp_n_io), .I(exp_n_out), .T(~exp_n_dir) );
+
+wire ad5689_sclk;
+wire ad5689_sdin;
+wire ad5689_rstn;
+wire ad5689_syncn;
+wire ad5689_ldacn;
+wire ad5689_sdo;
+
+assign ad5689_sclk=exp_p_out[1];
+assign ad5689_sdin=exp_p_out[0];
+assign ad5689_syncn=exp_n_out[0];
+assign ad5689_ldacn=exp_n_out[2];
+assign ad5689_rstn=exp_p_out[2];
+assign ad5689_sdo=exp_n_out[1];
 
 //---------------------------------------------------------------------------------
 //  Oscilloscope application
@@ -538,22 +554,66 @@ red_pitaya_dsp i_dsp (
 //  Analog mixed signals
 //  XADC and slow PWM DAC control
 
-wire  [ 24-1: 0] pwm_cfg_a;
-wire  [ 24-1: 0] pwm_cfg_b;
-wire  [ 24-1: 0] pwm_cfg_c;
-wire  [ 24-1: 0] pwm_cfg_d;
+// wire  [ 24-1: 0] pwm_cfg_a;
+// wire  [ 24-1: 0] pwm_cfg_b;
+// wire  [ 24-1: 0] pwm_cfg_c;
+// wire  [ 24-1: 0] pwm_cfg_d;
 
-red_pitaya_ams i_ams (
-   // power test
+// red_pitaya_ams i_ams (
+//    // power test
+//   .clk_i           (  adc_clk                    ),  // clock
+//   .rstn_i          (  adc_rstn                   ),  // reset - active low
+//   // PWM configuration
+//   .dac_a_o         (  pwm_cfg_a                  ),
+//   .dac_b_o         (  pwm_cfg_b                  ),
+//   .dac_c_o         (  pwm_cfg_c                  ),
+//   .dac_d_o         (  pwm_cfg_d                  ),
+//   .pwm0_i 		   (  pwm_signals[0]             ),
+//   .pwm1_i 		   (  pwm_signals[1]             ),
+//    // System bus
+//   .sys_addr        (  sys_addr                   ),  // address
+//   .sys_wdata       (  sys_wdata                  ),  // write data
+//   .sys_sel         (  sys_sel                    ),  // write byte select
+//   .sys_wen         (  sys_wen[4]                 ),  // write enable
+//   .sys_ren         (  sys_ren[4]                 ),  // read enable
+//   .sys_rdata       (  sys_rdata[ 4*32+31: 4*32]  ),  // read data
+//   .sys_err         (  sys_err[4]                 ),  // error indicator
+//   .sys_ack         (  sys_ack[4]                 )   // acknowledge signal
+// );
+
+
+// wire  [ 14-1: 0] pwm_signals[4-1:0];
+
+// red_pitaya_pwm pwm [4-1:0] (
+//   // system signals
+//   .clk   (pwm_clk ),
+//   .rstn  (pwm_rstn),
+//   // configuration
+//   .cfg   ({pwm_cfg_d, pwm_cfg_c, pwm_cfg_b, pwm_cfg_a}),
+//   //.signal_i ({pwm_signals[3],pwm_signals[2],pwm_signals[1],pwm_signals[0]}),
+//   // PWM outputs
+//   .pwm_o (dac_pwm_o),
+//   .pwm_s ()
+// );
+
+
+
+
+//
+// AD5689
+red_pitaya_ad5689 i_ad5689 (
   .clk_i           (  adc_clk                    ),  // clock
   .rstn_i          (  adc_rstn                   ),  // reset - active low
-  // PWM configuration
-  .dac_a_o         (  pwm_cfg_a                  ),
-  .dac_b_o         (  pwm_cfg_b                  ),
-  .dac_c_o         (  pwm_cfg_c                  ),
-  .dac_d_o         (  pwm_cfg_d                  ),
-  .pwm0_i 		   (  pwm_signals[0]             ),
-  .pwm1_i 		   (  pwm_signals[1]             ),
+  // Data input configuration
+  .data0_i 		   (  pwm_signals[0]             ),
+  .data1_i 		   (  pwm_signals[1]             ),
+
+  .dac_sclk (ad5689_sclk),
+  .dac_sdin (ad5689_sdin),
+  .dac_syncn(ad5689_syncn),
+  .dac_ldacn(ad5689_ldacn),
+  .dac_rstn(ad5689_rstn),
+  .dac_sdo(ad5689_sdo),
    // System bus
   .sys_addr        (  sys_addr                   ),  // address
   .sys_wdata       (  sys_wdata                  ),  // write data
@@ -563,21 +623,6 @@ red_pitaya_ams i_ams (
   .sys_rdata       (  sys_rdata[ 4*32+31: 4*32]  ),  // read data
   .sys_err         (  sys_err[4]                 ),  // error indicator
   .sys_ack         (  sys_ack[4]                 )   // acknowledge signal
-);
-
-
-wire  [ 14-1: 0] pwm_signals[4-1:0];
-
-red_pitaya_pwm pwm [4-1:0] (
-  // system signals
-  .clk   (pwm_clk ),
-  .rstn  (pwm_rstn),
-  // configuration
-  .cfg   ({pwm_cfg_d, pwm_cfg_c, pwm_cfg_b, pwm_cfg_a}),
-  //.signal_i ({pwm_signals[3],pwm_signals[2],pwm_signals[1],pwm_signals[0]}),
-  // PWM outputs
-  .pwm_o (dac_pwm_o),
-  .pwm_s ()
 );
 
 //---------------------------------------------------------------------------------
