@@ -582,7 +582,7 @@ red_pitaya_dsp i_dsp (
 // );
 
 
-// wire  [ 14-1: 0] pwm_signals[4-1:0];
+wire  [ 14-1: 0] pwm_signals[4-1:0];
 
 // red_pitaya_pwm pwm [4-1:0] (
 //   // system signals
