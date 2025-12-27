@@ -420,8 +420,8 @@ red_pitaya_hk i_hk (
 assign exp_p_dir=8'b00000111;
 assign exp_n_dir=8'b00000101;
 
-IOBUF i_iobufp [8-1:3] (.O(exp_p_in), .IO(exp_p_io), .I(exp_p_out), .T(~exp_p_dir) );
-IOBUF i_iobufn [8-1:3] (.O(exp_n_in), .IO(exp_n_io), .I(exp_n_out), .T(~exp_n_dir) );
+IOBUF i_iobufp [8-1:0] (.O(exp_p_in), .IO(exp_p_io), .I(exp_p_out), .T(~exp_p_dir) );
+IOBUF i_iobufn [8-1:0] (.O(exp_n_in), .IO(exp_n_io), .I(exp_n_out), .T(~exp_n_dir) );
 
 wire ad5689_sclk;
 wire ad5689_sdin;
