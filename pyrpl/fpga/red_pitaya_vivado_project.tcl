@@ -73,6 +73,7 @@ add_files                      $path_rtl/red_pitaya_iq_fgen_block.v
 add_files                      $path_rtl/red_pitaya_iq_block.v
 add_files                      $path_rtl/red_pitaya_trigger_block.v
 add_files                      $path_rtl/red_pitaya_prng.v
+add_files                      $path_rtl/red_pitaya_ad5689.v
 
 add_files -fileset constrs_1      $path_sdc/red_pitaya.xdc
 
