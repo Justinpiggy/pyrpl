@@ -123,8 +123,8 @@ end else begin
         accumulator0<=21'b0;
         accumulator1<=21'b0;
     end else begin
-        accumulator0<=accumulator0+data0_i;
-        accumulator1<=accumulator1+data1_i;
+        accumulator0<=accumulator0+data0_i+16'h7fff;
+        accumulator1<=accumulator1+data1_i+16'h7fff;
     end
 end
 

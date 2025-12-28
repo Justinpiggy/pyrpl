@@ -204,7 +204,8 @@ class RedPitaya(object):
         self.start_ssh()
         # start other stuff
         if self.parameters['reloadfpga']:  # flash fpga
-            self._update_fpga()
+            # self._update_fpga()
+            self._update_fpga("./pyrpl/fpga/red_pitaya.bin","./pyrpl/fpga/red_pitaya.dtbo")
         if self.parameters['reloadserver']:  # reinstall server app
             self.installserver()
         if self.parameters['autostart']:  # start client
