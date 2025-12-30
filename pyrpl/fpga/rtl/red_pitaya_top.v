@@ -417,8 +417,10 @@ red_pitaya_hk i_hk (
   .sys_err         (  sys_err[0]                 ),  // error indicator
   .sys_ack         (  sys_ack[0]                 )   // acknowledge signal
 );
-assign exp_p_dir=8'b00000111;
-assign exp_n_dir=8'b00000101;
+
+// 1 is output enable, 0 is input
+assign exp_p_dir=8'b00000101;
+assign exp_n_dir=8'b00001111;
 
 IOBUF i_iobufp [8-1:0] (.O(exp_p_in), .IO(exp_p_io), .I(exp_p_out), .T(~exp_p_dir) );
 IOBUF i_iobufn [8-1:0] (.O(exp_n_in), .IO(exp_n_io), .I(exp_n_out), .T(~exp_n_dir) );
@@ -430,12 +432,20 @@ wire ad5689_syncn;
 wire ad5689_ldacn;
 wire ad5689_sdo;
 
-assign ad5689_sclk=exp_p_out[1];
-assign ad5689_sdin=exp_p_out[0];
-assign ad5689_syncn=exp_n_out[0];
-assign ad5689_ldacn=exp_n_out[2];
-assign ad5689_rstn=exp_p_out[2];
-assign ad5689_sdo=exp_n_out[1];
+wire ttl_in;
+wire ttl_out;
+
+assign ad5689_sclk=exp_n_out[1];
+assign ad5689_sdin=exp_n_out[0];
+assign ad5689_syncn=exp_p_out[0];
+assign ad5689_ldacn=exp_p_out[2];
+assign ad5689_rstn=exp_n_out[2];
+assign ad5689_sdo=exp_p_in[1];
+assign ttl_out=exp_n_out[3];
+assign ttl_in=exp_p_in[3];
+
+assign ttl_out=ad5689_ldacn;
+
 
 //---------------------------------------------------------------------------------
 //  Oscilloscope application
