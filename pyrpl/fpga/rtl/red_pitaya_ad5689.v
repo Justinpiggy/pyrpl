@@ -161,12 +161,12 @@ else begin
                 dac_data0<=accumulator0[21:21-15];
                 dac_data1<=accumulator1[21:21-15];
                 state<=STATE_UPDATE_A;
-                shift_reg<={4'b0010,4'b0001,accumulator0[21:21-15]};
+                shift_reg<={4'b0001,4'b0001,accumulator0[21:21-15]};
                 sclk_counter<=5'd24;
             end
             else if (counter==11'd100) begin
                 state<=STATE_UPDATE_B;
-                shift_reg<={4'b0010,4'b1000,dac_data1};
+                shift_reg<={4'b0001,4'b1000,dac_data1};
                 sclk_counter<=5'd24;
             end
         end
