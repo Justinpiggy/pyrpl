@@ -1747,6 +1747,82 @@ conda run -n pyrpl-env npm run test:e2e
 1 Chromium test - OK
 ```
 
+## 2026-07-08 ASG and Housekeeping Web Migration
+
+### Change
+
+- Added Qt-free backend models and schemas for `asg0`, `asg1`, and `hk`.
+- Added ASG register helpers using the original PyRPL/Zynq register layout:
+  - ASG base: `0x40200000`
+  - ASG0 waveform RAM: `0x40210000`
+  - ASG1 waveform RAM: `0x40220000`
+  - amplitude/offset packed at `0x40200004 + value_offset`
+  - frequency at `0x40200010 + value_offset`
+  - start phase at `0x4020000c + value_offset`
+  - cycles per burst at `0x40200018 + value_offset`
+  - trigger source bits in the shared control register
+  - direct output registers through DSP output bases `0x40380004` and `0x40390004`
+- Added housekeeping helpers using PyRPL's register layout:
+  - base: `0x40000000`
+  - LED: `0x40000030`
+  - expansion P read/write/direction: `0x20`, `0x18`, `0x10`
+  - expansion N read/write/direction: `0x24`, `0x1c`, `0x14`
+- Extended generic module state save/load/delete to scope, ASG, and HK.
+- Added ASG and Housekeeping panels to the TypeScript workspace model and
+  browser UI. They can be enabled/disabled from the Panels menu like the
+  original PyRPL menu-style instrument selection.
+- Widened workspace split persistence from exactly two panes to N panes, so
+  Split.js can support Scope, ASG, Housekeeping, and Register Debug together.
+- Updated the fake monitor client so untouched `asg0`/`asg1` still provide
+  useful demo signals, but once ASG registers are written the fake scope signal
+  follows ASG waveform/amplitude/offset/frequency registers.
+
+### Boundary
+
+This migrates the first useful ASG/HK control surface and compatible register
+writes. It does not yet expose every PyRPL ASG feature, such as custom user
+waveform upload/noise/random phase controls, nor every future housekeeping
+feature. FPGA firmware and `monitor_server.c` remain untouched.
+
+### Mistake Prevention
+
+Do not assume a checkbox change fires if the UI is already at the requested
+value. In Playwright, `setChecked(true)` on an already-checked HK direction
+checkbox did not emit a change event, so the test was not exercising the write
+path. Toggle to a different value when the point is to test the event/write.
+
+When adding more than two panels to Split.js, the saved size array must match
+the active pane count. A two-element workspace split model works for two
+panels only; use normalized N-pane workspace split sizes for the outer
+workspace and keep two-element sizes only for fixed internal splits such as
+Scope controls/plot.
+
+For fake hardware, keep a useful default demo signal until the corresponding
+registers are touched. After ASG registers are written, fake scope traces
+should follow those registers so browser controls visibly affect the plot.
+
+### Verification
+
+```text
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_app.py
+Ran 27 tests - OK
+
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_scope.py
+Ran 3 tests - OK
+
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_protocol.py
+Ran 2 tests - OK
+
+conda run -n pyrpl-env npm test
+13 tests - OK
+
+conda run -n pyrpl-env npm run build
+OK
+
+conda run -n pyrpl-env npm run test:e2e
+2 Chromium tests - OK
+```
+
 ## 2026-07-08 Module Action API and Running State
 
 ### Change

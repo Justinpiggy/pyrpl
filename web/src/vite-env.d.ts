@@ -8,11 +8,11 @@ interface Window {
     getEventCount: () => number;
     getTraceAverage: () => number;
     getRunningState: () => string;
-    isPanelEnabled: (panelId: "scope" | "registers") => boolean;
+    isPanelEnabled: (panelId: "scope" | "asg" | "housekeeping" | "registers") => boolean;
     getScopeSplitSizes: () => [number, number];
     getWorkspaceLayoutMode: () => "tabs" | "split-horizontal" | "split-vertical";
-    getWorkspaceSplitSizes: () => [number, number];
-    getActivePanelId: () => "scope" | "registers" | null;
+    getWorkspaceSplitSizes: () => number[];
+    getActivePanelId: () => "scope" | "asg" | "housekeeping" | "registers" | null;
     getCsvLineCount: () => number;
     getDisplayedStats: () => { ch1Min: number; ch1Max: number; ch2Min: number; ch2Max: number } | null;
     moduleStatusText: () => string;

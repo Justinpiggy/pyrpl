@@ -414,3 +414,41 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   expect(secondHeight).toBe(firstHeight);
   expect(browserMessages.filter((message) => message.includes("ResizeObserver loop"))).toEqual([]);
 });
+
+test("ASG and housekeeping panels expose migrated module controls", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+  });
+
+  await page.goto("/");
+  await page.locator(".menu-dropdown summary").click();
+  await page.locator("#panel-asg-enabled").setChecked(true);
+  await page.locator(".menu-dropdown summary").click();
+  await page.locator("#panel-housekeeping-enabled").setChecked(true);
+
+  await expect(page.locator(".workspace-tab")).toContainText(["Scope", "ASG", "Housekeeping"]);
+
+  await page.getByRole("button", { name: "ASG" }).click();
+  await expect(page.locator("#asg-panel")).toBeVisible();
+  await page.locator("#asg0-waveform").selectOption("square");
+  await expect(page.locator("#asg0-status")).toContainText("waveform = square");
+  await page.locator("#asg0-amplitude").fill("0.4");
+  await page.locator("#asg0-amplitude").blur();
+  await expect(page.locator("#asg0-status")).toContainText("amplitude = 0.4");
+  await page.locator("#asg0-output-direct").selectOption("out1");
+  await expect(page.locator("#asg0-status")).toContainText("output_direct = out1");
+  await page.locator("#asg0-setup").click();
+  await expect(page.locator("#asg0-status")).toContainText("setup: ok");
+
+  await page.getByRole("button", { name: "Housekeeping" }).click();
+  await expect(page.locator("#housekeeping-panel")).toBeVisible();
+  await page.locator("#hk-led").fill("85");
+  await page.locator("#hk-led").blur();
+  await expect(page.locator("#hk-status")).toContainText("led = 85");
+  await page.locator("#hk-expansion-P1-output").setChecked(false);
+  await expect(page.locator("#hk-status")).toContainText("expansion_P1_output = false");
+  await page.locator("#hk-expansion-P1").setChecked(true);
+  await expect(page.locator("#hk-status")).toContainText("expansion_P1 = true");
+  await page.locator("#hk-refresh").click();
+  await expect(page.locator("#hk-status")).toContainText("Housekeeping controls ready");
+});

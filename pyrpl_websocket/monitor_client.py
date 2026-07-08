@@ -20,6 +20,8 @@ def _np():
 
 LOGGER = logging.getLogger(__name__)
 MAX_WORDS = 65535
+ASG_ADDR_BASE = 0x40200000
+ASG_DATA_LENGTH = 2**14
 
 
 def make_header(command: bytes, addr: int = 0, length: int = 0) -> bytes:
@@ -218,10 +220,8 @@ class DummyClient:
         x = int(absolute_index)
         if signal == 15:
             return 0
-        if signal == 8:
-            return int(np.sin(x / 42.0) * (2**12))
-        if signal == 9:
-            return int(np.sign(np.sin(x / 54.0)) * (2**11))
+        if signal in {8, 9}:
+            return self._fake_asg_value(channel=signal - 8, absolute_index=x)
         if signal in {0, 1, 2}:
             return int(np.sin(x / (120.0 + signal * 25.0)) * (2**10) + np.sin(x / 18.0) * (2**9))
         if signal in {5, 6, 7, 14}:
@@ -236,3 +236,38 @@ class DummyClient:
         base = 90.0 if signal == 10 else 63.0
         phase = 0.0 if signal == 10 else 1.3
         return int(np.sin(x / base + phase) * (2**12))
+
+    def _fake_asg_value(self, channel: int, absolute_index: int) -> int:
+        np = _np()
+        value_offset = 0 if channel == 0 else 0x20
+        data_addr = ASG_ADDR_BASE + (0x10000 if channel == 0 else 0x20000)
+        amplitude_addr = ASG_ADDR_BASE + 0x4 + value_offset
+        frequency_addr = ASG_ADDR_BASE + 0x10 + value_offset
+        if (
+            amplitude_addr not in self.fpgamemory
+            and frequency_addr not in self.fpgamemory
+            and data_addr not in self.fpgamemory
+        ):
+            if channel == 0:
+                return int(np.sin(absolute_index / 42.0) * (2**12))
+            return int(np.sign(np.sin(absolute_index / 54.0)) * (2**11))
+
+        amplitude_offset_word = self.fpgamemory.get(amplitude_addr, 0)
+        amplitude = (amplitude_offset_word & 0x3FFF) / float(2**13)
+        offset_raw = (amplitude_offset_word >> 16) & 0x3FFF
+        if offset_raw & (1 << 13):
+            offset_raw -= 1 << 14
+        offset = offset_raw / float(2**13)
+
+        frequency_word = self.fpgamemory.get(frequency_addr, 0)
+        phase_step = max(1.0, frequency_word / float(2**16))
+        table_index = int((absolute_index * phase_step) % ASG_DATA_LENGTH)
+        table_word = self.fpgamemory.get(data_addr + table_index * 4)
+        if table_word is None:
+            table_value = np.sin(absolute_index / (42.0 if channel == 0 else 54.0))
+        else:
+            table_sample = int(table_word) & 0x3FFF
+            if table_sample & (1 << 13):
+                table_sample -= 1 << 14
+            table_value = table_sample / float(2**13)
+        return int(max(-8192, min(8191, round((offset + amplitude * table_value) * (2**13)))))

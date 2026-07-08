@@ -103,6 +103,33 @@ SCOPE_ACTIONS = [
     },
 ]
 
+ASG_WAVEFORMS = ["sin", "cos", "ramp", "halframp", "square", "dc"]
+ASG_TRIGGER_SOURCES = ["off", "immediately", "ext_positive_edge", "ext_negative_edge", "ext_raw", "high"]
+ASG_OUTPUT_DIRECTS = ["off", "out1", "out2", "both"]
+ASG_SETUP_ATTRIBUTES = [
+    "waveform",
+    "amplitude",
+    "offset",
+    "frequency",
+    "trigger_source",
+    "output_direct",
+    "start_phase",
+    "cycles_per_burst",
+]
+ASG_ACTIONS = [
+    {"name": "setup", "label": "Setup", "description": "Synchronize ASG settings to hardware."},
+    {"name": "trigger", "label": "Trigger", "description": "Send an immediate ASG trigger pulse."},
+    {"name": "off", "label": "Off", "description": "Disable ASG output."},
+]
+
+HK_SETUP_ATTRIBUTES = (
+    ["led"]
+    + [f"expansion_P{index}" for index in range(8)]
+    + [f"expansion_P{index}_output" for index in range(8)]
+    + [f"expansion_N{index}" for index in range(8)]
+    + [f"expansion_N{index}_output" for index in range(8)]
+)
+
 
 @dataclass
 class ScopeSettings:
@@ -125,6 +152,65 @@ class ScopeSettings:
         return asdict(self)
 
 
+@dataclass
+class AsgSettings:
+    """User-facing ASG controls mirroring PyRPL's core ASG widget."""
+
+    waveform: str = "sin"
+    amplitude: float = 0.0
+    offset: float = 0.0
+    frequency: float = 1000.0
+    trigger_source: str = "off"
+    output_direct: str = "off"
+    start_phase: float = 0.0
+    cycles_per_burst: int = 0
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class HkSettings:
+    """Housekeeping LED and expansion connector state."""
+
+    led: int = 0
+    expansion_P0: bool = False
+    expansion_P1: bool = False
+    expansion_P2: bool = False
+    expansion_P3: bool = False
+    expansion_P4: bool = False
+    expansion_P5: bool = False
+    expansion_P6: bool = False
+    expansion_P7: bool = False
+    expansion_P0_output: bool = True
+    expansion_P1_output: bool = True
+    expansion_P2_output: bool = True
+    expansion_P3_output: bool = True
+    expansion_P4_output: bool = True
+    expansion_P5_output: bool = True
+    expansion_P6_output: bool = True
+    expansion_P7_output: bool = True
+    expansion_N0: bool = False
+    expansion_N1: bool = False
+    expansion_N2: bool = False
+    expansion_N3: bool = False
+    expansion_N4: bool = False
+    expansion_N5: bool = False
+    expansion_N6: bool = False
+    expansion_N7: bool = False
+    expansion_N0_output: bool = True
+    expansion_N1_output: bool = True
+    expansion_N2_output: bool = True
+    expansion_N3_output: bool = True
+    expansion_N4_output: bool = True
+    expansion_N5_output: bool = True
+    expansion_N6_output: bool = True
+    expansion_N7_output: bool = True
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def module_list() -> list[dict[str, Any]]:
     """Return the first module inventory for the web UI."""
 
@@ -134,7 +220,25 @@ def module_list() -> list[dict[str, Any]]:
             "kind": "hardware",
             "label": "Scope",
             "description": "Two-channel Red Pitaya oscilloscope controls and streaming data.",
-        }
+        },
+        {
+            "name": "asg0",
+            "kind": "hardware",
+            "label": "ASG 0",
+            "description": "Arbitrary signal generator channel 0.",
+        },
+        {
+            "name": "asg1",
+            "kind": "hardware",
+            "label": "ASG 1",
+            "description": "Arbitrary signal generator channel 1.",
+        },
+        {
+            "name": "hk",
+            "kind": "hardware",
+            "label": "Housekeeping",
+            "description": "LED and expansion connector digital I/O.",
+        },
     ]
 
 
@@ -157,6 +261,38 @@ def scope_attribute_schema(settings: ScopeSettings) -> list[dict[str, Any]]:
 
 def scope_actions() -> list[dict[str, Any]]:
     return [dict(action) for action in SCOPE_ACTIONS]
+
+
+def asg_attribute_schema(settings: AsgSettings) -> list[dict[str, Any]]:
+    return [
+        _select("waveform", "Waveform", settings.waveform, ASG_WAVEFORMS),
+        _number("amplitude", "Amplitude", settings.amplitude, 0.0, 1.0),
+        _number("offset", "Offset", settings.offset, -1.0, 1.0),
+        _number("frequency", "Frequency", settings.frequency, 0.0, 62.5e6),
+        _select("trigger_source", "Trigger", settings.trigger_source, ASG_TRIGGER_SOURCES),
+        _select("output_direct", "Output", settings.output_direct, ASG_OUTPUT_DIRECTS),
+        _number("start_phase", "Start Phase", settings.start_phase, 0.0, 360.0),
+        _number("cycles_per_burst", "Cycles/Burst", settings.cycles_per_burst, 0, 2**32 - 1, step=1),
+    ]
+
+
+def asg_actions() -> list[dict[str, Any]]:
+    return [dict(action) for action in ASG_ACTIONS]
+
+
+def hk_attribute_schema(settings: HkSettings) -> list[dict[str, Any]]:
+    attributes: list[dict[str, Any]] = [_number("led", "LED", settings.led, 0, 255, step=1)]
+    for sign in ("P", "N"):
+        for index in range(8):
+            name = f"expansion_{sign}{index}"
+            attributes.append(_boolean(name, f"{sign}{index}", getattr(settings, name)))
+            direction = f"{name}_output"
+            attributes.append(_boolean(direction, f"{sign}{index} Output", getattr(settings, direction)))
+    return attributes
+
+
+def hk_actions() -> list[dict[str, Any]]:
+    return []
 
 
 def set_scope_attribute(settings: ScopeSettings, name: str, value: Any) -> Any:
@@ -185,6 +321,40 @@ def set_scope_attribute(settings: ScopeSettings, name: str, value: Any) -> Any:
     else:
         raise KeyError(name)
 
+    setattr(settings, name, normalized)
+    return normalized
+
+
+def set_asg_attribute(settings: AsgSettings, name: str, value: Any) -> Any:
+    if name == "waveform":
+        normalized = _require_option(name, str(value), ASG_WAVEFORMS)
+    elif name == "trigger_source":
+        normalized = _require_option(name, str(value), ASG_TRIGGER_SOURCES)
+    elif name == "output_direct":
+        normalized = _require_option(name, str(value), ASG_OUTPUT_DIRECTS)
+    elif name == "amplitude":
+        normalized = _clamp(float(value), 0.0, 1.0)
+    elif name == "offset":
+        normalized = _clamp(float(value), -1.0, 1.0)
+    elif name == "frequency":
+        normalized = _clamp(float(value), 0.0, 62.5e6)
+    elif name == "start_phase":
+        normalized = float(value) % 360.0
+    elif name == "cycles_per_burst":
+        normalized = int(round(_clamp(float(value), 0, 2**32 - 1)))
+    else:
+        raise KeyError(name)
+    setattr(settings, name, normalized)
+    return normalized
+
+
+def set_hk_attribute(settings: HkSettings, name: str, value: Any) -> Any:
+    if name == "led":
+        normalized = int(round(_clamp(float(value), 0, 255)))
+    elif name in HK_SETUP_ATTRIBUTES and name != "led":
+        normalized = bool(value)
+    else:
+        raise KeyError(name)
     setattr(settings, name, normalized)
     return normalized
 

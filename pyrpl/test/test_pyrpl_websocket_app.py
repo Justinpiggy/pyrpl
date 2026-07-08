@@ -6,8 +6,18 @@ from pathlib import Path
 import numpy as np
 
 from pyrpl_websocket.app import create_app, handle_control_message
+from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
 from pyrpl_websocket.assets import asset_info
 from pyrpl_websocket.events import EventBroker
+from pyrpl_websocket.hk_registers import (
+    HK_LED_ADDR,
+    HK_N_DIRECTION_ADDR,
+    HK_N_READ_ADDR,
+    HK_N_WRITE_ADDR,
+    HK_P_DIRECTION_ADDR,
+    HK_P_READ_ADDR,
+    HK_P_WRITE_ADDR,
+)
 from pyrpl_websocket.monitor_client import MonitorStats
 from pyrpl_websocket.scope import SCOPE_ADDR_BASE, SCOPE_CH1_OFFSET, SCOPE_CH2_OFFSET, SCOPE_DATA_LENGTH
 from pyrpl_websocket.session import WebSession
@@ -151,6 +161,98 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.set_module_attribute("scope", "duration", 0.1), 0.134217728)
             with self.assertRaises(ValueError):
                 session.set_module_attribute("scope", "trigger_source", "not_a_trigger")
+        finally:
+            session.close()
+
+    def test_session_lists_asg_and_housekeeping_modules(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            module_names = [module["name"] for module in session.modules()]
+            self.assertIn("asg0", module_names)
+            self.assertIn("asg1", module_names)
+            self.assertIn("hk", module_names)
+            asg_attributes = {attribute["name"] for attribute in session.module_attributes("asg0")}
+            self.assertIn("frequency", asg_attributes)
+            self.assertIn("output_direct", asg_attributes)
+            hk_attributes = {attribute["name"] for attribute in session.module_attributes("hk")}
+            self.assertIn("led", hk_attributes)
+            self.assertIn("expansion_P0_output", hk_attributes)
+            self.assertEqual({action["name"] for action in session.module_actions("asg1")}, {"setup", "trigger", "off"})
+            self.assertEqual(session.module_actions("hk"), [])
+        finally:
+            session.close()
+
+    def test_session_asg_registers_follow_pyrpl_layout(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_module_attribute("asg0", "amplitude", 0.5)
+            self.assertEqual(session.client.fpgamemory[ASG_ADDR_BASE + 0x4] & 0x3FFF, 4096)
+
+            session.set_module_attribute("asg0", "offset", -0.25)
+            self.assertEqual((session.client.fpgamemory[ASG_ADDR_BASE + 0x4] >> 16) & 0x3FFF, 14336)
+
+            session.set_module_attribute("asg0", "frequency", 1e6)
+            self.assertEqual(session.client.fpgamemory[ASG_ADDR_BASE + 0x10], round(1e6 / 125e6 * 2**30))
+
+            session.set_module_attribute("asg0", "start_phase", 90)
+            self.assertEqual(session.client.fpgamemory[ASG_ADDR_BASE + 0xC], 2**28)
+
+            session.set_module_attribute("asg0", "cycles_per_burst", 3)
+            self.assertEqual(session.client.fpgamemory[ASG_ADDR_BASE + 0x18], 3)
+
+            session.set_module_attribute("asg0", "output_direct", "out1")
+            self.assertEqual(session.client.fpgamemory[0x40380004], 1)
+
+            session.set_module_attribute("asg1", "output_direct", "both")
+            self.assertEqual(session.client.fpgamemory[0x40390004], 3)
+            session.set_module_attribute("asg1", "trigger_source", "ext_positive_edge")
+            self.assertEqual((session.client.fpgamemory[ASG_ADDR_BASE] >> 16) & 0x7, 2)
+
+            session.call_module_action("asg0", "setup")
+            self.assertIn(ASG_ADDR_BASE + 0x10000 + (ASG_DATA_LENGTH - 1) * 4, session.client.fpgamemory)
+
+            session.call_module_action("asg1", "off")
+            self.assertEqual(session.get_module_attribute("asg1", "output_direct"), "off")
+            self.assertEqual(session.client.fpgamemory[0x40390004], 0)
+        finally:
+            session.close()
+
+    def test_session_housekeeping_registers_follow_pyrpl_layout(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_module_attribute("hk", "led", 170)
+            self.assertEqual(session.client.fpgamemory[HK_LED_ADDR], 170)
+
+            session.set_module_attribute("hk", "expansion_P3_output", True)
+            self.assertEqual(session.client.fpgamemory[HK_P_DIRECTION_ADDR] & (1 << 3), 1 << 3)
+            session.set_module_attribute("hk", "expansion_P3", True)
+            self.assertEqual(session.client.fpgamemory[HK_P_WRITE_ADDR] & (1 << 3), 1 << 3)
+            session.set_module_attribute("hk", "expansion_P3_output", False)
+            self.assertEqual(session.client.fpgamemory[HK_P_DIRECTION_ADDR] & (1 << 3), 0)
+
+            session.set_module_attribute("hk", "expansion_N2_output", True)
+            self.assertEqual(session.client.fpgamemory[HK_N_DIRECTION_ADDR] & (1 << 2), 1 << 2)
+            session.set_module_attribute("hk", "expansion_N2", True)
+            self.assertEqual(session.client.fpgamemory[HK_N_WRITE_ADDR] & (1 << 2), 1 << 2)
+
+            session.client.fpgamemory[HK_P_READ_ADDR] = 1 << 4
+            session.client.fpgamemory[HK_N_READ_ADDR] = 1 << 5
+            state = session.module_state("hk")
+            self.assertTrue(state["expansion_P4"])
+            self.assertTrue(state["expansion_N5"])
+        finally:
+            session.close()
+
+    def test_session_asg_settings_change_fake_scope_signal(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_module_attribute("scope", "input1", "asg0")
+            session.set_module_attribute("asg0", "waveform", "sin")
+            session.set_module_attribute("asg0", "amplitude", 0.1)
+            low = session.read_scope_frame(sequence=1, sample_count=256).samples()[:, 0]
+            session.set_module_attribute("asg0", "amplitude", 0.9)
+            high = session.read_scope_frame(sequence=2, sample_count=256).samples()[:, 0]
+            self.assertGreater(np.nanmax(np.abs(high)), np.nanmax(np.abs(low)) * 2)
         finally:
             session.close()
 

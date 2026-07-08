@@ -7,6 +7,7 @@ import {
   loadWorkspaceState,
   normalizeLayoutMode,
   normalizeSplitSizes,
+  normalizeWorkspaceSplitSizes,
   saveWorkspaceState,
   type WorkspaceState,
   type WorkspaceLayoutMode,
@@ -143,6 +144,81 @@ app.innerHTML = `
               <output id="plot-hint">Drag pans. Right-drag zooms X/Y. Use header controls for touch-friendly zoom and offsets.</output>
             </div>
             <div id="scope-plot"></div>
+          </section>
+        </div>
+        </section>
+        <section class="workspace-panel" id="asg-panel" data-panel-id="asg" hidden>
+        <header class="panel-header">
+          <div>
+            <h2>ASG</h2>
+            <p>Arbitrary signal generators</p>
+          </div>
+        </header>
+        <div class="panel-content instrument-grid">
+          ${["asg0", "asg1"].map((moduleName, index) => `
+          <section class="module-panel instrument-card" data-asg-module="${moduleName}">
+            <header class="instrument-card-header">
+              <h3>ASG ${index}</h3>
+              <output id="${moduleName}-status">${moduleName} ready</output>
+            </header>
+            <div class="control-row asg-row">
+              <label>
+                <span>Waveform</span>
+                <select id="${moduleName}-waveform"></select>
+              </label>
+              <label>
+                <span>Frequency</span>
+                <input id="${moduleName}-frequency" type="number" min="0" step="1" />
+              </label>
+              <label>
+                <span>Amplitude</span>
+                <input id="${moduleName}-amplitude" type="number" min="0" max="1" step="0.001" />
+              </label>
+              <label>
+                <span>Offset</span>
+                <input id="${moduleName}-offset" type="number" min="-1" max="1" step="0.001" />
+              </label>
+              <label>
+                <span>Trigger</span>
+                <select id="${moduleName}-trigger-source"></select>
+              </label>
+              <label>
+                <span>Output</span>
+                <select id="${moduleName}-output-direct"></select>
+              </label>
+              <label>
+                <span>Start Phase</span>
+                <input id="${moduleName}-start-phase" type="number" min="0" max="360" step="0.1" />
+              </label>
+              <label>
+                <span>Cycles/Burst</span>
+                <input id="${moduleName}-cycles-per-burst" type="number" min="0" step="1" />
+              </label>
+              <button id="${moduleName}-setup" type="button">Setup</button>
+              <button id="${moduleName}-trigger" type="button">Trigger</button>
+              <button id="${moduleName}-off" type="button">Off</button>
+            </div>
+          </section>`).join("")}
+        </div>
+        </section>
+        <section class="workspace-panel" id="housekeeping-panel" data-panel-id="housekeeping" hidden>
+        <header class="panel-header">
+          <div>
+            <h2>Housekeeping</h2>
+            <p>LED and expansion I/O</p>
+          </div>
+        </header>
+        <div class="panel-content">
+          <section class="module-panel housekeeping-panel">
+            <div class="control-row housekeeping-top-row">
+              <label>
+                <span>LED</span>
+                <input id="hk-led" type="number" min="0" max="255" step="1" />
+              </label>
+              <button id="hk-refresh" type="button">Refresh</button>
+              <output id="hk-status">Housekeeping ready</output>
+            </div>
+            <div class="housekeeping-grid" id="hk-expansion-grid"></div>
           </section>
         </div>
         </section>
@@ -504,7 +580,7 @@ style.textContent = `
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    min-height: 70px;
+    min-height: 48px;
     border-bottom: 1px solid var(--panel-border);
     padding: 7px 10px;
   }
@@ -587,6 +663,73 @@ style.textContent = `
 
   .register-row {
     grid-template-columns: minmax(130px, 1fr) minmax(80px, 0.4fr) auto minmax(130px, 1fr) minmax(160px, 1fr) auto;
+  }
+
+  .instrument-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    align-items: start;
+    overflow: auto;
+  }
+
+  .instrument-card {
+    align-content: start;
+  }
+
+  .instrument-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .instrument-card-header h3 {
+    margin: 0;
+    font-size: 14px;
+  }
+
+  .instrument-card-header output {
+    min-height: 24px;
+    text-align: right;
+  }
+
+  .asg-row {
+    grid-template-columns: repeat(4, minmax(92px, 1fr)) repeat(3, auto);
+  }
+
+  .housekeeping-panel {
+    align-content: start;
+    overflow: auto;
+  }
+
+  .housekeeping-top-row {
+    grid-template-columns: minmax(110px, 180px) auto minmax(180px, 1fr);
+  }
+
+  .housekeeping-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 8px;
+  }
+
+  .housekeeping-bank {
+    display: grid;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+  }
+
+  .housekeeping-bank h3 {
+    margin: 0;
+    font-size: 13px;
+  }
+
+  .housekeeping-pin {
+    display: grid;
+    grid-template-columns: 36px minmax(80px, 1fr) minmax(96px, 1fr);
+    align-items: center;
+    gap: 8px;
   }
 
   #register-output {
@@ -758,9 +901,13 @@ const panelMenu = requireElement<HTMLDivElement>("#panel-menu");
 const workspaceTabs = requireElement<HTMLDivElement>("#workspace-tabs");
 const workspacePanels = requireElement<HTMLDivElement>("#workspace-panels");
 const scopePanel = requireElement<HTMLElement>("#scope-panel");
+const asgPanel = requireElement<HTMLElement>("#asg-panel");
+const housekeepingPanel = requireElement<HTMLElement>("#housekeeping-panel");
 const registersPanel = requireElement<HTMLElement>("#registers-panel");
 const panelElements: Record<PanelId, HTMLElement> = {
   scope: scopePanel,
+  asg: asgPanel,
+  housekeeping: housekeepingPanel,
   registers: registersPanel,
 };
 const emptyWorkspace = requireElement<HTMLElement>("#empty-workspace");
@@ -797,6 +944,10 @@ const scopeStateLoad = requireElement<HTMLButtonElement>("#scope-state-load");
 const scopeStateDelete = requireElement<HTMLButtonElement>("#scope-state-delete");
 const registerStatus = requireElement<HTMLOutputElement>("#register-status");
 const moduleStatus = requireElement<HTMLOutputElement>("#module-status");
+const hkStatus = requireElement<HTMLOutputElement>("#hk-status");
+const hkLed = requireElement<HTMLInputElement>("#hk-led");
+const hkRefresh = requireElement<HTMLButtonElement>("#hk-refresh");
+const hkExpansionGrid = requireElement<HTMLDivElement>("#hk-expansion-grid");
 const sessionLine = requireElement<HTMLParagraphElement>("#session-line");
 createRegisterPanel({
   readAddr: requireElement<HTMLInputElement>("#register-read-addr"),
@@ -839,6 +990,30 @@ interface SavedScopeState {
   state: ScopeState;
 }
 
+type ModuleState = Record<string, string | number | boolean | null | undefined>;
+type AsgModuleId = "asg0" | "asg1";
+
+interface AsgControls {
+  status: HTMLOutputElement;
+  waveform: HTMLSelectElement;
+  frequency: HTMLInputElement;
+  amplitude: HTMLInputElement;
+  offset: HTMLInputElement;
+  triggerSource: HTMLSelectElement;
+  outputDirect: HTMLSelectElement;
+  startPhase: HTMLInputElement;
+  cyclesPerBurst: HTMLInputElement;
+  setup: HTMLButtonElement;
+  trigger: HTMLButtonElement;
+  off: HTMLButtonElement;
+}
+
+const asgModules: AsgModuleId[] = ["asg0", "asg1"];
+const asgControls: Record<AsgModuleId, AsgControls> = {
+  asg0: createAsgControls("asg0"),
+  asg1: createAsgControls("asg1"),
+};
+
 let stream = new ScopeStream(plotHost, (message) => {
   status.textContent = message;
 });
@@ -850,6 +1025,7 @@ let currentSession: { fake: boolean } | null = null;
 let scopeSplit: Split.Instance | null = null;
 let workspaceSplit: Split.Instance | null = null;
 let workspaceSplitMode: WorkspaceLayoutMode | null = null;
+let workspaceSplitPanelSignature = "";
 
 function exposeDebugState(): void {
   window.pyrplScope = {
@@ -873,6 +1049,27 @@ function exposeDebugState(): void {
   };
 }
 
+function controlId(moduleName: AsgModuleId, attribute: string): string {
+  return `#${moduleName}-${attribute.replaceAll("_", "-")}`;
+}
+
+function createAsgControls(moduleName: AsgModuleId): AsgControls {
+  return {
+    status: requireElement<HTMLOutputElement>(`#${moduleName}-status`),
+    waveform: requireElement<HTMLSelectElement>(controlId(moduleName, "waveform")),
+    frequency: requireElement<HTMLInputElement>(controlId(moduleName, "frequency")),
+    amplitude: requireElement<HTMLInputElement>(controlId(moduleName, "amplitude")),
+    offset: requireElement<HTMLInputElement>(controlId(moduleName, "offset")),
+    triggerSource: requireElement<HTMLSelectElement>(controlId(moduleName, "trigger_source")),
+    outputDirect: requireElement<HTMLSelectElement>(controlId(moduleName, "output_direct")),
+    startPhase: requireElement<HTMLInputElement>(controlId(moduleName, "start_phase")),
+    cyclesPerBurst: requireElement<HTMLInputElement>(controlId(moduleName, "cycles_per_burst")),
+    setup: requireElement<HTMLButtonElement>(`#${moduleName}-setup`),
+    trigger: requireElement<HTMLButtonElement>(`#${moduleName}-trigger`),
+    off: requireElement<HTMLButtonElement>(`#${moduleName}-off`),
+  };
+}
+
 function applyWorkspaceState(): void {
   renderPanelMenu();
   renderWorkspaceTabs();
@@ -891,8 +1088,9 @@ function applyWorkspaceState(): void {
       ? `is-split ${workspaceState.layoutMode === "split-horizontal" ? "is-horizontal" : "is-vertical"}`
       : "is-tabs"
   }`;
-  scopePanel.hidden = !visiblePanels.has("scope");
-  registersPanel.hidden = !visiblePanels.has("registers");
+  for (const [panelId, panel] of Object.entries(panelElements) as Array<[PanelId, HTMLElement]>) {
+    panel.hidden = !visiblePanels.has(panelId);
+  }
   emptyWorkspace.hidden = hasEnabledPanels;
   if (useWorkspaceSplit) {
     ensureWorkspaceSplit(visiblePanelIds);
@@ -1016,16 +1214,18 @@ function destroyScopeSplit(): void {
 }
 
 function ensureWorkspaceSplit(panelIds: PanelId[]): void {
-  if (workspaceSplit && workspaceSplitMode === workspaceState.layoutMode) {
+  const panelSignature = panelIds.join("|");
+  if (workspaceSplit && workspaceSplitMode === workspaceState.layoutMode && workspaceSplitPanelSignature === panelSignature) {
     return;
   }
   destroyWorkspaceSplit();
   workspaceSplitMode = workspaceState.layoutMode;
+  workspaceSplitPanelSignature = panelSignature;
   workspaceSplit = Split(
     panelIds.map((panelId) => panelElements[panelId]),
     {
       direction: workspaceState.layoutMode === "split-horizontal" ? "horizontal" : "vertical",
-      sizes: workspaceState.workspaceSplitSizes,
+      sizes: normalizeWorkspaceSplitSizes(workspaceState.workspaceSplitSizes, panelIds.length),
       minSize: 220,
       gutterSize: 8,
       snapOffset: 24,
@@ -1033,7 +1233,7 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
       onDragEnd: (sizes) => {
         workspaceState = {
           ...workspaceState,
-          workspaceSplitSizes: normalizeSplitSizes(sizes, [50, 50]),
+          workspaceSplitSizes: normalizeWorkspaceSplitSizes(sizes, panelIds.length),
         };
         saveWorkspaceState(workspaceState);
         stream.refreshLayout();
@@ -1046,6 +1246,7 @@ function destroyWorkspaceSplit(): void {
   workspaceSplit?.destroy();
   workspaceSplit = null;
   workspaceSplitMode = null;
+  workspaceSplitPanelSignature = "";
   for (const panel of Object.values(panelElements)) {
     panel.removeAttribute("style");
   }
@@ -1258,17 +1459,25 @@ function applyScopeState(state: ScopeState): void {
 }
 
 async function setScopeAttribute(attribute: string, value: string | number | boolean): Promise<void> {
-  const response = await fetch(`/api/modules/scope/attributes/${attribute}`, {
+  const result = await setModuleAttributeValue("scope", attribute, value);
+  applyScopeControlValue(attribute, result.value);
+  moduleStatus.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
+}
+
+async function setModuleAttributeValue(
+  moduleName: string,
+  attribute: string,
+  value: string | number | boolean,
+): Promise<{ value: string | number | boolean }> {
+  const response = await fetch(`/api/modules/${moduleName}/attributes/${attribute}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ value }),
   });
   if (!response.ok) {
-    throw new Error(`Failed to set ${attribute}: ${response.status}`);
+    throw new Error(`Failed to set ${moduleName}.${attribute}: ${response.status}`);
   }
-  const result = await response.json();
-  applyScopeControlValue(attribute, result.value);
-  moduleStatus.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
+  return response.json();
 }
 
 async function loadScopeControls(): Promise<void> {
@@ -1293,6 +1502,168 @@ async function loadScopeControls(): Promise<void> {
   stream.setTraceAverage(Number(scopeTraceAverage.value));
   updatePlotTimeSettings();
   moduleStatus.textContent = "Scope controls ready";
+}
+
+async function loadAsgControls(): Promise<void> {
+  await Promise.all(asgModules.map((moduleName) => loadOneAsgControls(moduleName)));
+}
+
+async function loadOneAsgControls(moduleName: AsgModuleId): Promise<void> {
+  const response = await fetch(`/api/modules/${moduleName}/attributes`);
+  if (!response.ok) {
+    throw new Error(`${moduleName} controls unavailable: ${response.status}`);
+  }
+  const payload = await response.json();
+  const attributes = new Map<string, ModuleAttribute>(
+    payload.attributes.map((attribute: ModuleAttribute) => [attribute.name, attribute]),
+  );
+  const controls = asgControls[moduleName];
+  populateSelect(controls.waveform, attributes.get("waveform")!);
+  populateNumber(controls.frequency, attributes.get("frequency")!);
+  populateNumber(controls.amplitude, attributes.get("amplitude")!);
+  populateNumber(controls.offset, attributes.get("offset")!);
+  populateSelect(controls.triggerSource, attributes.get("trigger_source")!);
+  populateSelect(controls.outputDirect, attributes.get("output_direct")!);
+  populateNumber(controls.startPhase, attributes.get("start_phase")!);
+  populateNumber(controls.cyclesPerBurst, attributes.get("cycles_per_burst")!);
+  controls.status.textContent = `${moduleName} controls ready`;
+}
+
+function applyAsgState(moduleName: AsgModuleId, state: ModuleState): void {
+  for (const [attribute, value] of Object.entries(state)) {
+    if (value !== null && value !== undefined) {
+      applyAsgControlValue(moduleName, attribute, value);
+    }
+  }
+}
+
+function applyAsgControlValue(moduleName: AsgModuleId, attribute: string, value: string | number | boolean): void {
+  const controls = asgControls[moduleName];
+  if (attribute === "waveform") {
+    controls.waveform.value = String(value);
+  } else if (attribute === "frequency") {
+    controls.frequency.value = String(value);
+  } else if (attribute === "amplitude") {
+    controls.amplitude.value = String(value);
+  } else if (attribute === "offset") {
+    controls.offset.value = String(value);
+  } else if (attribute === "trigger_source") {
+    controls.triggerSource.value = String(value);
+  } else if (attribute === "output_direct") {
+    controls.outputDirect.value = String(value);
+  } else if (attribute === "start_phase") {
+    controls.startPhase.value = String(value);
+  } else if (attribute === "cycles_per_burst") {
+    controls.cyclesPerBurst.value = String(value);
+  }
+}
+
+async function setAsgAttribute(
+  moduleName: AsgModuleId,
+  attribute: string,
+  value: string | number | boolean,
+): Promise<void> {
+  const result = await setModuleAttributeValue(moduleName, attribute, value);
+  applyAsgControlValue(moduleName, attribute, result.value);
+  asgControls[moduleName].status.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
+}
+
+async function callAsgAction(moduleName: AsgModuleId, action: string): Promise<void> {
+  const response = await fetch(`/api/modules/${moduleName}/actions/${action}`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`${moduleName} action ${action} failed: ${response.status}`);
+  }
+  const payload = await response.json();
+  applyAsgState(moduleName, payload.state ?? {});
+  asgControls[moduleName].status.textContent = `${action}: ok`;
+}
+
+function buildHkExpansionGrid(): void {
+  hkExpansionGrid.textContent = "";
+  for (const sign of ["P", "N"] as const) {
+    const bank = document.createElement("section");
+    bank.className = "housekeeping-bank";
+    const title = document.createElement("h3");
+    title.textContent = `Expansion ${sign}`;
+    bank.appendChild(title);
+    for (let index = 0; index < 8; index += 1) {
+      const pin = document.createElement("div");
+      pin.className = "housekeeping-pin";
+      const name = `expansion_${sign}${index}`;
+      const direction = `${name}_output`;
+      const label = document.createElement("span");
+      label.textContent = `${sign}${index}`;
+      const valueLabel = document.createElement("label");
+      const value = document.createElement("input");
+      value.type = "checkbox";
+      value.id = `hk-${name.replaceAll("_", "-")}`;
+      value.addEventListener("change", () => {
+        setHkAttribute(name, value.checked).catch((error: Error) => {
+          hkStatus.textContent = error.message;
+        });
+      });
+      valueLabel.append(value, document.createTextNode(" Value"));
+      const directionLabel = document.createElement("label");
+      const directionInput = document.createElement("input");
+      directionInput.type = "checkbox";
+      directionInput.id = `hk-${direction.replaceAll("_", "-")}`;
+      directionInput.addEventListener("change", () => {
+        setHkAttribute(direction, directionInput.checked).catch((error: Error) => {
+          hkStatus.textContent = error.message;
+        });
+      });
+      directionLabel.append(directionInput, document.createTextNode(" Output"));
+      pin.append(label, valueLabel, directionLabel);
+      bank.appendChild(pin);
+    }
+    hkExpansionGrid.appendChild(bank);
+  }
+}
+
+async function loadHkControls(): Promise<void> {
+  const attributesResponse = await fetch("/api/modules/hk/attributes");
+  if (attributesResponse.ok) {
+    const payload = await attributesResponse.json();
+    const attributes = new Map<string, ModuleAttribute>(
+      payload.attributes.map((attribute: ModuleAttribute) => [attribute.name, attribute]),
+    );
+    const led = attributes.get("led");
+    if (led) {
+      populateNumber(hkLed, led);
+    }
+  }
+  const stateResponse = await fetch("/api/modules/hk");
+  if (!stateResponse.ok) {
+    throw new Error(`Housekeeping controls unavailable: ${stateResponse.status}`);
+  }
+  const payload = await stateResponse.json();
+  applyHkState(payload.state ?? {});
+  hkStatus.textContent = "Housekeeping controls ready";
+}
+
+function applyHkState(state: ModuleState): void {
+  for (const [attribute, value] of Object.entries(state)) {
+    if (value !== null && value !== undefined) {
+      applyHkControlValue(attribute, value);
+    }
+  }
+}
+
+function applyHkControlValue(attribute: string, value: string | number | boolean): void {
+  if (attribute === "led") {
+    hkLed.value = String(value);
+    return;
+  }
+  const input = document.querySelector<HTMLInputElement>(`#hk-${attribute.replaceAll("_", "-")}`);
+  if (input) {
+    input.checked = Boolean(value);
+  }
+}
+
+async function setHkAttribute(attribute: string, value: string | number | boolean): Promise<void> {
+  const result = await setModuleAttributeValue("hk", attribute, value);
+  applyHkControlValue(attribute, result.value);
+  hkStatus.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
 }
 
 async function loadScopeStates(): Promise<void> {
@@ -1325,6 +1696,10 @@ function populateStateSelect(states: SavedScopeState[]): void {
   }
 }
 
+function isAsgModule(moduleName: unknown): moduleName is AsgModuleId {
+  return moduleName === "asg0" || moduleName === "asg1";
+}
+
 function connectEvents(): void {
   if (eventSocket && eventSocket.readyState !== WebSocket.CLOSED) {
     return;
@@ -1333,6 +1708,22 @@ function connectEvents(): void {
   eventSocket = new WebSocket(`${protocol}//${window.location.host}/ws/events`);
   eventSocket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
+    if (message.type === "module.attribute.changed") {
+      eventCount += 1;
+      if (message.module === "scope") {
+        applyScopeControlValue(message.attribute, message.value);
+        moduleStatus.textContent = `${message.attribute} = ${attributeValueLabel(message.attribute, message.value)}`;
+      } else if (isAsgModule(message.module)) {
+        const moduleName: AsgModuleId = message.module;
+        applyAsgControlValue(moduleName, message.attribute, message.value);
+        asgControls[moduleName].status.textContent =
+          `${message.attribute} = ${attributeValueLabel(message.attribute, message.value)}`;
+      } else if (message.module === "hk") {
+        applyHkControlValue(message.attribute, message.value);
+        hkStatus.textContent = `${message.attribute} = ${attributeValueLabel(message.attribute, message.value)}`;
+      }
+      return;
+    }
     if (message.type !== "module.attribute.changed" || message.module !== "scope") {
       if (message.type === "module.state.changed" && message.module === "scope") {
         applyScopeState(message.state);
@@ -1342,15 +1733,19 @@ function connectEvents(): void {
         } else {
           moduleStatus.textContent = `${message.state.last_action}: ${message.state.running_state}`;
         }
+      } else if (message.type === "module.state.changed" && isAsgModule(message.module)) {
+        const moduleName: AsgModuleId = message.module;
+        applyAsgState(moduleName, message.state ?? {});
+        asgControls[moduleName].status.textContent = `${moduleName} state updated`;
+      } else if (message.type === "module.state.changed" && message.module === "hk") {
+        applyHkState(message.state ?? {});
+        hkStatus.textContent = "Housekeeping state updated";
       } else if (message.type === "module.states.changed" && message.module === "scope") {
         populateStateSelect(message.states ?? []);
         moduleStatus.textContent = `${message.states.length} saved state${message.states.length === 1 ? "" : "s"}`;
       }
       return;
     }
-    eventCount += 1;
-    applyScopeControlValue(message.attribute, message.value);
-    moduleStatus.textContent = `${message.attribute} = ${attributeValueLabel(message.attribute, message.value)}`;
   });
   eventSocket.addEventListener("close", () => {
     eventSocket = null;
@@ -1575,10 +1970,84 @@ scopeStateDelete.addEventListener("click", () => {
   });
 });
 
+for (const moduleName of asgModules) {
+  const controls = asgControls[moduleName];
+  controls.waveform.addEventListener("change", () => {
+    setAsgAttribute(moduleName, "waveform", controls.waveform.value).catch((error: Error) => {
+      controls.status.textContent = error.message;
+    });
+  });
+  controls.frequency.addEventListener("change", () => {
+    setAsgAttribute(moduleName, "frequency", Number(controls.frequency.value)).catch((error: Error) => {
+      controls.status.textContent = error.message;
+    });
+  });
+  controls.amplitude.addEventListener("change", () => {
+    setAsgAttribute(moduleName, "amplitude", Number(controls.amplitude.value)).catch((error: Error) => {
+      controls.status.textContent = error.message;
+    });
+  });
+  controls.offset.addEventListener("change", () => {
+    setAsgAttribute(moduleName, "offset", Number(controls.offset.value)).catch((error: Error) => {
+      controls.status.textContent = error.message;
+    });
+  });
+  controls.triggerSource.addEventListener("change", () => {
+    setAsgAttribute(moduleName, "trigger_source", controls.triggerSource.value).catch((error: Error) => {
+      controls.status.textContent = error.message;
+    });
+  });
+  controls.outputDirect.addEventListener("change", () => {
+    setAsgAttribute(moduleName, "output_direct", controls.outputDirect.value).catch((error: Error) => {
+      controls.status.textContent = error.message;
+    });
+  });
+  controls.startPhase.addEventListener("change", () => {
+    setAsgAttribute(moduleName, "start_phase", Number(controls.startPhase.value)).catch((error: Error) => {
+      controls.status.textContent = error.message;
+    });
+  });
+  controls.cyclesPerBurst.addEventListener("change", () => {
+    setAsgAttribute(moduleName, "cycles_per_burst", Number(controls.cyclesPerBurst.value)).catch((error: Error) => {
+      controls.status.textContent = error.message;
+    });
+  });
+  controls.setup.addEventListener("click", () => {
+    callAsgAction(moduleName, "setup").catch((error: Error) => {
+      controls.status.textContent = error.message;
+    });
+  });
+  controls.trigger.addEventListener("click", () => {
+    callAsgAction(moduleName, "trigger").catch((error: Error) => {
+      controls.status.textContent = error.message;
+    });
+  });
+  controls.off.addEventListener("click", () => {
+    callAsgAction(moduleName, "off").catch((error: Error) => {
+      controls.status.textContent = error.message;
+    });
+  });
+}
+
+hkLed.addEventListener("change", () => {
+  setHkAttribute("led", Number(hkLed.value)).catch((error: Error) => {
+    hkStatus.textContent = error.message;
+  });
+});
+
+hkRefresh.addEventListener("click", () => {
+  loadHkControls().catch((error: Error) => {
+    hkStatus.textContent = error.message;
+  });
+});
+
 async function startup(): Promise<void> {
   currentSession = await refreshSession();
+  buildHkExpansionGrid();
   await loadScopeControls();
   await loadScopeStates();
+  await loadAsgControls();
+  await loadHkControls();
   connectEvents();
   applyWorkspaceState();
   if (!workspaceState.activePanelId) {

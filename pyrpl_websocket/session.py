@@ -9,13 +9,25 @@ from threading import Lock
 
 import numpy as np
 
+from .asg_registers import disable_asg, sync_asg_setting, sync_asg_settings, trigger_asg
+from .hk_registers import read_hk_expansion, sync_hk_setting, sync_hk_settings
 from .monitor_client import DummyClient, MonitorClient
 from .modules import (
+    ASG_SETUP_ATTRIBUTES,
+    HK_SETUP_ATTRIBUTES,
     SCOPE_SETUP_ATTRIBUTES,
+    AsgSettings,
+    HkSettings,
     ScopeSettings,
+    asg_actions,
+    asg_attribute_schema,
+    hk_actions,
+    hk_attribute_schema,
     module_list,
     scope_actions,
     scope_attribute_schema,
+    set_asg_attribute,
+    set_hk_attribute,
     set_scope_attribute,
 )
 from .scope import SCOPE_DATA_LENGTH, ScopeFrame, read_rolling_scope_frame, read_scope_frame, read_trigger_aligned_scope_frame
@@ -45,6 +57,8 @@ class WebSession:
         self._lock = Lock()
         self.client = DummyClient() if settings.fake else MonitorClient(settings.hostname, settings.port)
         self.scope_settings = ScopeSettings()
+        self.asg_settings = {"asg0": AsgSettings(), "asg1": AsgSettings()}
+        self.hk_settings = HkSettings()
         self._module_states: dict[str, dict[str, dict]] = self._load_saved_states()
         self._fake_scope_clock = 0
         self._hardware_rolling_started = False
@@ -56,25 +70,41 @@ class WebSession:
             "reads": self.client.stats.reads,
             "writes": self.client.stats.writes,
             "scope": self.scope_settings.as_dict(),
+            "asg0": self.asg_settings["asg0"].as_dict(),
+            "asg1": self.asg_settings["asg1"].as_dict(),
+            "hk": self.hk_settings.as_dict(),
         }
 
     def modules(self) -> list[dict]:
         return module_list()
 
     def module_attributes(self, module_name: str) -> list[dict]:
-        if module_name != "scope":
-            raise KeyError(module_name)
-        return scope_attribute_schema(self.scope_settings)
+        if module_name == "scope":
+            return scope_attribute_schema(self.scope_settings)
+        if module_name in self.asg_settings:
+            return asg_attribute_schema(self.asg_settings[module_name])
+        if module_name == "hk":
+            return hk_attribute_schema(self.hk_settings)
+        raise KeyError(module_name)
 
     def module_state(self, module_name: str) -> dict:
-        if module_name != "scope":
-            raise KeyError(module_name)
-        return self.scope_settings.as_dict()
+        if module_name == "scope":
+            return self.scope_settings.as_dict()
+        if module_name in self.asg_settings:
+            return self.asg_settings[module_name].as_dict()
+        if module_name == "hk":
+            read_hk_expansion(self.client, self.hk_settings)
+            return self.hk_settings.as_dict()
+        raise KeyError(module_name)
 
     def module_actions(self, module_name: str) -> list[dict]:
-        if module_name != "scope":
-            raise KeyError(module_name)
-        return scope_actions()
+        if module_name == "scope":
+            return scope_actions()
+        if module_name in self.asg_settings:
+            return asg_actions()
+        if module_name == "hk":
+            return hk_actions()
+        raise KeyError(module_name)
 
     def get_module_attribute(self, module_name: str, attribute: str):
         state = self.module_state(module_name)
@@ -83,18 +113,47 @@ class WebSession:
         return state[attribute]
 
     def set_module_attribute(self, module_name: str, attribute: str, value):
-        if module_name != "scope":
-            raise KeyError(module_name)
         with self._lock:
-            normalized = set_scope_attribute(self.scope_settings, attribute, value)
-            sync_scope_setting(self.client, self.scope_settings, attribute)
-            self._hardware_rolling_started = False
-            return normalized
+            if module_name == "scope":
+                normalized = set_scope_attribute(self.scope_settings, attribute, value)
+                sync_scope_setting(self.client, self.scope_settings, attribute)
+                self._hardware_rolling_started = False
+                return normalized
+            if module_name in self.asg_settings:
+                settings = self.asg_settings[module_name]
+                normalized = set_asg_attribute(settings, attribute, value)
+                sync_asg_setting(self.client, _asg_channel(module_name), settings, attribute)
+                return normalized
+            if module_name == "hk":
+                normalized = set_hk_attribute(self.hk_settings, attribute, value)
+                sync_hk_setting(self.client, self.hk_settings, attribute)
+                return normalized
+            raise KeyError(module_name)
 
     def call_module_action(self, module_name: str, action: str) -> dict:
-        if module_name != "scope":
-            raise KeyError(module_name)
         with self._lock:
+            if module_name in self.asg_settings:
+                settings = self.asg_settings[module_name]
+                channel = _asg_channel(module_name)
+                if action == "setup":
+                    sync_asg_settings(self.client, channel, settings)
+                elif action == "trigger":
+                    trigger_asg(self.client, channel)
+                    settings.trigger_source = "off"
+                elif action == "off":
+                    disable_asg(self.client, channel)
+                    settings.output_direct = "off"
+                    settings.trigger_source = "off"
+                    sync_asg_setting(self.client, channel, settings, "output_direct")
+                else:
+                    raise KeyError(action)
+                return settings.as_dict()
+            if module_name == "hk":
+                if action:
+                    raise KeyError(action)
+                return self.hk_settings.as_dict()
+            if module_name != "scope":
+                raise KeyError(module_name)
             if action == "setup":
                 sync_scope_settings(self.client, self.scope_settings)
                 self._hardware_rolling_started = False
@@ -141,7 +200,7 @@ class WebSession:
             return self.scope_settings.as_dict()
 
     def module_states(self, module_name: str) -> list[dict]:
-        if module_name != "scope":
+        if module_name not in self._module_states:
             raise KeyError(module_name)
         with self._lock:
             return [
@@ -150,33 +209,30 @@ class WebSession:
             ]
 
     def save_module_state(self, module_name: str, state_name: str) -> dict:
-        if module_name != "scope":
+        if module_name not in self._module_states:
             raise KeyError(module_name)
         state_name = _normalize_state_name(state_name)
         with self._lock:
             state = {
-                attribute: getattr(self.scope_settings, attribute)
-                for attribute in SCOPE_SETUP_ATTRIBUTES
+                attribute: self._module_setting_value(module_name, attribute)
+                for attribute in _setup_attributes(module_name)
             }
             self._module_states[module_name][state_name] = dict(state)
             self._persist_saved_states()
             return {"name": state_name, "state": state}
 
     def load_module_state(self, module_name: str, state_name: str) -> dict:
-        if module_name != "scope":
+        if module_name not in self._module_states:
             raise KeyError(module_name)
         state_name = _normalize_state_name(state_name)
         with self._lock:
             state = self._module_states[module_name][state_name]
             for attribute, value in state.items():
-                set_scope_attribute(self.scope_settings, attribute, value)
-            sync_scope_settings(self.client, self.scope_settings)
-            self._hardware_rolling_started = False
-            self.scope_settings.last_action = f"load_state:{state_name}"
-            return self.scope_settings.as_dict()
+                self._set_module_attribute_no_lock(module_name, attribute, value)
+            return self.module_state(module_name)
 
     def delete_module_state(self, module_name: str, state_name: str) -> dict:
-        if module_name != "scope":
+        if module_name not in self._module_states:
             raise KeyError(module_name)
         state_name = _normalize_state_name(state_name)
         with self._lock:
@@ -246,24 +302,26 @@ class WebSession:
 
     def _load_saved_states(self) -> dict[str, dict[str, dict]]:
         if not self.settings.state_file:
-            return {"scope": {}}
+            return {"scope": {}, "asg0": {}, "asg1": {}, "hk": {}}
         path = Path(self.settings.state_file)
         if not path.exists():
-            return {"scope": {}}
+            return {"scope": {}, "asg0": {}, "asg1": {}, "hk": {}}
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return {"scope": {}}
-        scope_states = payload.get("scope", {}) if isinstance(payload, dict) else {}
-        if not isinstance(scope_states, dict):
-            return {"scope": {}}
-        return {
-            "scope": {
-                str(name): dict(state)
-                for name, state in scope_states.items()
-                if isinstance(state, dict)
-            }
-        }
+            return {"scope": {}, "asg0": {}, "asg1": {}, "hk": {}}
+        loaded = {"scope": {}, "asg0": {}, "asg1": {}, "hk": {}}
+        if not isinstance(payload, dict):
+            return loaded
+        for module_name in loaded:
+            module_states = payload.get(module_name, {})
+            if isinstance(module_states, dict):
+                loaded[module_name] = {
+                    str(name): dict(state)
+                    for name, state in module_states.items()
+                    if isinstance(state, dict)
+                }
+        return loaded
 
     def _persist_saved_states(self) -> None:
         if not self.settings.state_file:
@@ -272,6 +330,30 @@ class WebSession:
         if path.parent != Path("."):
             path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self._module_states, indent=2, sort_keys=True), encoding="utf-8")
+
+    def _module_setting_value(self, module_name: str, attribute: str):
+        if module_name == "scope":
+            return getattr(self.scope_settings, attribute)
+        if module_name in self.asg_settings:
+            return getattr(self.asg_settings[module_name], attribute)
+        if module_name == "hk":
+            return getattr(self.hk_settings, attribute)
+        raise KeyError(module_name)
+
+    def _set_module_attribute_no_lock(self, module_name: str, attribute: str, value) -> None:
+        if module_name == "scope":
+            set_scope_attribute(self.scope_settings, attribute, value)
+            sync_scope_setting(self.client, self.scope_settings, attribute)
+            self._hardware_rolling_started = False
+        elif module_name in self.asg_settings:
+            settings = self.asg_settings[module_name]
+            set_asg_attribute(settings, attribute, value)
+            sync_asg_setting(self.client, _asg_channel(module_name), settings, attribute)
+        elif module_name == "hk":
+            set_hk_attribute(self.hk_settings, attribute, value)
+            sync_hk_setting(self.client, self.hk_settings, attribute)
+        else:
+            raise KeyError(module_name)
 
     def _acquire_hardware_scope_frame(self, sequence: int, sample_count: int) -> ScopeAcquisition:
         state = self.scope_settings.running_state
@@ -396,6 +478,24 @@ def _normalize_state_name(state_name: str) -> str:
     if not normalized:
         raise KeyError("state_name")
     return normalized
+
+
+def _asg_channel(module_name: str) -> int:
+    if module_name == "asg0":
+        return 0
+    if module_name == "asg1":
+        return 1
+    raise KeyError(module_name)
+
+
+def _setup_attributes(module_name: str) -> list[str]:
+    if module_name == "scope":
+        return list(SCOPE_SETUP_ATTRIBUTES)
+    if module_name in {"asg0", "asg1"}:
+        return list(ASG_SETUP_ATTRIBUTES)
+    if module_name == "hk":
+        return list(HK_SETUP_ATTRIBUTES)
+    raise KeyError(module_name)
 
 
 def _find_positive_edge(data, threshold: float, hysteresis: float) -> int | None:

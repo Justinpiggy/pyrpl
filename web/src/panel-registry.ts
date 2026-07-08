@@ -1,4 +1,4 @@
-export type PanelId = "scope" | "registers";
+export type PanelId = "scope" | "asg" | "housekeeping" | "registers";
 
 export interface PanelDefinition {
   id: PanelId;
@@ -15,6 +15,18 @@ export const PANEL_DEFINITIONS: PanelDefinition[] = [
     description: "Oscilloscope controls and live waveform",
     defaultEnabled: true,
     defaultSplitSizes: [28, 72],
+  },
+  {
+    id: "asg",
+    title: "ASG",
+    description: "Arbitrary signal generator controls",
+    defaultEnabled: false,
+  },
+  {
+    id: "housekeeping",
+    title: "Housekeeping",
+    description: "LED and expansion connector I/O",
+    defaultEnabled: false,
   },
   {
     id: "registers",
