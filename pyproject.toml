@@ -47,6 +47,18 @@ qt-pyqt6 = ["PyQt6"]
 qt-pyside2 = ["PySide2"]
 qt-pyside6 = ["PySide6"]
 
+web-redpitaya = [
+    "fastapi",
+    "uvicorn",
+    "wsproto",
+]
+
+web = [
+    "fastapi",
+    "uvicorn",
+    "wsproto",
+]
+
 # Development dependencies (includes all test dependencies plus docs/build tools)
 dev = [
     "pytest", 
@@ -92,6 +104,7 @@ packages = { find = {} }
 
 [tool.setuptools.package-data]
 pyrpl = ["fpga/*", "monitor_server/*", "config/*", "widgets/images/*"]
+pyrpl_websocket = ["static/*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "pyrpl._version.__version__" }

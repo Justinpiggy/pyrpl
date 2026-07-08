@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PyRPL WebSocket</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>PyRPL WebSocket</h1>
+          <p id="session-line">Checking session...</p>
+        </div>
+        <div class="actions">
+          <button id="single-frame" type="button">Single Frame</button>
+          <button id="stream-toggle" type="button">Connect Stream</button>
+        </div>
+      </header>
+
+      <section class="control-panel">
+        <label>
+          <span>Address</span>
+          <input id="register-addr" type="text" value="0x40000000" spellcheck="false" />
+        </label>
+        <label>
+          <span>Length</span>
+          <input id="register-length" type="number" min="1" max="65535" value="1" />
+        </label>
+        <label class="values-field">
+          <span>Values</span>
+          <input id="register-values" type="text" value="0" spellcheck="false" />
+        </label>
+        <button id="register-read" type="button">Read</button>
+        <button id="register-write" type="button">Write</button>
+        <output id="control-output">Control socket idle</output>
+      </section>
+
+      <section class="scope-panel">
+        <div class="scope-toolbar">
+          <div class="zoom-actions">
+            <button id="zoom-out" type="button" title="Zoom out">-</button>
+            <button id="zoom-in" type="button" title="Zoom in">+</button>
+            <button id="zoom-reset" type="button">Reset</button>
+          </div>
+          <output id="plot-range">Full range</output>
+        </div>
+        <canvas id="scope-canvas" width="1400" height="620"></canvas>
+      </section>
+
+      <footer class="statusbar">
+        <span id="status">Idle</span>
+      </footer>
+    </main>
+    <script src="/static/scope.js"></script>
+  </body>
+</html>
