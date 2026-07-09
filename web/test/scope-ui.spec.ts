@@ -167,7 +167,7 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   await expect(page.locator("#status")).toContainText(/Frame [1-9]/);
   await expect(page.locator("#module-status")).toContainText("running_continuous");
   expect(await page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("running_continuous");
-  await expect(page.locator(".uplot")).toBeVisible();
+  await expect(page.locator("#scope-plot .uplot")).toBeVisible();
 
   const paintedPixels = await page.locator("#scope-plot canvas").first().evaluate(countPaintedPixels);
   expect(paintedPixels).toBeGreaterThan(1000);
@@ -238,7 +238,7 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   await expect(page.locator("#connect-scope")).toHaveText("Stop");
   expect(await page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("running_continuous");
 
-  const plot = page.locator(".u-over");
+  const plot = page.locator("#scope-plot .u-over");
   const box = await plot.boundingBox();
   expect(box).toBeTruthy();
   if (!box) {
@@ -274,10 +274,18 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   expect(zoomedYRange).toBeTruthy();
   expect(zoomedRange!.max - zoomedRange!.min).toBeLessThan(beforeRightZoom!.max - beforeRightZoom!.min);
   expect(zoomedYRange!.max - zoomedYRange!.min).toBeLessThan(initialYRange!.max - initialYRange!.min);
+  for (let index = 0; index < 8; index += 1) {
+    await page.locator("#zoom-in").click();
+  }
+  const deepZoomedLabels = await page.evaluate(() => window.pyrplScope?.getScopeTimeLabels() ?? []);
+  expect(deepZoomedLabels.length).toBeGreaterThan(2);
+  expect(new Set(deepZoomedLabels).size).toBeGreaterThan(1);
+  expect(deepZoomedLabels.every((label) => label === "0 s" || label === "0 ms" || label === "0 us")).toBe(false);
 
   await page.waitForTimeout(700);
   const laterRange = await page.evaluate(() => window.pyrplScope?.getXRange());
-  expect(laterRange).toEqual(zoomedRange);
+  const currentZoomedRange = await page.evaluate(() => window.pyrplScope?.getXRange());
+  expect(laterRange).toEqual(currentZoomedRange);
 
   await page.mouse.wheel(0, -1200);
   const afterWheelRange = await page.evaluate(() => window.pyrplScope?.getXRange());
@@ -438,7 +446,7 @@ test("ASG and housekeeping panels expose migrated module controls", async ({ pag
   await page.locator("#asg0-output-direct").selectOption("out1");
   await expect(page.locator("#asg0-status")).toContainText("output_direct = out1");
   await page.locator("#asg0-setup").click();
-  await expect(page.locator("#asg0-status")).toContainText("setup: ok");
+  await expect(page.locator("#asg0-status")).toContainText(/setup: ok|asg0 state updated/);
 
   await page.getByRole("button", { name: "Housekeeping" }).click();
   await expect(page.locator("#housekeeping-panel")).toBeVisible();
@@ -451,4 +459,172 @@ test("ASG and housekeeping panels expose migrated module controls", async ({ pag
   await expect(page.locator("#hk-status")).toContainText("expansion_P1 = true");
   await page.locator("#hk-refresh").click();
   await expect(page.locator("#hk-status")).toContainText("Housekeeping controls ready");
+});
+
+test("PID IQ trigger and PWM panels expose migrated DSP controls", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+  });
+
+  await page.goto("/");
+  for (const panelId of ["pid", "iq", "trig", "pwm"]) {
+    await page.locator(".menu-dropdown summary").click();
+    await page.locator(`#panel-${panelId}-enabled`).setChecked(true);
+  }
+
+  await expect(page.locator(".workspace-tab")).toContainText(["Scope", "PID", "IQ", "Trigger", "PWM"]);
+
+  await page.getByRole("button", { name: "PID" }).click();
+  await expect(page.locator("#pid-panel")).toBeVisible();
+  await page.locator("#pid0-input").selectOption("asg0");
+  await expect(page.locator("#pid0-status")).toContainText("input = asg0");
+  await page.locator("#pid0-p").fill("0.5");
+  await page.locator("#pid0-p").blur();
+  await expect(page.locator("#pid0-status")).toContainText("p = 0.5");
+  await page.locator("#pid0-i").fill("10");
+  await page.locator("#pid0-i").blur();
+  await expect(page.locator("#pid0-status")).toContainText("i = 10");
+  await page.locator("[data-module='pid0']").getByRole("button", { name: "Setup" }).click();
+  await expect(page.locator("#pid0-status")).toContainText("setup: ok");
+
+  await page.getByRole("button", { name: "IQ" }).click();
+  await expect(page.locator("#iq-panel")).toBeVisible();
+  await page.locator("#iq1-input").selectOption("pid0");
+  await expect(page.locator("#iq1-status")).toContainText("input = pid0");
+  await page.locator("#iq1-frequency").fill("1000000");
+  await page.locator("#iq1-frequency").blur();
+  await expect(page.locator("#iq1-status")).toContainText("frequency = 1000000");
+  await page.locator("#iq1-output-signal").selectOption("pfd");
+  await expect(page.locator("#iq1-status")).toContainText("output_signal = pfd");
+  await page.locator("[data-module='iq1']").getByRole("button", { name: "Sync" }).click();
+  await expect(page.locator("#iq1-status")).toContainText("sync: ok");
+
+  await page.getByRole("button", { name: "Trigger" }).click();
+  await expect(page.locator("#trig-panel")).toBeVisible();
+  await page.locator("#trig-input").selectOption("in1");
+  await expect(page.locator("#trig-status")).toContainText("input = in1");
+  await page.locator("#trig-trigger-source").selectOption("pos_edge");
+  await expect(page.locator("#trig-status")).toContainText("trigger_source = pos_edge");
+  await page.locator("#trig-threshold").fill("0.125");
+  await page.locator("#trig-threshold").blur();
+  await expect(page.locator("#trig-status")).toContainText("threshold = 0.125");
+  await page.locator("[data-module='trig']").getByRole("button", { name: "Arm" }).click();
+  await expect(page.locator("#trig-status")).toContainText("arm: ok");
+
+  await page.getByRole("button", { name: "PWM" }).click();
+  await expect(page.locator("#pwm-panel")).toBeVisible();
+  await page.locator("#pwm0-input").selectOption("pid0");
+  await expect(page.locator("#pwm0-status")).toContainText("input = pid0");
+  await page.locator("[data-module='pwm0']").getByRole("button", { name: "Setup" }).click();
+  await expect(page.locator("#pwm0-status")).toContainText("setup: ok");
+});
+
+test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+  });
+
+  await page.goto("/");
+  for (const panelId of ["iq", "spectrumanalyzer"]) {
+    await page.locator(".menu-dropdown summary").click();
+    await page.locator(`#panel-${panelId}-enabled`).setChecked(true);
+  }
+
+  await expect(page.locator(".workspace-tab")).toContainText(["Scope", "IQ", "Spectrum Analyzer"]);
+  await page.getByRole("button", { name: "Spectrum Analyzer" }).click();
+  await expect(page.locator("#spectrumanalyzer-panel")).toBeVisible();
+  await expect(page.locator("#spectrumanalyzer-panel .gutter-vertical")).toBeVisible();
+  const initialSpectrumControlsBox = await page.locator("#spectrum-controls-pane").boundingBox();
+  const spectrumGutterBox = await page.locator("#spectrumanalyzer-panel .gutter-vertical").boundingBox();
+  expect(initialSpectrumControlsBox).toBeTruthy();
+  expect(spectrumGutterBox).toBeTruthy();
+  if (!initialSpectrumControlsBox || !spectrumGutterBox) {
+    return;
+  }
+  await page.mouse.move(spectrumGutterBox.x + spectrumGutterBox.width / 2, spectrumGutterBox.y + spectrumGutterBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(spectrumGutterBox.x + spectrumGutterBox.width / 2, spectrumGutterBox.y + spectrumGutterBox.height / 2 + 40, {
+    steps: 6,
+  });
+  await page.mouse.up();
+  const draggedSpectrumControlsBox = await page.locator("#spectrum-controls-pane").boundingBox();
+  expect(draggedSpectrumControlsBox).toBeTruthy();
+  expect(draggedSpectrumControlsBox!.height).toBeGreaterThan(initialSpectrumControlsBox.height);
+
+  await expect(page.locator("[data-module='spectrumanalyzer']").getByRole("button", { name: "Setup" })).toHaveCount(0);
+  await expect(page.locator("[data-module='spectrumanalyzer']").getByRole("button", { name: "Release" })).toHaveCount(0);
+  await expect(page.locator("#spectrumanalyzer-input")).toBeHidden();
+  await expect(page.locator("#spectrumanalyzer-center")).toBeHidden();
+  await expect(page.locator("#spectrumanalyzer-input1-baseband")).toBeVisible();
+  const spanBoxBeforeModeSwitch = await page.locator("#spectrumanalyzer-span").boundingBox();
+  await page.locator("#spectrumanalyzer-baseband").setChecked(false);
+  await expect(page.locator("#spectrumanalyzer-input")).toBeVisible();
+  await expect(page.locator("#spectrumanalyzer-input1-baseband")).toBeHidden();
+  const spanBoxAfterModeSwitch = await page.locator("#spectrumanalyzer-span").boundingBox();
+  expect(spanBoxBeforeModeSwitch).toBeTruthy();
+  expect(spanBoxAfterModeSwitch).toBeTruthy();
+  expect(Math.abs(spanBoxAfterModeSwitch!.x - spanBoxBeforeModeSwitch!.x)).toBeLessThan(12);
+  await page.locator("#spectrumanalyzer-baseband").setChecked(true);
+  await expect(page.locator("#spectrumanalyzer-input")).toBeHidden();
+  await page.locator("#spectrumanalyzer-trace-average").fill("4");
+  await page.locator("#spectrumanalyzer-trace-average").blur();
+  await expect(page.locator("#spectrumanalyzer-status")).toContainText("trace_average = 4");
+  await expect(page.locator("#connect-scope")).toHaveText("Stop");
+  await page.locator("#spectrum-run").click();
+  await expect(page.locator("#spectrum-run")).toHaveText("Stop");
+  await expect(page.locator("#connect-scope")).toHaveText("Run");
+  await expect(page.locator("#status")).toContainText("Scope auto-paused by Spectrum");
+  await expect(page.locator("#spectrum-status")).toContainText(/Spectrum frame|Spectrum stream connected/);
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getSpectrumSeriesCount())).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getSpectrumAverageCount())).toBe(4);
+  const paintedPixels = await page.locator("#spectrum-plot canvas").first().evaluate(countPaintedPixels);
+  expect(paintedPixels).toBeGreaterThan(1000);
+
+  const initialRange = await page.evaluate(() => window.pyrplScope?.getSpectrumXRange());
+  const initialYRange = await page.evaluate(() => window.pyrplScope?.getSpectrumYRange());
+  expect(initialRange).toBeTruthy();
+  expect(initialYRange).toBeTruthy();
+  await page.locator("#spectrum-zoom-in").click();
+  const zoomedRange = await page.evaluate(() => window.pyrplScope?.getSpectrumXRange());
+  expect(zoomedRange!.max - zoomedRange!.min).toBeLessThan(initialRange!.max - initialRange!.min);
+  await page.locator("#spectrum-zoom-y-in").click();
+  const zoomedYRange = await page.evaluate(() => window.pyrplScope?.getSpectrumYRange());
+  expect(zoomedYRange!.max - zoomedYRange!.min).toBeLessThan(initialYRange!.max - initialYRange!.min);
+
+  const plot = page.locator("#spectrum-plot .u-over");
+  const box = await plot.boundingBox();
+  expect(box).toBeTruthy();
+  if (!box) {
+    return;
+  }
+  await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
+  await page.mouse.down({ button: "left" });
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.5, { steps: 8 });
+  await page.mouse.up();
+  const pannedRange = await page.evaluate(() => window.pyrplScope?.getSpectrumXRange());
+  expect(pannedRange!.max - pannedRange!.min).toBeCloseTo(zoomedRange!.max - zoomedRange!.min, 6);
+  expect(pannedRange!.min).toBeGreaterThan(zoomedRange!.min);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#spectrum-save-curve").click();
+  const download = await downloadPromise;
+  const csvPath = await download.path();
+  expect(csvPath).toBeTruthy();
+  const csv = readFileSync(csvPath!, "utf8");
+  expect(csv.split("\n")[0]).toContain("frequency");
+
+  await page.getByRole("button", { name: "IQ" }).click();
+  await expect(page.locator("#iq-panel")).toBeVisible();
+  await expect(page.locator("#iq2-frequency")).toBeDisabled();
+  await expect(page.locator("[data-module='iq2']")).toHaveClass(/is-owned/);
+
+  await page.getByRole("button", { name: "Spectrum Analyzer" }).click();
+  await page.locator("#spectrum-pause").click();
+  await expect(page.locator("#spectrum-run")).toHaveText("Run");
+  await expect(page.locator("#connect-scope")).toHaveText("Stop");
+  await page.locator("#spectrum-run").click();
+  await expect(page.locator("#connect-scope")).toHaveText("Run");
+  await page.locator("#spectrum-run").click();
+  await page.getByRole("button", { name: "IQ" }).click();
+  await expect(page.locator("#iq2-frequency")).toBeEnabled();
 });

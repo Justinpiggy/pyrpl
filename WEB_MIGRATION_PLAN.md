@@ -146,14 +146,22 @@ Current implemented workspace behavior:
   - Stacked
 - Split.js handles both workspace-level panel resizing and the Scope panel's
   internal controls/plot split.
-- Implemented panels are now Scope, ASG, Housekeeping, and Register Debug.
-  Register Debug is for raw monitor-server-compatible register reads/writes and
-  is disabled by default.
+- Implemented panels are now Scope, ASG, PID, IQ, Trigger, PWM,
+  Spectrum Analyzer, Housekeeping, and Register Debug. Register Debug is for raw
+  monitor-server-compatible register reads/writes and is disabled by default.
 - ASG is backed by compatible ASG0/ASG1 FPGA register writes for waveform RAM,
   amplitude, offset, frequency, trigger source, direct output, start phase, and
   cycles per burst.
 - Housekeeping is backed by compatible LED and expansion P/N direction/value
   registers.
+- PID, IQ, Trigger, and PWM panels are backed by compatible DSP module
+  register writes for routing, output selection, fixed-point gains/thresholds,
+  phases, trigger state, and PWM input routing.
+- Spectrum Analyzer is implemented as a software panel using the same
+  scope/IQ composition as PyRPL: it reserves `iq2`, configures scope capture
+  inputs for baseband or IQ demodulation, streams scope time-domain frames over
+  WebSocket, computes FFT spectra in the browser, and renders the result with
+  uPlot. Stop clears the IQ owner so the IQ panel becomes editable again.
 - Workspace split persistence supports N visible panels, not just two, so ASG
   and Housekeeping can be shown alongside Scope/Register Debug.
 
@@ -180,19 +188,22 @@ panel restores its saved panel state.
 
 ### Remaining Hardware Module Batches
 
-Recommended migration order after Scope, ASG, and Housekeeping:
+Recommended migration order after Scope, ASG, Housekeeping, and the basic
+PID/IQ/Trigger/PWM controls:
 
-1. PID and PWM: both share the `DspModule` input/output-direct register model,
-   and PID adds fixed-point gain/setpoint/limit registers.
-2. IQ and Trig: both inherit the filter/DSP module structure and need careful
-   migration of frequency/phase/gain and input filter controls.
-3. IIR: migrate after PID/IQ because its coefficient/filter design surface is
+1. Add list-aware filter editors for PID `inputfilter`, IQ `bandwidth`, and
+   IQ `acbandwidth`, including valid-frequency presentation.
+2. IIR: migrate after PID/IQ because its coefficient/filter design surface is
    larger and should likely get a dedicated browser editor.
-4. Sampler/AMS/status views: expose read-oriented telemetry and ADC/DAC status
+3. Sampler/AMS/status views: expose read-oriented telemetry and ADC/DAC status
    once the main control modules are stable.
-5. Software modules such as spectrum analyzer, network analyzer, and lockbox:
-   build as panels on top of the hardware module/event/acquisition APIs rather
-   than as raw register panels.
+4. Expand Spectrum Analyzer display-unit parity with PyRPL, including exact
+   transfer-function/window correction, PyRPL's padded FFT length, Web Worker
+   offload for large FFTs, and browser-side averaging/export.
+5. Software modules such as network analyzer and lockbox: build as panels on
+   top of the hardware module/event/acquisition APIs rather than as raw
+   register panels, with explicit resource ownership/release for any hardware
+   modules they occupy.
 
 ## Red Pitaya ARM Deployment Constraints
 

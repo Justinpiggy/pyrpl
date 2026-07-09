@@ -5,6 +5,161 @@ and implementing the PyRPL web-interface migration. Future work should update
 this file whenever new architecture, protocol, performance, or tooling knowledge
 is discovered.
 
+## 2026-07-09 Spectrum Layout and Scope Axis Precision
+
+### Change
+
+- Added a Spectrum Analyzer internal Split.js handle between the control pane
+  and plot pane. The control pane can now scroll and be resized vertically, so
+  additional controls/buttons remain reachable on shorter browser windows.
+- Kept the Spectrum Analyzer status/RBW text inside the panel plot toolbar,
+  matching the Scope panel's local frame counter placement.
+- Updated Scope x-axis formatting to use the full captured duration for unit
+  selection and the current visible tick spacing for decimal precision. This
+  prevents deeply zoomed views from showing repeated `0` labels while keeping
+  the unit tied to the acquisition duration.
+- Added browser regression coverage for the Spectrum Analyzer split handle and
+  deeply zoomed Scope time-label formatting.
+
+### Mistake Prevention
+
+uPlot leaves axis tick-label DOM nodes empty in this configuration and paints
+axis labels on the canvas. Playwright tests should not look for `.u-value`
+inside `.u-axis`; instead, expose a narrow debug hook or verify the rendered
+canvas behavior another way.
+
+Instrument-local controls that can grow, such as Spectrum Analyzer settings,
+need their own split/scroll area inside the panel. Do not rely only on the
+workspace split between instruments; users also need to resize control-vs-plot
+space within a single instrument.
+
+When formatting Scope time labels, choose display units from the full capture
+duration, but choose decimal precision from the visible tick spacing. Choosing
+precision only from the unit or default formatter can collapse deep-zoom labels
+to visually identical zeros.
+
+### Verification
+
+```text
+conda run -n pyrpl-env npm test
+13 tests - OK
+
+conda run -n pyrpl-env npm run build
+OK
+
+conda run -n pyrpl-env npm run test:e2e
+4 Chromium tests - OK
+```
+
+## 2026-07-08 Spectrum Analyzer and Resource Ownership
+
+### Change
+
+- Added a Spectrum Analyzer software panel to the workspace menu.
+- The panel exposes controls for input, center frequency, baseband mode, span,
+  window, AC bandwidth, display unit, baseband inputs, visible baseband traces,
+  cross amplitude, and trace averaging.
+- Added a uPlot-based TypeScript `SpectrumPlot` renderer. This keeps spectrum
+  drawing on the same high-performance plotting path as the scope prototype.
+- Changed the live Spectrum Analyzer path to use `/ws/spectrumanalyzer`, which
+  streams time-domain scope frames. The browser computes the FFT locally.
+- Added backend resource ownership tracking for hardware modules. Spectrum
+  Analyzer reserves `iq2`, blocks manual writes to `iq2` while owned, and
+  releases it on Stop/Release.
+- Generic hardware module cards now disable controls and action buttons when a
+  module state reports an owner. This mirrors PyRPL's gray-out behavior for
+  modules occupied by software modules.
+- Spectrum setup follows PyRPL's composition model: baseband mode routes scope
+  inputs directly; IQ mode configures `iq2` and routes scope inputs through
+  `iq2`/`iq2_2`.
+- Added spectrum Run/Stop, Single, Pause, Save Curve, X/Y zoom, X/Y pan, reset,
+  left-drag pan, and right-drag zoom controls. Removed visible Setup/Release
+  buttons from the Spectrum Analyzer panel because they are not user-facing
+  controls in the original GUI.
+
+### Boundary
+
+This is the first usable spectrum analyzer panel and ownership model. It does
+not yet implement exact PyRPL parity for padded FFT length, transfer-function
+correction, or browser-side spectrum averaging. The implementation
+intentionally leaves FPGA firmware and `monitor_server.c` untouched.
+
+### Mistake Prevention
+
+Resource ownership must be enforced in the backend, not only by disabling UI
+controls. UI gray-out is helpful feedback, but server-side `set`/`action`
+paths must reject writes to occupied hardware modules.
+
+When adding a second uPlot instance, do not keep broad Playwright selectors
+such as `.uplot` or `.u-over`; scope them to `#scope-plot` or
+`#spectrum-plot` or strict-mode tests will become ambiguous.
+
+Action status text can be overwritten by subsequent `module.state.changed`
+events. Tests should prefer functional assertions for stateful behavior
+such as disabled controls and plotted data unless the status text itself is
+the behavior being tested.
+
+When a software module releases a resource, publish the owned module state
+even if the software module's `resources` list is now empty. Otherwise other
+browser clients may not learn that the hardware module is editable again.
+
+PyRPL's original `SpectrumAnalyzer._get_trace()` does use `np.fft.rfft` /
+`np.fft.fft`, but that happens in the desktop Python GUI process after the
+scope returns time-domain data. For the web migration, do not move live FFT
+work onto the Red Pitaya ARM Python server. Stream time-domain scope frames
+and do FFT in the browser, or later in a browser Web Worker for large padded
+FFTs.
+
+Spectrum Analyzer `input` is only meaningful for non-baseband/IQ mode. In
+baseband mode the useful source controls are `input1_baseband` and
+`input2_baseband`, shown in the web UI as `BB Input 1` and `BB Input 2`.
+Hide IQ-only controls (`input`, `center`, `acbandwidth`) while baseband is
+active so users do not think they affect the baseband trace.
+
+Spectrum Analyzer `trace_average` belongs on the browser/client side in the
+web migration. After each time-domain scope frame is transformed into spectra,
+average the displayed spectral traces in TypeScript; do not add Red Pitaya ARM
+server-side FFT/averaging load for this control.
+
+Scope and Spectrum Analyzer both use the same scope hardware path. The web UI
+must not let both streams run at once. If starting Scope auto-pauses Spectrum,
+then manually pausing/stopping Scope should resume Spectrum. If starting
+Spectrum auto-pauses Scope, then manually pausing/stopping Spectrum should
+resume Scope. Track this as explicit auto-pause state rather than inferring it
+from button labels alone.
+
+Global frame counters/status lines should live inside the instrument panel that
+owns the stream. Scope frame status belongs in the Scope panel, and Spectrum
+frame/RBW status belongs in the Spectrum panel. Avoid page-global footer status
+for instrument-local stream data.
+
+When hiding Spectrum Analyzer controls for baseband/IQ mode, reserve grid space
+for hidden fields to avoid large layout jumps. The baseband trace show
+checkboxes should be immediately before their corresponding `BB Input` selectors
+just like Scope's channel show/input pairs.
+
+### Verification
+
+```text
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_app.py
+Ran 34 tests - OK
+
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_scope.py
+Ran 3 tests - OK
+
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_protocol.py
+Ran 2 tests - OK
+
+conda run -n pyrpl-env npm test
+13 tests - OK
+
+conda run -n pyrpl-env npm run build
+OK
+
+conda run -n pyrpl-env npm run test:e2e
+4 Chromium tests - OK
+```
+
 ## 2026-07-08
 
 ### User Goal
@@ -1745,6 +1900,127 @@ OK
 
 conda run -n pyrpl-env npm run test:e2e
 1 Chromium test - OK
+```
+
+## 2026-07-08 PID, IQ, Trigger, and PWM Basic Controls
+
+### Change
+
+- Added basic DSP-backed module migration for:
+  - `pid0`, `pid1`, `pid2`
+  - `iq0`, `iq1`, `iq2`
+  - `trig`
+  - `pwm0`, `pwm1`
+- Added shared DSP register helpers in `pyrpl_websocket/dsp_registers.py`.
+- Added module schemas, validation, state save/load support, and actions for
+  the new modules.
+- Added browser panels for PID, IQ, Trigger, and PWM. These panels use a
+  generic schema-driven renderer so future simple register modules can be
+  exposed without hand-writing each control.
+
+### Register Mapping
+
+DSP module base address is:
+
+```text
+0x40300000 + dsp_number * 0x10000
+```
+
+The DSP numbers come from PyRPL's `DSP_INPUTS` mapping:
+
+```text
+pid0=0, pid1=1, pid2=2, trig=3, iir=4,
+iq0=5, iq1=6, iq2=7, asg0=8, asg1=9,
+in1=10, in2=11, out1=12, out2=13, iq2_2=14, off=15
+```
+
+Shared DSP registers:
+
+- input select: `base + 0x0`
+- direct output select: `base + 0x4`
+- sync/pause bit register: `base + 0xC`
+
+PID registers implemented:
+
+- `ival`: `base + 0x100`, signed 16-bit, norm `2**13`
+- `setpoint`: `base + 0x104`, signed 14-bit, norm `2**13`
+- `p`: `base + 0x108`, signed 24-bit, norm `2**12`
+- `i`: `base + 0x10C`, signed 24-bit, norm `2**32 * 2*pi*8e-9`
+- `min_voltage`: `base + 0x124`, signed 14-bit, norm `2**13`
+- `max_voltage`: `base + 0x128`, signed 14-bit, norm `2**13`
+- `pause_gains`: `base + 0x12C`, mask `0b111`
+- `differential_mode_enabled`: `base + 0x12C`, bit `3`
+- `paused`: `base + 0xC`, DSP-number bit, inverted like PyRPL's
+  `PauseRegister`
+
+IQ registers implemented:
+
+- `on` / `pfd_on`: `base + 0x100`, bits `0` and `1`
+- `modulation_at_2f`: `base + 0x100`, mask `3 << 2`
+- `demodulation_at_2f`: `base + 0x100`, mask `3 << 4`
+- `phase`: `base + 0x104`, 32-bit phase register, inverted
+- `frequency`: `base + 0x108`, 32-bit frequency register
+- `output_signal`: `base + 0x10C`
+- `gain`: writes `_g1` and `_g4` at `base + 0x110` and `base + 0x11C`
+- `amplitude`: `base + 0x114`, signed 18-bit, norm `2**17`
+- `quadrature_factor`: `base + 0x118`, signed 18-bit, norm `1`
+
+Trigger registers implemented:
+
+- `armed`: `base + 0x100`, bit `0`
+- `auto_rearm`: `base + 0x104`, bit `0`
+- `phase_abs`: `base + 0x104`, bit `1`
+- `trigger_source`: `base + 0x108`
+- `output_signal`: `base + 0x10C`
+- `phase_offset`: `base + 0x110`, 14-bit phase register
+- `threshold`: `base + 0x118`, signed 14-bit, norm `2**13`
+- `hysteresis`: `base + 0x11C`, signed 14-bit, norm `2**13`
+
+PWM input routing uses the ADC input DSP slots exactly as PyRPL's `Pwm`
+module does:
+
+- `pwm0` writes input select at the `in1` DSP base
+- `pwm1` writes input select at the `in2` DSP base
+
+### Boundary
+
+This pass migrates the basic controls needed by higher-level modules such as
+lockbox and spectrum/network analyzer orchestration. It does not yet expose
+the list-valued filter controls:
+
+- PID `inputfilter`
+- IQ `bandwidth`
+- IQ `acbandwidth`
+
+Those need a list-aware browser control and valid-frequency presentation
+rather than a single scalar input. Do not silently fake them as plain numbers;
+that would hide important PyRPL behavior.
+
+### Mistake Prevention
+
+When multiple modules share the `DspModule` base pattern, keep routing and
+fixed-point conversion in one helper module. Copying input/output/gain register
+math into every module would make future hardware-reference corrections too
+easy to miss.
+
+For schema-driven panels, wait to connect the event WebSocket until after the
+generic controls are rendered. Otherwise an early module event can arrive
+before the control map exists and the UI will miss the update.
+
+### Verification
+
+```text
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_app.py
+Ran 31 tests - OK
+
+conda run -n pyrpl-env npm test
+13 tests - OK
+
+conda run -n pyrpl-env npm run build
+OK
+
+conda run -n pyrpl-env npm run test:e2e
+3 Chromium tests - OK
 ```
 
 ## 2026-07-08 ASG and Housekeeping Web Migration

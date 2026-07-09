@@ -106,6 +106,11 @@ async def handle_control_message(
             return _control_error(message, "bad_request", str(exc))
         if events is not None:
             await events.publish(module_attribute_event(module_name, attribute, value))
+            if module_name == "spectrumanalyzer":
+                state = session.module_state(module_name)
+                await events.publish(module_state_event(module_name, state))
+                for resource_module in _resource_event_modules(module_name, state):
+                    await events.publish(module_state_event(resource_module, session.module_state(resource_module)))
         return {
             "id": _message_id(message),
             "ok": True,
@@ -136,9 +141,13 @@ async def handle_control_message(
             state = session.call_module_action(module_name, action)
         except KeyError as exc:
             return _control_error(message, "not_found", f"Unknown module or action {exc}")
+        except (TypeError, ValueError) as exc:
+            return _control_error(message, "bad_request", str(exc))
         if events is not None:
             await events.publish(module_action_event(module_name, action, state))
             await events.publish(module_state_event(module_name, state))
+            for resource_module in _resource_event_modules(module_name, state):
+                await events.publish(module_state_event(resource_module, session.module_state(resource_module)))
         return {
             "id": _message_id(message),
             "ok": True,
@@ -228,6 +237,19 @@ async def handle_control_message(
         }
 
     return _control_error(message, "unknown_type", f"Unknown control message type {command!r}")
+
+
+def _resource_event_modules(module_name: str, state: dict[str, Any]) -> list[str]:
+    if module_name != "spectrumanalyzer":
+        return []
+    resource_modules = {"iq2"}
+    resources = state.get("resources")
+    if isinstance(resources, list):
+        resource_modules.update(str(resource) for resource in resources)
+    iq_module = state.get("iq_module")
+    if isinstance(iq_module, str):
+        resource_modules.add(iq_module)
+    return sorted(resource_modules)
 
 
 async def control_socket(websocket: WebSocket, session: WebSession, events: EventBroker | None = None) -> None:
@@ -374,6 +396,11 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_attribute_event(module_name, attribute, value))
+        if module_name == "spectrumanalyzer":
+            state = app.state.session.module_state(module_name)
+            await app.state.events.publish(module_state_event(module_name, state))
+            for resource_module in _resource_event_modules(module_name, state):
+                await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
         return {"module": module_name, "attribute": attribute, "value": value}
 
     @app.post("/api/modules/{module_name}/actions/{action}")
@@ -382,8 +409,12 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             state = app.state.session.call_module_action(module_name, action)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown module or action") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_action_event(module_name, action, state))
         await app.state.events.publish(module_state_event(module_name, state))
+        for resource_module in _resource_event_modules(module_name, state):
+            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
         return {"module": module_name, "action": action, "state": state}
 
     @app.post("/api/modules/{module_name}/states/{state_name}/save")
@@ -449,6 +480,16 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             return Response(status_code=204)
         return Response(acquisition.frame.to_bytes(), media_type="application/octet-stream")
 
+    @app.get("/api/spectrumanalyzer/frame")
+    async def spectrum_frame(samples: int = 4096, sequence: int = 0):
+        sample_count = clamp_sample_count(samples)
+        frame = await asyncio.to_thread(
+            app.state.session.acquire_spectrum_frame,
+            sequence,
+            sample_count,
+        )
+        return frame
+
     @app.websocket("/ws/control")
     async def control(websocket: WebSocket):
         await control_socket(websocket, app.state.session, app.state.events)
@@ -476,6 +517,28 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                     await app.state.events.publish(module_state_event("scope", app.state.session.module_state("scope")))
                 if acquisition.frame is not None:
                     await websocket.send_bytes(acquisition.frame.to_bytes())
+                    sequence += 1
+                await asyncio.sleep(settings.scope_interval)
+        except WebSocketDisconnect:
+            return
+
+    @app.websocket("/ws/spectrumanalyzer")
+    async def spectrum_stream(websocket: WebSocket):
+        await websocket.accept()
+        sequence = 0
+        sample_count = 4096
+        try:
+            query_count = websocket.query_params.get("samples")
+            if query_count is not None:
+                sample_count = clamp_sample_count(int(query_count))
+            while True:
+                frame = await asyncio.to_thread(
+                    app.state.session.acquire_spectrum_scope_frame,
+                    sequence,
+                    sample_count,
+                )
+                if frame is not None:
+                    await websocket.send_bytes(frame.to_bytes())
                     sequence += 1
                 await asyncio.sleep(settings.scope_interval)
         except WebSocketDisconnect:

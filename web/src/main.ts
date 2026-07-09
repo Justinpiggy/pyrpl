@@ -1,4 +1,5 @@
 import { ScopeStream } from "./scope-stream";
+import { SpectrumPlot } from "./spectrum-plot";
 import Split from "split.js";
 import { PANEL_DEFINITIONS, type PanelId } from "./panel-registry";
 import { createRegisterPanel } from "./register-panel";
@@ -142,6 +143,7 @@ app.innerHTML = `
           <section class="plot-panel split-pane" id="scope-plot-pane">
             <div class="plot-toolbar">
               <output id="plot-hint">Drag pans. Right-drag zooms X/Y. Use header controls for touch-friendly zoom and offsets.</output>
+              <output id="status">Idle</output>
             </div>
             <div id="scope-plot"></div>
           </section>
@@ -199,6 +201,59 @@ app.innerHTML = `
               <button id="${moduleName}-off" type="button">Off</button>
             </div>
           </section>`).join("")}
+        </div>
+        </section>
+        ${[
+          ["pid", "PID", "PID controllers", "pid-modules"],
+          ["iq", "IQ", "IQ modulators and demodulators", "iq-modules"],
+          ["trig", "Trigger", "DSP trigger", "trig-modules"],
+          ["pwm", "PWM", "Auxiliary PWM routing", "pwm-modules"],
+        ].map(([panelId, title, description, containerId]) => `
+        <section class="workspace-panel" id="${panelId}-panel" data-panel-id="${panelId}" hidden>
+        <header class="panel-header">
+          <div>
+            <h2>${title}</h2>
+            <p>${description}</p>
+          </div>
+        </header>
+        <div class="panel-content instrument-grid" id="${containerId}"></div>
+        </section>`).join("")}
+        <section class="workspace-panel" id="spectrumanalyzer-panel" data-panel-id="spectrumanalyzer" hidden>
+        <header class="panel-header spectrum-header">
+          <div>
+            <h2>Spectrum Analyzer</h2>
+          </div>
+          <div class="actions">
+            <div class="action-row">
+              <button id="spectrum-single" type="button">Single</button>
+              <button id="spectrum-run" type="button">Run</button>
+              <button id="spectrum-pause" type="button">Pause</button>
+              <button id="spectrum-save-curve" type="button">Save Curve</button>
+            </div>
+            <div class="action-row">
+              <button id="spectrum-zoom-out" class="plot-button" type="button" title="Zoom X out">X-</button>
+              <button id="spectrum-zoom-in" class="plot-button" type="button" title="Zoom X in">X+</button>
+              <button id="spectrum-zoom-y-out" class="plot-button" type="button" title="Zoom Y out">Y-</button>
+              <button id="spectrum-zoom-y-in" class="plot-button" type="button" title="Zoom Y in">Y+</button>
+              <button id="spectrum-pan-left" class="plot-button" type="button" title="Move view left">&lt;</button>
+              <button id="spectrum-pan-right" class="plot-button" type="button" title="Move view right">&gt;</button>
+              <button id="spectrum-pan-up" class="plot-button" type="button" title="Move trace up">^</button>
+              <button id="spectrum-pan-down" class="plot-button" type="button" title="Move trace down">v</button>
+              <button id="spectrum-zoom-reset" type="button">Reset</button>
+            </div>
+          </div>
+        </header>
+        <div class="panel-content spectrum-content" id="spectrum-panel-content">
+          <section class="spectrum-controls split-pane" id="spectrum-controls-pane">
+            <div id="spectrum-modules"></div>
+          </section>
+          <section class="plot-panel spectrum-plot-panel split-pane" id="spectrum-plot-pane">
+            <div class="plot-toolbar">
+              <output id="spectrum-plot-hint">Drag pans. Right-drag zooms X/Y. Stop frees IQ2.</output>
+              <output id="spectrum-status">Spectrum analyzer ready</output>
+            </div>
+            <div id="spectrum-plot"></div>
+          </section>
         </div>
         </section>
         <section class="workspace-panel" id="housekeeping-panel" data-panel-id="housekeeping" hidden>
@@ -263,9 +318,6 @@ app.innerHTML = `
       </div>
     </main>
 
-    <footer class="statusbar">
-      <span id="status">Idle</span>
-    </footer>
   </section>
 `;
 
@@ -303,7 +355,7 @@ style.textContent = `
 
   .shell {
 	    display: grid;
-	    grid-template-rows: auto minmax(0, 1fr) auto;
+	    grid-template-rows: auto minmax(0, 1fr);
     height: 100%;
     min-height: 0;
     gap: 8px;
@@ -315,8 +367,7 @@ style.textContent = `
     .workspace-panel,
 	  .module-panel,
 	  .plot-panel,
-    .empty-workspace,
-  .statusbar {
+    .empty-workspace {
     border: 1px solid var(--panel-border);
     background: var(--panel);
   }
@@ -585,6 +636,11 @@ style.textContent = `
     padding: 7px 10px;
   }
 
+  .spectrum-header {
+    min-height: 42px;
+    padding-block: 5px;
+  }
+
   .panel-header p {
     margin-top: 2px;
     font-size: 12px;
@@ -697,6 +753,48 @@ style.textContent = `
     grid-template-columns: repeat(4, minmax(92px, 1fr)) repeat(3, auto);
   }
 
+  .generic-module-row {
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  }
+
+  .spectrum-module-row {
+    grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  }
+
+  .spectrum-module-row label {
+    min-width: 0;
+  }
+
+  .spectrum-module-row label[hidden] {
+    display: grid;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .module-panel.is-owned {
+    opacity: 0.62;
+  }
+
+  .spectrum-content {
+    min-height: 0;
+    padding: 8px;
+  }
+
+  .spectrum-controls {
+    min-height: 0;
+    align-content: start;
+    overflow: auto;
+  }
+
+  .spectrum-controls .module-panel {
+    border: 0;
+    padding: 0;
+  }
+
+  .spectrum-plot-panel {
+    min-height: 0;
+  }
+
   .housekeeping-panel {
     align-content: start;
     overflow: auto;
@@ -780,6 +878,17 @@ style.textContent = `
 	    display: grid;
 	    gap: 3px;
 	  }
+
+    .module-panel label[hidden],
+    .control-row label[hidden] {
+      display: none;
+    }
+
+    .module-panel .spectrum-module-row label[hidden] {
+      display: grid;
+      visibility: hidden;
+      pointer-events: none;
+    }
 	
 	  .module-panel label span {
 	    color: var(--muted);
@@ -804,7 +913,8 @@ style.textContent = `
     white-space: nowrap;
   }
 
-  #scope-plot {
+  #scope-plot,
+  #spectrum-plot {
     min-width: 0;
     min-height: 0;
     height: 100%;
@@ -812,7 +922,8 @@ style.textContent = `
     background: #05080a;
   }
 
-  #scope-plot > .uplot {
+  #scope-plot > .uplot,
+  #spectrum-plot > .uplot {
     max-width: 100%;
     max-height: 100%;
   }
@@ -837,15 +948,6 @@ style.textContent = `
 
   .uplot .u-over.is-zooming {
     cursor: ew-resize;
-  }
-
-  .statusbar {
-    min-height: 36px;
-    max-height: 36px;
-    padding: 9px 12px;
-    color: var(--muted);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12px;
   }
 
 	  @media (max-width: 680px) {
@@ -882,8 +984,9 @@ style.textContent = `
 
       .signal-row,
       .tune-row,
-      .register-row {
-        grid-template-columns: 1fr 1fr;
+      .register-row,
+      .spectrum-content {
+        grid-template-columns: 1fr;
       }
 	
 	    .module-panel output {
@@ -897,16 +1000,29 @@ const plotHost = requireElement<HTMLDivElement>("#scope-plot");
 const scopePanelContent = requireElement<HTMLDivElement>("#scope-panel-content");
 const scopeControlsPane = requireElement<HTMLElement>("#scope-controls-pane");
 const scopePlotPane = requireElement<HTMLElement>("#scope-plot-pane");
+const spectrumPanelContent = requireElement<HTMLDivElement>("#spectrum-panel-content");
+const spectrumControlsPane = requireElement<HTMLElement>("#spectrum-controls-pane");
+const spectrumPlotPane = requireElement<HTMLElement>("#spectrum-plot-pane");
 const panelMenu = requireElement<HTMLDivElement>("#panel-menu");
 const workspaceTabs = requireElement<HTMLDivElement>("#workspace-tabs");
 const workspacePanels = requireElement<HTMLDivElement>("#workspace-panels");
 const scopePanel = requireElement<HTMLElement>("#scope-panel");
 const asgPanel = requireElement<HTMLElement>("#asg-panel");
+const pidPanel = requireElement<HTMLElement>("#pid-panel");
+const iqPanel = requireElement<HTMLElement>("#iq-panel");
+const trigPanel = requireElement<HTMLElement>("#trig-panel");
+const pwmPanel = requireElement<HTMLElement>("#pwm-panel");
+const spectrumPanel = requireElement<HTMLElement>("#spectrumanalyzer-panel");
 const housekeepingPanel = requireElement<HTMLElement>("#housekeeping-panel");
 const registersPanel = requireElement<HTMLElement>("#registers-panel");
 const panelElements: Record<PanelId, HTMLElement> = {
   scope: scopePanel,
   asg: asgPanel,
+  pid: pidPanel,
+  iq: iqPanel,
+  trig: trigPanel,
+  pwm: pwmPanel,
+  spectrumanalyzer: spectrumPanel,
   housekeeping: housekeepingPanel,
   registers: registersPanel,
 };
@@ -948,6 +1064,26 @@ const hkStatus = requireElement<HTMLOutputElement>("#hk-status");
 const hkLed = requireElement<HTMLInputElement>("#hk-led");
 const hkRefresh = requireElement<HTMLButtonElement>("#hk-refresh");
 const hkExpansionGrid = requireElement<HTMLDivElement>("#hk-expansion-grid");
+const pidModules = requireElement<HTMLDivElement>("#pid-modules");
+const iqModules = requireElement<HTMLDivElement>("#iq-modules");
+const trigModules = requireElement<HTMLDivElement>("#trig-modules");
+const pwmModules = requireElement<HTMLDivElement>("#pwm-modules");
+const spectrumModules = requireElement<HTMLElement>("#spectrum-modules");
+const spectrumPlotHost = requireElement<HTMLDivElement>("#spectrum-plot");
+const spectrumStatus = requireElement<HTMLOutputElement>("#spectrum-status");
+const spectrumSingleButton = requireElement<HTMLButtonElement>("#spectrum-single");
+const spectrumRunButton = requireElement<HTMLButtonElement>("#spectrum-run");
+const spectrumPauseButton = requireElement<HTMLButtonElement>("#spectrum-pause");
+const spectrumSaveCurveButton = requireElement<HTMLButtonElement>("#spectrum-save-curve");
+const spectrumZoomOutButton = requireElement<HTMLButtonElement>("#spectrum-zoom-out");
+const spectrumZoomInButton = requireElement<HTMLButtonElement>("#spectrum-zoom-in");
+const spectrumZoomYOutButton = requireElement<HTMLButtonElement>("#spectrum-zoom-y-out");
+const spectrumZoomYInButton = requireElement<HTMLButtonElement>("#spectrum-zoom-y-in");
+const spectrumPanLeftButton = requireElement<HTMLButtonElement>("#spectrum-pan-left");
+const spectrumPanRightButton = requireElement<HTMLButtonElement>("#spectrum-pan-right");
+const spectrumPanUpButton = requireElement<HTMLButtonElement>("#spectrum-pan-up");
+const spectrumPanDownButton = requireElement<HTMLButtonElement>("#spectrum-pan-down");
+const spectrumZoomResetButton = requireElement<HTMLButtonElement>("#spectrum-zoom-reset");
 const sessionLine = requireElement<HTMLParagraphElement>("#session-line");
 createRegisterPanel({
   readAddr: requireElement<HTMLInputElement>("#register-read-addr"),
@@ -990,7 +1126,8 @@ interface SavedScopeState {
   state: ScopeState;
 }
 
-type ModuleState = Record<string, string | number | boolean | null | undefined>;
+type ModulePrimitive = string | number | boolean;
+type ModuleState = Record<string, unknown>;
 type AsgModuleId = "asg0" | "asg1";
 
 interface AsgControls {
@@ -1014,15 +1151,48 @@ const asgControls: Record<AsgModuleId, AsgControls> = {
   asg1: createAsgControls("asg1"),
 };
 
+const genericPanelModules: Record<"pid" | "iq" | "trig" | "pwm" | "spectrumanalyzer", string[]> = {
+  pid: ["pid0", "pid1", "pid2"],
+  iq: ["iq0", "iq1", "iq2"],
+  trig: ["trig"],
+  pwm: ["pwm0", "pwm1"],
+  spectrumanalyzer: ["spectrumanalyzer"],
+};
+
+const genericPanelContainers: Record<keyof typeof genericPanelModules, HTMLDivElement> = {
+  pid: pidModules,
+  iq: iqModules,
+  trig: trigModules,
+  pwm: pwmModules,
+  spectrumanalyzer: spectrumModules as HTMLDivElement,
+};
+
+interface GenericModuleControls {
+  status: HTMLOutputElement;
+  inputs: Map<string, HTMLInputElement | HTMLSelectElement>;
+  fields: Map<string, HTMLLabelElement>;
+  actions: HTMLButtonElement[];
+  card: HTMLElement;
+  owner: string | null;
+}
+
+const genericModuleControls = new Map<string, GenericModuleControls>();
+
 let stream = new ScopeStream(plotHost, (message) => {
   status.textContent = message;
+});
+let spectrumPlot = new SpectrumPlot(spectrumPlotHost, (message) => {
+  spectrumStatus.textContent = message;
 });
 let eventSocket: WebSocket | null = null;
 let eventCount = 0;
 let runningState = "stopped";
+let scopeAutoPausedBySpectrum = false;
+let spectrumAutoPausedByScope = false;
 let workspaceState = loadWorkspaceState();
 let currentSession: { fake: boolean } | null = null;
 let scopeSplit: Split.Instance | null = null;
+let spectrumSplit: Split.Instance | null = null;
 let workspaceSplit: Split.Instance | null = null;
 let workspaceSplitMode: WorkspaceLayoutMode | null = null;
 let workspaceSplitPanelSignature = "";
@@ -1033,6 +1203,7 @@ function exposeDebugState(): void {
     getSampleCount: () => stream.getSampleCount(),
     getXRange: () => stream.getXRange(),
     getYRange: () => stream.getYRange(),
+    getScopeTimeLabels: () => stream.getFormattedTimeLabelsForCurrentRange(),
     isChannelVisible: (channel: 1 | 2) => stream.getChannelVisible(channel),
     getEventCount: () => eventCount,
     getTraceAverage: () => stream.getTraceAverage(),
@@ -1046,6 +1217,10 @@ function exposeDebugState(): void {
     getDisplayedStats: () => stream.getDisplayedStats(),
     moduleStatusText: () => moduleStatus.textContent ?? "",
     statusText: () => status.textContent ?? "",
+    getSpectrumSeriesCount: () => spectrumPlot.getSeriesCount(),
+    getSpectrumAverageCount: () => spectrumPlot.getAverageCount(),
+    getSpectrumXRange: () => spectrumPlot.getXRange(),
+    getSpectrumYRange: () => spectrumPlot.getYRange(),
   };
 }
 
@@ -1102,6 +1277,12 @@ function applyWorkspaceState(): void {
     window.requestAnimationFrame(() => stream.refreshLayout());
   } else {
     destroyScopeSplit();
+  }
+  if (visiblePanels.has("spectrumanalyzer")) {
+    ensureSpectrumSplit();
+    window.requestAnimationFrame(() => spectrumPlot.refreshLayout());
+  } else {
+    destroySpectrumSplit();
   }
 }
 
@@ -1213,6 +1394,34 @@ function destroyScopeSplit(): void {
   scopePlotPane.removeAttribute("style");
 }
 
+function ensureSpectrumSplit(): void {
+  if (spectrumSplit || spectrumPanel.hidden) {
+    return;
+  }
+  spectrumSplit = Split([spectrumControlsPane, spectrumPlotPane], {
+    direction: "vertical",
+    sizes: [32, 68],
+    minSize: [96, 220],
+    gutterSize: 8,
+    snapOffset: 16,
+    elementStyle: (_dimension, size) => ({
+      height: `calc(${size}% - 4px)`,
+    }),
+    gutterStyle: () => ({
+      height: "8px",
+    }),
+    onDrag: () => spectrumPlot.refreshLayout(),
+    onDragEnd: () => spectrumPlot.refreshLayout(),
+  });
+}
+
+function destroySpectrumSplit(): void {
+  spectrumSplit?.destroy();
+  spectrumSplit = null;
+  spectrumControlsPane.removeAttribute("style");
+  spectrumPlotPane.removeAttribute("style");
+}
+
 function ensureWorkspaceSplit(panelIds: PanelId[]): void {
   const panelSignature = panelIds.join("|");
   if (workspaceSplit && workspaceSplitMode === workspaceState.layoutMode && workspaceSplitPanelSignature === panelSignature) {
@@ -1229,7 +1438,10 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
       minSize: 220,
       gutterSize: 8,
       snapOffset: 24,
-      onDrag: () => stream.refreshLayout(),
+      onDrag: () => {
+        stream.refreshLayout();
+        spectrumPlot.refreshLayout();
+      },
       onDragEnd: (sizes) => {
         workspaceState = {
           ...workspaceState,
@@ -1237,6 +1449,7 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
         };
         saveWorkspaceState(workspaceState);
         stream.refreshLayout();
+        spectrumPlot.refreshLayout();
       },
     },
   );
@@ -1273,11 +1486,25 @@ async function setPanelEnabled(panelId: PanelId, enabled: boolean): Promise<void
   applyWorkspaceState();
   if (panelId === "scope" && !enabled) {
     stopStream("Scope panel disabled");
-    await callScopeAction("stop");
+    callScopeAction("stop").catch((error: Error) => {
+      moduleStatus.textContent = error.message;
+    });
+    resumeSpectrumAutoPausedByScope().catch((error: Error) => {
+      spectrumStatus.textContent = error.message;
+    });
     return;
   }
   if (panelId === "scope" && enabled && workspaceState.activePanelId === "scope") {
     await activateScopePanel();
+  }
+  if (panelId === "spectrumanalyzer" && !enabled) {
+    stopSpectrumStream("Spectrum panel disabled");
+    callSpectrumAction("stop").catch((error: Error) => {
+      spectrumStatus.textContent = error.message;
+    });
+    resumeScopeAutoPausedBySpectrum().catch((error: Error) => {
+      moduleStatus.textContent = error.message;
+    });
   }
 }
 
@@ -1290,6 +1517,9 @@ async function setActivePanel(panelId: PanelId): Promise<void> {
   applyWorkspaceState();
   if (panelId === "scope") {
     await activateScopePanel();
+  }
+  if (panelId === "spectrumanalyzer") {
+    window.requestAnimationFrame(() => spectrumPlot.refreshLayout());
   }
 }
 
@@ -1329,6 +1559,27 @@ function stopStream(message = "Disconnected"): void {
   connectButton.dataset.connected = "false";
   connectButton.textContent = "Run";
   status.textContent = message;
+}
+
+async function pauseScopeForSpectrum(): Promise<void> {
+  if (connectButton.dataset.connected !== "true") {
+    return;
+  }
+  scopeAutoPausedBySpectrum = true;
+  await callScopeAction("pause");
+  stopStream("Scope auto-paused by Spectrum");
+}
+
+async function resumeScopeAutoPausedBySpectrum(): Promise<void> {
+  if (!scopeAutoPausedBySpectrum) {
+    return;
+  }
+  scopeAutoPausedBySpectrum = false;
+  if (!workspaceState.panels.scope.enabled) {
+    return;
+  }
+  await callScopeAction("continuous");
+  startStream();
 }
 
 async function callScopeAction(action: string): Promise<Record<string, unknown>> {
@@ -1531,7 +1782,7 @@ async function loadOneAsgControls(moduleName: AsgModuleId): Promise<void> {
 
 function applyAsgState(moduleName: AsgModuleId, state: ModuleState): void {
   for (const [attribute, value] of Object.entries(state)) {
-    if (value !== null && value !== undefined) {
+    if (isModulePrimitive(value)) {
       applyAsgControlValue(moduleName, attribute, value);
     }
   }
@@ -1643,7 +1894,7 @@ async function loadHkControls(): Promise<void> {
 
 function applyHkState(state: ModuleState): void {
   for (const [attribute, value] of Object.entries(state)) {
-    if (value !== null && value !== undefined) {
+    if (isModulePrimitive(value)) {
       applyHkControlValue(attribute, value);
     }
   }
@@ -1664,6 +1915,269 @@ async function setHkAttribute(attribute: string, value: string | number | boolea
   const result = await setModuleAttributeValue("hk", attribute, value);
   applyHkControlValue(attribute, result.value);
   hkStatus.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
+}
+
+async function loadGenericPanels(): Promise<void> {
+  for (const [panelId, moduleNames] of Object.entries(genericPanelModules) as Array<
+    [keyof typeof genericPanelModules, string[]]
+  >) {
+    const container = genericPanelContainers[panelId];
+    container.textContent = "";
+    await Promise.all(moduleNames.map((moduleName) => buildGenericModuleCard(container, moduleName)));
+  }
+}
+
+async function buildGenericModuleCard(container: HTMLElement, moduleName: string): Promise<void> {
+  const [attributesResponse, actionsResponse, stateResponse] = await Promise.all([
+    fetch(`/api/modules/${moduleName}/attributes`),
+    fetch(`/api/modules/${moduleName}/actions`),
+    fetch(`/api/modules/${moduleName}`),
+  ]);
+  if (!attributesResponse.ok || !actionsResponse.ok || !stateResponse.ok) {
+    throw new Error(`${moduleName} controls unavailable`);
+  }
+  const attributesPayload = await attributesResponse.json();
+  const actionsPayload = await actionsResponse.json();
+  const statePayload = await stateResponse.json();
+  const card = document.createElement("section");
+  card.className = "module-panel instrument-card";
+  card.dataset.module = moduleName;
+
+  const header = document.createElement("header");
+  header.className = "instrument-card-header";
+  const title = document.createElement("h3");
+  title.textContent = moduleName.toUpperCase();
+  const statusOutput = document.createElement("output");
+  statusOutput.id = `${moduleName}-status`;
+  statusOutput.textContent = `${moduleName} ready`;
+  header.append(title, statusOutput);
+
+  const row = document.createElement("div");
+  row.className =
+    moduleName === "spectrumanalyzer"
+      ? "control-row generic-module-row spectrum-module-row"
+      : "control-row generic-module-row";
+  const controls: GenericModuleControls = {
+    status: statusOutput,
+    inputs: new Map(),
+    fields: new Map(),
+    actions: [],
+    card,
+    owner: null,
+  };
+  const attributes = moduleName === "spectrumanalyzer"
+    ? orderSpectrumAttributes(attributesPayload.attributes as ModuleAttribute[])
+    : (attributesPayload.attributes as ModuleAttribute[]);
+  for (const attribute of attributes) {
+    const field = createGenericAttributeField(moduleName, attribute, statusOutput);
+    controls.inputs.set(attribute.name, field.input);
+    controls.fields.set(attribute.name, field.label);
+    row.appendChild(field.label);
+  }
+  const visibleActions =
+    moduleName === "spectrumanalyzer"
+      ? []
+      : (actionsPayload.actions ?? []);
+  for (const action of visibleActions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = action.label ?? action.name;
+    button.addEventListener("click", () => {
+      callGenericModuleAction(moduleName, action.name, statusOutput).catch((error: Error) => {
+        statusOutput.textContent = error.message;
+      });
+    });
+    controls.actions.push(button);
+    row.appendChild(button);
+  }
+  genericModuleControls.set(moduleName, controls);
+  card.append(header, row);
+  container.appendChild(card);
+  applyGenericModuleState(moduleName, statePayload.state ?? {});
+}
+
+function createGenericAttributeField(
+  moduleName: string,
+  attribute: ModuleAttribute,
+  statusOutput: HTMLOutputElement,
+): { label: HTMLLabelElement; input: HTMLInputElement | HTMLSelectElement } {
+  const label = document.createElement("label");
+  label.dataset.attribute = attribute.name;
+  const title = document.createElement("span");
+  title.textContent = moduleName === "spectrumanalyzer" ? spectrumAttributeLabel(attribute) : attribute.label;
+  label.appendChild(title);
+  let input: HTMLInputElement | HTMLSelectElement;
+  if (attribute.type === "select") {
+    const select = document.createElement("select");
+    populateSelect(select, attribute);
+    select.addEventListener("change", () => {
+      setGenericModuleAttribute(moduleName, attribute.name, select.value, statusOutput).catch((error: Error) => {
+        statusOutput.textContent = error.message;
+      });
+    });
+    input = select;
+  } else if (attribute.type === "bool") {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = Boolean(attribute.value);
+    checkbox.addEventListener("change", () => {
+      setGenericModuleAttribute(moduleName, attribute.name, checkbox.checked, statusOutput).catch((error: Error) => {
+        statusOutput.textContent = error.message;
+      });
+    });
+    input = checkbox;
+  } else {
+    const number = document.createElement("input");
+    number.type = "number";
+    populateNumber(number, attribute);
+    number.addEventListener("change", () => {
+      setGenericModuleAttribute(moduleName, attribute.name, Number(number.value), statusOutput).catch((error: Error) => {
+        statusOutput.textContent = error.message;
+      });
+    });
+    input = number;
+  }
+  input.id = `${moduleName}-${attribute.name.replaceAll("_", "-")}`;
+  label.appendChild(input);
+  return { label, input };
+}
+
+function spectrumAttributeLabel(attribute: ModuleAttribute): string {
+  if (attribute.name === "input") {
+    return "IQ Input";
+  }
+  if (attribute.name === "center") {
+    return "IQ Center";
+  }
+  if (attribute.name === "input1_baseband") {
+    return "BB Input 1";
+  }
+  if (attribute.name === "input2_baseband") {
+    return "BB Input 2";
+  }
+  if (attribute.name === "display_input1_baseband" || attribute.name === "display_input2_baseband") {
+    return "Show";
+  }
+  if (attribute.name === "display_cross_amplitude") {
+    return "Cross";
+  }
+  return attribute.label;
+}
+
+function orderSpectrumAttributes(attributes: ModuleAttribute[]): ModuleAttribute[] {
+  const order = [
+    "baseband",
+    "display_input1_baseband",
+    "input1_baseband",
+    "display_input2_baseband",
+    "input2_baseband",
+    "input",
+    "center",
+    "acbandwidth",
+    "display_cross_amplitude",
+    "span",
+    "window",
+    "display_unit",
+    "trace_average",
+  ];
+  return [...attributes].sort((left, right) => {
+    const leftIndex = order.indexOf(left.name);
+    const rightIndex = order.indexOf(right.name);
+    return (leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex) -
+      (rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex);
+  });
+}
+
+async function setGenericModuleAttribute(
+  moduleName: string,
+  attribute: string,
+  value: string | number | boolean,
+  statusOutput: HTMLOutputElement,
+): Promise<void> {
+  const result = await setModuleAttributeValue(moduleName, attribute, value);
+  applyGenericModuleValue(moduleName, attribute, result.value);
+  statusOutput.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
+}
+
+async function callGenericModuleAction(moduleName: string, action: string, statusOutput: HTMLOutputElement): Promise<void> {
+  const response = await fetch(`/api/modules/${moduleName}/actions/${action}`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`${moduleName} action ${action} failed: ${response.status}`);
+  }
+  const payload = await response.json();
+  applyGenericModuleState(moduleName, payload.state ?? {});
+  statusOutput.textContent = `${action}: ok`;
+}
+
+function applyGenericModuleState(moduleName: string, state: ModuleState): void {
+  if (moduleName === "spectrumanalyzer") {
+    spectrumPlot.setSettings(state);
+    applySpectrumFieldVisibility(state);
+  }
+  for (const [attribute, value] of Object.entries(state)) {
+    if (attribute === "owner") {
+      setGenericModuleOwner(moduleName, typeof value === "string" ? value : null);
+    } else if (isModulePrimitive(value)) {
+      applyGenericModuleValue(moduleName, attribute, value);
+    }
+  }
+}
+
+function applySpectrumFieldVisibility(state: ModuleState): void {
+  const controls = genericModuleControls.get("spectrumanalyzer");
+  if (!controls) {
+    return;
+  }
+  const baseband = Boolean(state.baseband ?? true);
+  const iqOnly = new Set(["input", "center", "acbandwidth"]);
+  const basebandOnly = new Set([
+    "input1_baseband",
+    "input2_baseband",
+    "display_input1_baseband",
+    "display_input2_baseband",
+    "display_cross_amplitude",
+  ]);
+  for (const [attribute, field] of controls.fields) {
+    field.hidden = (baseband && iqOnly.has(attribute)) || (!baseband && basebandOnly.has(attribute));
+  }
+}
+
+function applyGenericModuleValue(moduleName: string, attribute: string, value: ModulePrimitive): void {
+  const input = genericModuleControls.get(moduleName)?.inputs.get(attribute);
+  if (!input) {
+    return;
+  }
+  if (input instanceof HTMLInputElement && input.type === "checkbox") {
+    input.checked = Boolean(value);
+  } else {
+    input.value = String(value);
+  }
+}
+
+function setGenericModuleOwner(moduleName: string, owner: string | null): void {
+  const controls = genericModuleControls.get(moduleName);
+  if (!controls) {
+    return;
+  }
+  controls.owner = owner;
+  controls.card.classList.toggle("is-owned", owner !== null);
+  for (const input of controls.inputs.values()) {
+    input.disabled = owner !== null;
+  }
+  for (const button of controls.actions) {
+    button.disabled = owner !== null;
+  }
+  if (owner) {
+    controls.status.textContent = `occupied by ${owner}`;
+  }
+}
+
+function isModulePrimitive(value: unknown): value is ModulePrimitive {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+function isGenericModule(moduleName: unknown): moduleName is string {
+  return typeof moduleName === "string" && genericModuleControls.has(moduleName);
 }
 
 async function loadScopeStates(): Promise<void> {
@@ -1721,6 +2235,12 @@ function connectEvents(): void {
       } else if (message.module === "hk") {
         applyHkControlValue(message.attribute, message.value);
         hkStatus.textContent = `${message.attribute} = ${attributeValueLabel(message.attribute, message.value)}`;
+      } else if (isGenericModule(message.module)) {
+        applyGenericModuleValue(message.module, message.attribute, message.value);
+        const controls = genericModuleControls.get(message.module);
+        if (controls) {
+          controls.status.textContent = `${message.attribute} = ${attributeValueLabel(message.attribute, message.value)}`;
+        }
       }
       return;
     }
@@ -1740,6 +2260,12 @@ function connectEvents(): void {
       } else if (message.type === "module.state.changed" && message.module === "hk") {
         applyHkState(message.state ?? {});
         hkStatus.textContent = "Housekeeping state updated";
+      } else if (message.type === "module.state.changed" && isGenericModule(message.module)) {
+        applyGenericModuleState(message.module, message.state ?? {});
+        const controls = genericModuleControls.get(message.module);
+        if (controls && !controls.owner && message.module !== "spectrumanalyzer") {
+          controls.status.textContent = `${message.module} state updated`;
+        }
       } else if (message.type === "module.states.changed" && message.module === "scope") {
         populateStateSelect(message.states ?? []);
         moduleStatus.textContent = `${message.states.length} saved state${message.states.length === 1 ? "" : "s"}`;
@@ -1767,6 +2293,60 @@ async function fetchSingleFrame(): Promise<void> {
   stream.showFrame(buffer);
   connectButton.dataset.connected = "false";
   connectButton.textContent = "Run";
+}
+
+async function callSpectrumAction(action: string): Promise<Record<string, unknown>> {
+  const response = await fetch(`/api/modules/spectrumanalyzer/actions/${action}`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`Spectrum action ${action} failed: ${response.status}`);
+  }
+  const payload = await response.json();
+  const state = payload.state as { running_state?: string; last_action?: string };
+  spectrumPlot.setSettings((payload.state ?? {}) as Record<string, unknown>);
+  setSpectrumRunningState(state.running_state ?? "stopped");
+  spectrumStatus.textContent = `${action}: ${state.running_state ?? "ok"}`;
+  return payload;
+}
+
+function startSpectrumStream(): void {
+  if (spectrumRunButton.dataset.connected === "true") {
+    return;
+  }
+  spectrumPlot.connect();
+  spectrumRunButton.dataset.connected = "true";
+  spectrumRunButton.textContent = "Stop";
+}
+
+function stopSpectrumStream(message = "Spectrum stopped"): void {
+  spectrumPlot.close();
+  spectrumRunButton.dataset.connected = "false";
+  spectrumRunButton.textContent = "Run";
+  spectrumStatus.textContent = message;
+}
+
+function setSpectrumRunningState(state: string): void {
+  spectrumPauseButton.disabled = !state.startsWith("running_");
+}
+
+async function pauseSpectrumForScope(): Promise<void> {
+  if (spectrumRunButton.dataset.connected !== "true") {
+    return;
+  }
+  spectrumAutoPausedByScope = true;
+  await callSpectrumAction("pause");
+  stopSpectrumStream("Spectrum auto-paused by Scope");
+}
+
+async function resumeSpectrumAutoPausedByScope(): Promise<void> {
+  if (!spectrumAutoPausedByScope) {
+    return;
+  }
+  spectrumAutoPausedByScope = false;
+  if (!workspaceState.panels.spectrumanalyzer.enabled) {
+    return;
+  }
+  await callSpectrumAction("continuous");
+  startSpectrumStream();
 }
 
 async function runSingleFrame(): Promise<void> {
@@ -1829,18 +2409,23 @@ async function deleteScopeState(): Promise<void> {
 }
 
 connectButton.addEventListener("click", () => {
-  if (connectButton.dataset.connected === "true") {
-    callScopeAction("stop").catch((error: Error) => {
-      moduleStatus.textContent = error.message;
-    });
-    stopStream();
-    return;
-  }
-  callScopeAction("continuous")
-    .then(() => startStream())
-    .catch((error: Error) => {
-      moduleStatus.textContent = error.message;
-    });
+  void (async () => {
+    try {
+      if (connectButton.dataset.connected === "true") {
+        scopeAutoPausedBySpectrum = false;
+        await callScopeAction("stop");
+        stopStream();
+        await resumeSpectrumAutoPausedByScope();
+        return;
+      }
+      scopeAutoPausedBySpectrum = false;
+      await pauseSpectrumForScope();
+      await callScopeAction("continuous");
+      startStream();
+    } catch (error) {
+      moduleStatus.textContent = error instanceof Error ? error.message : String(error);
+    }
+  })();
 });
 
 singleFrameButton.addEventListener("click", () => {
@@ -1850,11 +2435,16 @@ singleFrameButton.addEventListener("click", () => {
 });
 
 pauseButton.addEventListener("click", () => {
-  callScopeAction("pause")
-    .then(() => stopStream("Paused"))
-    .catch((error: Error) => {
-      moduleStatus.textContent = error.message;
-    });
+  void (async () => {
+    try {
+      scopeAutoPausedBySpectrum = false;
+      await callScopeAction("pause");
+      stopStream("Paused");
+      await resumeSpectrumAutoPausedByScope();
+    } catch (error) {
+      moduleStatus.textContent = error instanceof Error ? error.message : String(error);
+    }
+  })();
 });
 
 saveCurveButton.addEventListener("click", () => {
@@ -1877,6 +2467,65 @@ panRightButton.addEventListener("click", () => stream.panX(0.2));
 panUpButton.addEventListener("click", () => stream.panY(-0.2));
 panDownButton.addEventListener("click", () => stream.panY(0.2));
 zoomResetButton.addEventListener("click", () => stream.resetZoom());
+
+spectrumSingleButton.addEventListener("click", () => {
+  callSpectrumAction("single")
+    .then(() => {
+      spectrumPlot.connect();
+      window.setTimeout(() => spectrumPlot.close(), 300);
+    })
+    .catch((error: Error) => {
+      spectrumStatus.textContent = error.message;
+    });
+});
+
+spectrumRunButton.addEventListener("click", () => {
+  void (async () => {
+    try {
+      if (spectrumRunButton.dataset.connected === "true") {
+        spectrumAutoPausedByScope = false;
+        await callSpectrumAction("stop");
+        stopSpectrumStream();
+        await resumeScopeAutoPausedBySpectrum();
+        return;
+      }
+      spectrumAutoPausedByScope = false;
+      await pauseScopeForSpectrum();
+      await callSpectrumAction("continuous");
+      startSpectrumStream();
+    } catch (error) {
+      spectrumStatus.textContent = error instanceof Error ? error.message : String(error);
+    }
+  })();
+});
+
+spectrumPauseButton.addEventListener("click", () => {
+  void (async () => {
+    try {
+      spectrumAutoPausedByScope = false;
+      await callSpectrumAction("pause");
+      stopSpectrumStream("Spectrum paused");
+      await resumeScopeAutoPausedBySpectrum();
+    } catch (error) {
+      spectrumStatus.textContent = error instanceof Error ? error.message : String(error);
+    }
+  })();
+});
+
+spectrumSaveCurveButton.addEventListener("click", () => {
+  spectrumPlot.downloadCsv(`spectrum-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
+  spectrumStatus.textContent = "saved browser curve";
+});
+
+spectrumZoomOutButton.addEventListener("click", () => spectrumPlot.zoom(1.8));
+spectrumZoomInButton.addEventListener("click", () => spectrumPlot.zoom(0.55));
+spectrumZoomYOutButton.addEventListener("click", () => spectrumPlot.zoomY(1.8));
+spectrumZoomYInButton.addEventListener("click", () => spectrumPlot.zoomY(0.55));
+spectrumPanLeftButton.addEventListener("click", () => spectrumPlot.panX(-0.2));
+spectrumPanRightButton.addEventListener("click", () => spectrumPlot.panX(0.2));
+spectrumPanUpButton.addEventListener("click", () => spectrumPlot.panY(-0.2));
+spectrumPanDownButton.addEventListener("click", () => spectrumPlot.panY(0.2));
+spectrumZoomResetButton.addEventListener("click", () => spectrumPlot.resetZoom());
 
 showCh1Toggle.addEventListener("change", () => {
   stream.setChannelVisible(1, showCh1Toggle.checked);
@@ -2048,6 +2697,7 @@ async function startup(): Promise<void> {
   await loadScopeStates();
   await loadAsgControls();
   await loadHkControls();
+  await loadGenericPanels();
   connectEvents();
   applyWorkspaceState();
   if (!workspaceState.activePanelId) {

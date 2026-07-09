@@ -201,6 +201,14 @@ export class ScopeStream {
     };
   }
 
+  getFormattedTimeLabelsForCurrentRange(count = 6): string[] {
+    const { min, max } = this.getXRange();
+    const labelCount = Math.max(2, Math.floor(count));
+    const step = (max - min) / (labelCount - 1);
+    const ticks = Array.from({ length: labelCount }, (_value, index) => min + step * index);
+    return this.formatTimeTicks(this.plot, ticks);
+  }
+
   getFrameSequence(): number | null {
     return this.latestFrame?.sequence ?? this.pendingFrame?.sequence ?? null;
   }
@@ -257,9 +265,10 @@ export class ScopeStream {
       },
       axes: [
         {
-          label: "Time (s)",
+          label: "Time",
           stroke: "#93a7b3",
           grid: { stroke: "#1c2a33", width: 1 },
+          values: (plot, ticks) => this.formatTimeTicks(plot, ticks as number[]),
         },
         {
           label: "Amplitude",
@@ -508,6 +517,36 @@ export class ScopeStream {
     this.averagedData = null;
     this.currentAverage = 0;
   }
+
+  private formatTimeTicks(plot: uPlot, ticks: number[]): string[] {
+    const min = Number(plot.scales.x.min ?? ticks[0] ?? 0);
+    const max = Number(plot.scales.x.max ?? ticks[ticks.length - 1] ?? min);
+    const span = Math.max(Number.EPSILON, Math.abs(max - min));
+    const unit = timeDisplayUnit(Math.max(Number.EPSILON, this.timeSettings?.duration ?? span));
+    const step = ticks.length > 1 ? Math.abs(ticks[1] - ticks[0]) * unit.scale : span * unit.scale;
+    const decimals = Math.max(0, Math.min(9, Math.ceil(-Math.log10(Math.max(step, Number.EPSILON))) + 1));
+    return ticks.map((tick) => `${trimFixed(tick * unit.scale, decimals)} ${unit.suffix}`);
+  }
+}
+
+function timeDisplayUnit(spanSeconds: number): { scale: number; suffix: string } {
+  if (spanSeconds < 1e-6) {
+    return { scale: 1e9, suffix: "ns" };
+  }
+  if (spanSeconds < 1e-3) {
+    return { scale: 1e6, suffix: "us" };
+  }
+  if (spanSeconds < 1) {
+    return { scale: 1e3, suffix: "ms" };
+  }
+  return { scale: 1, suffix: "s" };
+}
+
+function trimFixed(value: number, decimals: number): string {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+  return value.toFixed(decimals).replace(/\.?0+$/, "");
 }
 
 function minMax(data: Float32Array, prefix: "ch1" | "ch2"): Record<`${typeof prefix}Min` | `${typeof prefix}Max`, number> {

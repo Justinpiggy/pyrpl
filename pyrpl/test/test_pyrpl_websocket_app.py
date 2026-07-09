@@ -8,6 +8,7 @@ import numpy as np
 from pyrpl_websocket.app import create_app, handle_control_message
 from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
 from pyrpl_websocket.assets import asset_info
+from pyrpl_websocket.dsp_registers import dsp_addr_base, float_to_register, frequency_to_register, phase_to_register, pwm_addr_base
 from pyrpl_websocket.events import EventBroker
 from pyrpl_websocket.hk_registers import (
     HK_LED_ADDR,
@@ -253,6 +254,161 @@ class WebAppTest(unittest.TestCase):
             session.set_module_attribute("asg0", "amplitude", 0.9)
             high = session.read_scope_frame(sequence=2, sample_count=256).samples()[:, 0]
             self.assertGreater(np.nanmax(np.abs(high)), np.nanmax(np.abs(low)) * 2)
+        finally:
+            session.close()
+
+    def test_session_lists_pid_iq_trig_and_pwm_modules(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            module_names = [module["name"] for module in session.modules()]
+            for module_name in [
+                "pid0",
+                "pid1",
+                "pid2",
+                "iq0",
+                "iq1",
+                "iq2",
+                "trig",
+                "pwm0",
+                "pwm1",
+                "spectrumanalyzer",
+            ]:
+                self.assertIn(module_name, module_names)
+                self.assertTrue(session.module_attributes(module_name))
+                self.assertTrue(session.module_actions(module_name))
+        finally:
+            session.close()
+
+    def test_spectrum_analyzer_owns_and_releases_iq2(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            state = session.call_module_action("spectrumanalyzer", "setup")
+            self.assertEqual(state["resources"], ["iq2"])
+            self.assertEqual(session.module_state("iq2")["owner"], "spectrumanalyzer")
+            with self.assertRaises(ValueError):
+                session.set_module_attribute("iq2", "frequency", 1e6)
+
+            released = session.call_module_action("spectrumanalyzer", "release")
+            self.assertEqual(released["resources"], [])
+            self.assertIsNone(session.module_state("iq2")["owner"])
+            session.set_module_attribute("iq2", "frequency", 1e6)
+        finally:
+            session.close()
+
+    def test_spectrum_analyzer_frame_contains_fft_data(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_module_attribute("spectrumanalyzer", "baseband", True)
+            frame = session.acquire_spectrum_frame(sequence=7, sample_count=1024)
+            self.assertEqual(frame["sequence"], 7)
+            self.assertGreater(len(frame["x"]), 1)
+            self.assertGreaterEqual(len(frame["series"]), 1)
+            self.assertEqual(len(frame["series"][0]["values"]), len(frame["x"]))
+            self.assertGreater(frame["rbw"], 0.0)
+        finally:
+            session.close()
+
+    def test_spectrum_analyzer_control_message_reports_resource_conflict(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            setup = asyncio.run(
+                handle_control_message(
+                    session,
+                    {"id": 1, "type": "module.action", "module": "spectrumanalyzer", "action": "setup"},
+                )
+            )
+            self.assertTrue(setup["ok"])
+            response = asyncio.run(
+                handle_control_message(
+                    session,
+                    {"id": 2, "type": "module.set", "module": "iq2", "attribute": "frequency", "value": 1e6},
+                )
+            )
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "bad_request")
+        finally:
+            session.close()
+
+    def test_session_pid_registers_follow_pyrpl_layout(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            base = dsp_addr_base("pid0")
+            session.set_module_attribute("pid0", "input", "asg0")
+            self.assertEqual(session.client.fpgamemory[base + 0x0], 8)
+            session.set_module_attribute("pid0", "output_direct", "out1")
+            self.assertEqual(session.client.fpgamemory[base + 0x4], 1)
+            session.set_module_attribute("pid0", "setpoint", -0.25)
+            self.assertEqual(session.client.fpgamemory[base + 0x104], float_to_register(-0.25))
+            session.set_module_attribute("pid0", "p", 0.5)
+            self.assertEqual(session.client.fpgamemory[base + 0x108], float_to_register(0.5, bits=24, norm=2**12))
+            session.set_module_attribute("pid0", "i", 10.0)
+            self.assertEqual(
+                session.client.fpgamemory[base + 0x10C],
+                float_to_register(10.0, bits=24, norm=2**32 * 2.0 * np.pi * 8e-9),
+            )
+            session.set_module_attribute("pid0", "ival", 0.125)
+            self.assertEqual(session.client.fpgamemory[base + 0x100], float_to_register(0.125, bits=16))
+            session.set_module_attribute("pid0", "pause_gains", "pi")
+            self.assertEqual(session.client.fpgamemory[base + 0x12C] & 0x7, 3)
+            session.set_module_attribute("pid0", "differential_mode_enabled", True)
+            self.assertEqual(session.client.fpgamemory[base + 0x12C] & (1 << 3), 1 << 3)
+            session.call_module_action("pid0", "setup")
+            self.assertEqual(session.module_state("pid0")["input"], "asg0")
+        finally:
+            session.close()
+
+    def test_session_iq_registers_follow_pyrpl_layout(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            base = dsp_addr_base("iq1")
+            session.set_module_attribute("iq1", "input", "pid0")
+            self.assertEqual(session.client.fpgamemory[base + 0x0], 0)
+            session.set_module_attribute("iq1", "output_signal", "pfd")
+            self.assertEqual(session.client.fpgamemory[base + 0x10C], 2)
+            session.set_module_attribute("iq1", "frequency", 1e6)
+            self.assertEqual(session.client.fpgamemory[base + 0x108], frequency_to_register(1e6, bits=32))
+            session.set_module_attribute("iq1", "phase", 90.0)
+            self.assertEqual(session.client.fpgamemory[base + 0x104], phase_to_register(90.0, bits=32, invert=True))
+            session.set_module_attribute("iq1", "gain", 2.0)
+            self.assertEqual(session.client.fpgamemory[base + 0x110], float_to_register(16.0, bits=18, norm=2**8))
+            self.assertEqual(session.client.fpgamemory[base + 0x11C], float_to_register(16.0, bits=18, norm=2**8))
+            session.set_module_attribute("iq1", "amplitude", 0.25)
+            self.assertEqual(session.client.fpgamemory[base + 0x114], float_to_register(0.25, bits=18, norm=2**17))
+            session.set_module_attribute("iq1", "quadrature_factor", 4)
+            self.assertEqual(session.client.fpgamemory[base + 0x118], 4)
+            session.set_module_attribute("iq1", "modulation_at_2f", "on")
+            self.assertEqual(session.client.fpgamemory[base + 0x100] & (3 << 2), 3 << 2)
+            session.set_module_attribute("iq1", "demodulation_at_2f", "on")
+            self.assertEqual(session.client.fpgamemory[base + 0x100] & (3 << 4), 3 << 4)
+            session.call_module_action("iq1", "sync")
+            self.assertIn(dsp_addr_base("iq0") + 0xC, session.client.fpgamemory)
+        finally:
+            session.close()
+
+    def test_session_trig_and_pwm_registers_follow_pyrpl_layout(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            trig_base = dsp_addr_base("trig")
+            session.set_module_attribute("trig", "input", "in1")
+            self.assertEqual(session.client.fpgamemory[trig_base + 0x0], 10)
+            session.set_module_attribute("trig", "output_signal", "asg0_phase")
+            self.assertEqual(session.client.fpgamemory[trig_base + 0x10C], 1)
+            session.set_module_attribute("trig", "trigger_source", "pos_edge")
+            self.assertEqual(session.client.fpgamemory[trig_base + 0x108], 1)
+            session.set_module_attribute("trig", "threshold", 0.125)
+            self.assertEqual(session.client.fpgamemory[trig_base + 0x118], float_to_register(0.125))
+            session.set_module_attribute("trig", "hysteresis", 0.0625)
+            self.assertEqual(session.client.fpgamemory[trig_base + 0x11C], float_to_register(0.0625))
+            session.set_module_attribute("trig", "phase_offset", 180)
+            self.assertEqual(session.client.fpgamemory[trig_base + 0x110], phase_to_register(180, bits=14))
+            session.call_module_action("trig", "arm")
+            self.assertTrue(session.module_state("trig")["armed"])
+            self.assertEqual(session.client.fpgamemory[trig_base + 0x100] & 1, 1)
+
+            session.set_module_attribute("pwm0", "input", "pid0")
+            self.assertEqual(session.client.fpgamemory[pwm_addr_base("pwm0") + 0x0], 0)
+            session.set_module_attribute("pwm1", "input", "iq0")
+            self.assertEqual(session.client.fpgamemory[pwm_addr_base("pwm1") + 0x0], 5)
         finally:
             session.close()
 

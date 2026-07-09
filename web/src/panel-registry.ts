@@ -1,4 +1,13 @@
-export type PanelId = "scope" | "asg" | "housekeeping" | "registers";
+export type PanelId =
+  | "scope"
+  | "asg"
+  | "pid"
+  | "iq"
+  | "trig"
+  | "pwm"
+  | "spectrumanalyzer"
+  | "housekeeping"
+  | "registers";
 
 export interface PanelDefinition {
   id: PanelId;
@@ -21,6 +30,37 @@ export const PANEL_DEFINITIONS: PanelDefinition[] = [
     title: "ASG",
     description: "Arbitrary signal generator controls",
     defaultEnabled: false,
+  },
+  {
+    id: "pid",
+    title: "PID",
+    description: "PID controller controls",
+    defaultEnabled: false,
+  },
+  {
+    id: "iq",
+    title: "IQ",
+    description: "IQ modulator and demodulator controls",
+    defaultEnabled: false,
+  },
+  {
+    id: "trig",
+    title: "Trigger",
+    description: "DSP trigger controls",
+    defaultEnabled: false,
+  },
+  {
+    id: "pwm",
+    title: "PWM",
+    description: "Auxiliary PWM routing controls",
+    defaultEnabled: false,
+  },
+  {
+    id: "spectrumanalyzer",
+    title: "Spectrum Analyzer",
+    description: "FFT spectrum analyzer controls and plot",
+    defaultEnabled: false,
+    defaultSplitSizes: [35, 65],
   },
   {
     id: "housekeeping",
