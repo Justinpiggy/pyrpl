@@ -29,6 +29,7 @@ from .dsp_registers import (
     sync_trig_settings,
 )
 from .hk_registers import read_hk_expansion, sync_hk_setting, sync_hk_settings
+from .iir_plot import iir_plot
 from .lockbox import LockboxState, lockbox_actions
 from .monitor_client import DummyClient, MonitorClient
 from .modules import (
@@ -513,6 +514,10 @@ class WebSession:
     def acquire_spectrum_frame_bytes(self, sequence: int, sample_count: int = 4096) -> bytes:
         with self._lock:
             return _spectrum_arrays_to_bytes(self._acquire_spectrum_arrays_no_lock(sequence, sample_count))
+
+    def iir_plot(self, points: int = 1000) -> dict:
+        with self._lock:
+            return iir_plot(self.iir_settings, points)
 
     def acquire_spectrum_scope_frame(self, sequence: int, sample_count: int = 4096) -> ScopeFrame | None:
         with self._lock:

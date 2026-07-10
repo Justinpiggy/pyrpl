@@ -1,5 +1,6 @@
 import { ScopeStream } from "./scope-stream";
 import { SpectrumPlot } from "./spectrum-plot";
+import { IirPlot } from "./iir-plot";
 import { LockboxPanel, type LockboxSchema } from "./lockbox-panel";
 import Split from "split.js";
 import { PANEL_DEFINITIONS, type PanelId } from "./panel-registry";
@@ -815,6 +816,74 @@ style.textContent = `
     pointer-events: none;
   }
 
+  .iir-card {
+    grid-column: 1 / -1;
+    min-height: min(720px, calc(100vh - 160px));
+  }
+
+  .iir-card .generic-module-row {
+    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  }
+
+  .iir-plot {
+    min-height: 460px;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .iir-plot-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .iir-plot-grid {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px;
+    min-height: 0;
+  }
+
+  .iir-plot-frame {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .iir-marker {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    margin-left: -9px;
+    margin-top: -9px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #f4d44d;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: grab;
+    z-index: 4;
+  }
+
+  .iir-marker.is-zero {
+    color: #f05bd7;
+  }
+
+  .iir-marker.is-complex {
+    font-size: 16px;
+  }
+
+  .iir-marker.is-selected,
+  .iir-marker.is-dragging {
+    outline: 2px solid #f4d44d;
+    background: rgba(244, 212, 77, 0.14);
+  }
+
   .module-panel.is-owned {
     opacity: 0.62;
   }
@@ -1421,6 +1490,7 @@ let stream = new ScopeStream(plotHost, (message) => {
 let spectrumPlot = new SpectrumPlot(spectrumPlotHost, (message) => {
   spectrumStatus.textContent = message;
 });
+let iirPlot: IirPlot | null = null;
 let eventSocket: WebSocket | null = null;
 let eventCount = 0;
 let runningState = "stopped";
@@ -2166,6 +2236,10 @@ async function loadGenericPanels(): Promise<void> {
     [keyof typeof genericPanelModules, string[]]
   >) {
     const container = genericPanelContainers[panelId];
+    if (panelId === "iir" && iirPlot) {
+      iirPlot.destroy();
+      iirPlot = null;
+    }
     container.textContent = "";
     await Promise.all(moduleNames.map((moduleName) => buildGenericModuleCard(container, moduleName)));
   }
@@ -2185,6 +2259,9 @@ async function buildGenericModuleCard(container: HTMLElement, moduleName: string
   const statePayload = await stateResponse.json();
   const card = document.createElement("section");
   card.className = "module-panel instrument-card";
+  if (moduleName === "iir") {
+    card.classList.add("iir-card");
+  }
   card.dataset.module = moduleName;
 
   const header = document.createElement("header");
@@ -2236,6 +2313,23 @@ async function buildGenericModuleCard(container: HTMLElement, moduleName: string
   }
   genericModuleControls.set(moduleName, controls);
   card.append(header, row);
+  if (moduleName === "iir") {
+    const plotHost = document.createElement("section");
+    plotHost.className = "iir-plot";
+    card.appendChild(plotHost);
+    iirPlot = new IirPlot(
+      plotHost,
+      async (attribute, value) => {
+        await setGenericModuleAttribute("iir", attribute, value, statusOutput);
+      },
+      (message) => {
+        statusOutput.textContent = message;
+      },
+    );
+    iirPlot.refresh().catch((error: Error) => {
+      statusOutput.textContent = error.message;
+    });
+  }
   container.appendChild(card);
   applyGenericModuleState(moduleName, statePayload.state ?? {});
 }
@@ -2351,6 +2445,9 @@ async function setGenericModuleAttribute(
   const result = await setModuleAttributeValue(moduleName, attribute, value);
   applyGenericModuleValue(moduleName, attribute, result.value);
   statusOutput.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
+  if (moduleName === "iir" && iirPlot) {
+    await iirPlot.refresh();
+  }
 }
 
 async function callGenericModuleAction(moduleName: string, action: string, statusOutput: HTMLOutputElement): Promise<void> {

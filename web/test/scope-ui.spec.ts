@@ -503,6 +503,22 @@ test("PID IQ IIR trigger and PWM panels expose migrated DSP controls", async ({ 
   await expect(page.locator("#iir-panel")).toBeVisible();
   await page.locator("#iir-input").selectOption("iq0");
   await expect(page.locator("#iir-status")).toContainText("input = iq0");
+  await expect(page.locator(".iir-plot")).toBeVisible();
+  await page.locator("#iir-real-poles").fill("-1000");
+  await page.locator("#iir-real-poles").blur();
+  await expect(page.locator("#iir-status")).toContainText("real_poles = -1000");
+  await expect(page.locator(".iir-marker.is-pole")).toHaveCount(2);
+  const iirPlot = page.locator('[data-iir-plot="magnitude"] .u-over');
+  const iirPlotBox = await iirPlot.boundingBox();
+  if (!iirPlotBox) {
+    throw new Error("Missing IIR plot box");
+  }
+  await iirPlot.click({
+    position: { x: iirPlotBox.width * 0.55, y: iirPlotBox.height * 0.5 },
+    modifiers: ["Shift"],
+  });
+  await expect(page.locator("#iir-status")).toContainText("real_zeros =");
+  await expect(page.locator(".iir-marker.is-zero")).toHaveCount(2);
   await page.locator("#iir-inputfilter").fill("1000, 0, -2000");
   await page.locator("#iir-inputfilter").blur();
   await expect(page.locator("#iir-status")).toContainText("inputfilter = 1000, 0, -2000");

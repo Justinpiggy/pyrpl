@@ -118,6 +118,7 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("/api/modules/{module_name}/states/{state_name}/save", paths)
         self.assertIn("/api/modules/{module_name}/states/{state_name}/load", paths)
         self.assertIn("/api/modules/{module_name}/states/{state_name}", paths)
+        self.assertIn("/api/modules/iir/plot", paths)
         self.assertIn("/api/lockbox", paths)
         self.assertIn("/api/lockbox/classes", paths)
         self.assertIn("/api/lockbox/class", paths)
@@ -663,6 +664,24 @@ class WebAppTest(unittest.TestCase):
             self.assertIn(base + 0x8000, session.client.fpgamemory)
             session.call_module_action("iir", "zero")
             self.assertEqual(session.client.fpgamemory[base + 0x100], 1)
+        finally:
+            session.close()
+
+    def test_session_iir_plot_follows_pole_zero_controls(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_module_attribute("iir", "real_poles", "-1000")
+            session.set_module_attribute("iir", "real_zeros", "-100")
+            session.set_module_attribute("iir", "complex_poles", "-10+2000j")
+            plot = session.iir_plot(points=128)
+            self.assertEqual(len(plot["x"]), 128)
+            self.assertEqual(len(plot["magnitude"]), 128)
+            self.assertEqual(len(plot["phase"]), 128)
+            self.assertGreater(max(plot["magnitude"]), min(plot["magnitude"]))
+            markers = {(marker["list"], marker["index"]) for marker in plot["markers"]}
+            self.assertIn(("real_poles", 0), markers)
+            self.assertIn(("real_zeros", 0), markers)
+            self.assertIn(("complex_poles", 0), markers)
         finally:
             session.close()
 

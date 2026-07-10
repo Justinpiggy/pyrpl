@@ -634,6 +634,10 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         )
         return frame
 
+    @app.get("/api/modules/iir/plot")
+    async def iir_plot(points: int = 1000):
+        return await asyncio.to_thread(app.state.session.iir_plot, points)
+
     @app.websocket("/ws/control")
     async def control(websocket: WebSocket):
         await control_socket(websocket, app.state.session, app.state.events)

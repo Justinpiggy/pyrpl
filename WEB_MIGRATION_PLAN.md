@@ -698,6 +698,12 @@ included as package data.
   registers, and unity/zero coefficient loading. The remaining parity work is
   to migrate PyRPL's pole/zero coefficient-design routine without importing
   Qt-bound legacy modules into the web server.
+- The IIR panel now includes the graphical editor surface from PyRPL: a Bode
+  plot with pole/zero markers, list-driven refresh, and mouse creation/dragging
+  of vertices. The current web plot uses a Qt-free continuous transfer-function
+  helper; the next IIR parity step is to port the original `IirFilter`
+  final/rounded coefficient math into a Qt-free module and write those
+  coefficients to hardware on pole/zero setup.
 
 ### Current Filter/IIR Slice
 

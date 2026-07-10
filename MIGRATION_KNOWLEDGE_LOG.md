@@ -2631,3 +2631,43 @@ OK
 conda run -n pyrpl-env npm run test:e2e
 5 Chromium tests - OK
 ```
+
+## 2026-07-10 IIR Plot Editor Surface
+
+### Learned
+
+- PyRPL's IIR GUI is a graphical filter editor, not just a set of register
+  controls. Its layout is graph plus compact general controls on top, with
+  pole/zero list editors below.
+- The original plot shows magnitude and phase. Yellow is the filter design,
+  green is an optional data curve, red is data times design, and pole/zero
+  markers are drawn on both plots.
+- Mouse behavior in the original editor is tied to pole/zero lists:
+  plain click selects the nearest pole/zero, CTRL-click adds a real pole,
+  SHIFT-click adds a real zero, CTRL double-click adds a complex pole, and
+  SHIFT double-click adds a complex zero. The lists remain the source of truth.
+
+### Mistake Prevention
+
+- Do not migrate IIR as a generic register-only card. The plot is essential UI
+  because users tune filter vertices visually and expect the Bode curve to
+  update when either the plot or text/list inputs change.
+- Keep the IIR plot backend Qt-free. Importing legacy `pyrpl.hardware_modules`
+  reaches Qt initialization, so transfer-function plot helpers must live in the
+  web package until the legacy math is separated from Qt imports.
+
+### Verification
+
+```text
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_app.py
+Ran 44 tests - OK
+
+conda run -n pyrpl-env npm test
+13 tests - OK
+
+conda run -n pyrpl-env npm run build
+OK
+
+conda run -n pyrpl-env npm run test:e2e
+5 Chromium tests - OK
+```
