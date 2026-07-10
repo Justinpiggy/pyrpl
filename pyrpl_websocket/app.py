@@ -257,7 +257,7 @@ def _resource_event_modules(module_name: str, state: dict[str, Any]) -> list[str
 
 
 def _lockbox_resource_event_modules() -> list[str]:
-    return ["asg0", "asg1", "scope", "pid0", "pid1", "pid2", "iq0", "iq1", "iq2", "pwm0", "pwm1"]
+    return ["asg0", "asg1", "scope", "pid0", "pid1", "pid2", "iq0", "iq1", "iq2", "iir", "pwm0", "pwm1"]
 
 
 async def control_socket(websocket: WebSocket, session: WebSession, events: EventBroker | None = None) -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -138,6 +138,7 @@ PID_SETUP_ATTRIBUTES = [
     "setpoint",
     "p",
     "i",
+    "inputfilter",
     "ival",
     "max_voltage",
     "min_voltage",
@@ -151,9 +152,11 @@ IQ_OUTPUT_SIGNALS = ["quadrature", "output_direct", "pfd", "off", "quadrature_hf
 IQ_TOGGLE_OPTIONS = ["off", "on"]
 IQ_SETUP_ATTRIBUTES = [
     "input",
+    "acbandwidth",
     "output_direct",
     "output_signal",
     "frequency",
+    "bandwidth",
     "phase",
     "gain",
     "amplitude",
@@ -166,6 +169,25 @@ IQ_SETUP_ATTRIBUTES = [
 IQ_ACTIONS = [
     {"name": "setup", "label": "Setup", "description": "Synchronize IQ settings and phase-align IQ modules."},
     {"name": "sync", "label": "Sync", "description": "Synchronize the IQ module phases."},
+]
+
+IIR_SETUP_ATTRIBUTES = [
+    "input",
+    "loops",
+    "real_zeros",
+    "real_poles",
+    "complex_zeros",
+    "complex_poles",
+    "output_direct",
+    "inputfilter",
+    "gain",
+    "on",
+    "bypass",
+]
+IIR_ACTIONS = [
+    {"name": "setup", "label": "Setup", "description": "Synchronize IIR routing, filter, and coefficients."},
+    {"name": "unity", "label": "Unity", "description": "Load the same unity coefficients as PyRPL's _setup_unity()."},
+    {"name": "zero", "label": "Zero", "description": "Load the same zero coefficients as PyRPL's _setup_zero()."},
 ]
 
 TRIG_TRIGGER_SOURCES = ["off", "pos_edge", "neg_edge", "both_edge"]
@@ -317,6 +339,7 @@ class PidSettings:
     setpoint: float = 0.0
     p: float = 0.0
     i: float = 0.0
+    inputfilter: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
     ival: float = 0.0
     max_voltage: float = 1.0
     min_voltage: float = -1.0
@@ -333,9 +356,11 @@ class IqSettings:
     """Core IQ controls for modulation/demodulation and DSP routing."""
 
     input: str = "off"
+    acbandwidth: float = 0.0
     output_direct: str = "off"
     output_signal: str = "quadrature"
     frequency: float = 0.0
+    bandwidth: list[float] = field(default_factory=lambda: [0.0, 0.0])
     phase: float = 0.0
     gain: float = 0.0
     amplitude: float = 0.0
@@ -344,6 +369,26 @@ class IqSettings:
     demodulation_at_2f: str = "off"
     on: bool = True
     pfd_on: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class IirSettings:
+    """Core IIR controls following PyRPL's IIR hardware module register surface."""
+
+    input: str = "off"
+    loops: int = 3
+    real_zeros: list[float] = field(default_factory=list)
+    real_poles: list[float] = field(default_factory=list)
+    complex_zeros: list[str] = field(default_factory=list)
+    complex_poles: list[str] = field(default_factory=list)
+    output_direct: str = "off"
+    inputfilter: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    gain: float = 1.0
+    on: bool = False
+    bypass: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -455,6 +500,12 @@ def module_list() -> list[dict[str, Any]]:
             }
             for index in range(3)
         ],
+        {
+            "name": "iir",
+            "kind": "hardware",
+            "label": "IIR",
+            "description": "Infinite impulse response filter module.",
+        },
         *[
             {
                 "name": f"pwm{index}",
@@ -539,6 +590,7 @@ def pid_attribute_schema(settings: PidSettings) -> list[dict[str, Any]]:
         _number("setpoint", "Setpoint", settings.setpoint, -1.0, 1.0),
         _number("p", "P Gain", settings.p, -2048.0, 2047.999755859375),
         _number("i", "I Unity Hz", settings.i, -38836.0, 38836.0),
+        _text("inputfilter", "Input Filter", _format_list(settings.inputfilter or [0.0, 0.0, 0.0, 0.0])),
         _number("ival", "I Value", settings.ival, -4.0, 4.0),
         _number("min_voltage", "Min Voltage", settings.min_voltage, -1.0, 1.0),
         _number("max_voltage", "Max Voltage", settings.max_voltage, -1.0, 1.0),
@@ -555,9 +607,11 @@ def pid_actions() -> list[dict[str, Any]]:
 def iq_attribute_schema(settings: IqSettings) -> list[dict[str, Any]]:
     return [
         _select("input", "Input", settings.input, SCOPE_INPUTS),
+        _number("acbandwidth", "AC BW", settings.acbandwidth, 0.0, 62.5e6),
         _select("output_direct", "Output", settings.output_direct, DSP_OUTPUT_DIRECTS),
         _select("output_signal", "Signal", settings.output_signal, IQ_OUTPUT_SIGNALS),
         _number("frequency", "Frequency", settings.frequency, 0.0, 62.5e6),
+        _text("bandwidth", "Bandwidth", _format_list(settings.bandwidth or [0.0, 0.0])),
         _number("phase", "Phase", settings.phase, 0.0, 360.0),
         _number("gain", "Gain", settings.gain, -64.0, 64.0),
         _number("amplitude", "Amplitude", settings.amplitude, -1.0, 1.0),
@@ -571,6 +625,26 @@ def iq_attribute_schema(settings: IqSettings) -> list[dict[str, Any]]:
 
 def iq_actions() -> list[dict[str, Any]]:
     return [dict(action) for action in IQ_ACTIONS]
+
+
+def iir_attribute_schema(settings: IirSettings) -> list[dict[str, Any]]:
+    return [
+        _select("input", "Input", settings.input, SCOPE_INPUTS),
+        _number("loops", "Loops", settings.loops, 3, 1023, step=1),
+        _text("real_zeros", "Real Zeros", _format_list(settings.real_zeros or [])),
+        _text("real_poles", "Real Poles", _format_list(settings.real_poles or [])),
+        _text("complex_zeros", "Complex Zeros", _format_list(settings.complex_zeros or [])),
+        _text("complex_poles", "Complex Poles", _format_list(settings.complex_poles or [])),
+        _select("output_direct", "Output", settings.output_direct, DSP_OUTPUT_DIRECTS),
+        _text("inputfilter", "Input Filter", _format_list(settings.inputfilter or [0.0, 0.0, 0.0, 0.0])),
+        _number("gain", "Gain", settings.gain, -1e20, 1e20),
+        _boolean("on", "On", settings.on),
+        _boolean("bypass", "Bypass", settings.bypass),
+    ]
+
+
+def iir_actions() -> list[dict[str, Any]]:
+    return [dict(action) for action in IIR_ACTIONS]
 
 
 def trig_attribute_schema(settings: TrigSettings) -> list[dict[str, Any]]:
@@ -701,6 +775,8 @@ def set_pid_attribute(settings: PidSettings, name: str, value: Any) -> Any:
         normalized = _clamp(float(value), -2048.0, 2047.999755859375)
     elif name == "i":
         normalized = _clamp(float(value), -38836.0, 38836.0)
+    elif name == "inputfilter":
+        normalized = _normalize_filter_list(value, max_length=4)
     elif name == "ival":
         normalized = _clamp(float(value), -4.0, 4.0)
     elif name in {"min_voltage", "max_voltage"}:
@@ -724,6 +800,10 @@ def set_iq_attribute(settings: IqSettings, name: str, value: Any) -> Any:
         normalized = bool(value)
     elif name == "frequency":
         normalized = _clamp(float(value), 0.0, 62.5e6)
+    elif name == "acbandwidth":
+        normalized = _clamp(float(value), 0.0, 62.5e6)
+    elif name == "bandwidth":
+        normalized = _normalize_filter_list(value, max_length=4)
     elif name == "phase":
         normalized = float(value) % 360.0
     elif name == "gain":
@@ -732,6 +812,29 @@ def set_iq_attribute(settings: IqSettings, name: str, value: Any) -> Any:
         normalized = _clamp(float(value), -1.0, 1.0)
     elif name == "quadrature_factor":
         normalized = _clamp(float(value), -131071.0, 131071.0)
+    else:
+        raise KeyError(name)
+    setattr(settings, name, normalized)
+    return normalized
+
+
+def set_iir_attribute(settings: IirSettings, name: str, value: Any) -> Any:
+    if name == "input":
+        normalized = _require_option(name, str(value), SCOPE_INPUTS)
+    elif name == "output_direct":
+        normalized = _require_option(name, str(value), DSP_OUTPUT_DIRECTS)
+    elif name in {"on", "bypass"}:
+        normalized = bool(value)
+    elif name == "loops":
+        normalized = int(round(_clamp(float(value), 3, 1023)))
+    elif name in {"real_zeros", "real_poles"}:
+        normalized = _normalize_float_list(value)
+    elif name in {"complex_zeros", "complex_poles"}:
+        normalized = _normalize_complex_text_list(value)
+    elif name == "inputfilter":
+        normalized = _normalize_filter_list(value, max_length=4)
+    elif name == "gain":
+        normalized = _clamp(float(value), -1e20, 1e20)
     else:
         raise KeyError(name)
     setattr(settings, name, normalized)
@@ -801,6 +904,10 @@ def _boolean(name: str, label: str, value: bool) -> dict[str, Any]:
     return {"name": name, "label": label, "type": "bool", "value": value}
 
 
+def _text(name: str, label: str, value: str) -> dict[str, Any]:
+    return {"name": name, "label": label, "type": "text", "value": value}
+
+
 def _number(
     name: str,
     label: str,
@@ -846,3 +953,51 @@ def _nearest_span(value: float) -> float:
 
 def _clamp(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(maximum, value))
+
+
+def _normalize_filter_list(value: Any, max_length: int) -> list[float]:
+    values = _normalize_float_list(value)
+    if len(values) > max_length:
+        raise ValueError(f"filter list accepts at most {max_length} stages")
+    return values if values else [0.0]
+
+
+def _normalize_float_list(value: Any) -> list[float]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        parts = [part.strip() for part in text.replace(";", ",").split(",")]
+        return [float(part) for part in parts if part]
+    if isinstance(value, (list, tuple)):
+        return [float(item) for item in value]
+    return [float(value)]
+
+
+def _normalize_complex_text_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        values = [part.strip() for part in text.replace(";", ",").split(",") if part.strip()]
+    elif isinstance(value, (list, tuple)):
+        values = [str(item).strip() for item in value if str(item).strip()]
+    else:
+        values = [str(value).strip()]
+    for item in values:
+        complex(item.replace("i", "j"))
+    return values
+
+
+def _format_list(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(item) for item in value)
+    return str(value)

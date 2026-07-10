@@ -8,7 +8,14 @@ import numpy as np
 from pyrpl_websocket.app import create_app, handle_control_message
 from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
 from pyrpl_websocket.assets import asset_info
-from pyrpl_websocket.dsp_registers import dsp_addr_base, float_to_register, frequency_to_register, phase_to_register, pwm_addr_base
+from pyrpl_websocket.dsp_registers import (
+    dsp_addr_base,
+    filter_register_from_python,
+    float_to_register,
+    frequency_to_register,
+    phase_to_register,
+    pwm_addr_base,
+)
 from pyrpl_websocket.events import EventBroker
 from pyrpl_websocket.hk_registers import (
     HK_LED_ADDR,
@@ -491,6 +498,7 @@ class WebAppTest(unittest.TestCase):
                 "iq0",
                 "iq1",
                 "iq2",
+                "iir",
                 "trig",
                 "pwm0",
                 "pwm1",
@@ -577,6 +585,11 @@ class WebAppTest(unittest.TestCase):
                 session.client.fpgamemory[base + 0x10C],
                 float_to_register(10.0, bits=24, norm=2**32 * 2.0 * np.pi * 8e-9),
             )
+            session.set_module_attribute("pid0", "inputfilter", "1000, -2000")
+            self.assertEqual(
+                session.client.fpgamemory[base + 0x120],
+                filter_register_from_python([1000, -2000]),
+            )
             session.set_module_attribute("pid0", "ival", 0.125)
             self.assertEqual(session.client.fpgamemory[base + 0x100], float_to_register(0.125, bits=16))
             session.set_module_attribute("pid0", "pause_gains", "pi")
@@ -598,6 +611,16 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.client.fpgamemory[base + 0x10C], 2)
             session.set_module_attribute("iq1", "frequency", 1e6)
             self.assertEqual(session.client.fpgamemory[base + 0x108], frequency_to_register(1e6, bits=32))
+            session.set_module_attribute("iq1", "acbandwidth", 1000)
+            self.assertEqual(
+                session.client.fpgamemory[base + 0x120],
+                filter_register_from_python([-1000]),
+            )
+            session.set_module_attribute("iq1", "bandwidth", [1000, 2000])
+            self.assertEqual(
+                session.client.fpgamemory[base + 0x124],
+                filter_register_from_python([1000, 2000]),
+            )
             session.set_module_attribute("iq1", "phase", 90.0)
             self.assertEqual(session.client.fpgamemory[base + 0x104], phase_to_register(90.0, bits=32, invert=True))
             session.set_module_attribute("iq1", "gain", 2.0)
@@ -613,6 +636,33 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.client.fpgamemory[base + 0x100] & (3 << 4), 3 << 4)
             session.call_module_action("iq1", "sync")
             self.assertIn(dsp_addr_base("iq0") + 0xC, session.client.fpgamemory)
+        finally:
+            session.close()
+
+    def test_session_iir_registers_follow_pyrpl_layout(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            base = dsp_addr_base("iir")
+            session.set_module_attribute("iir", "input", "iq0")
+            self.assertEqual(session.client.fpgamemory[base + 0x0], 5)
+            session.set_module_attribute("iir", "output_direct", "out2")
+            self.assertEqual(session.client.fpgamemory[base + 0x4], 2)
+            session.set_module_attribute("iir", "loops", 8)
+            self.assertEqual(session.client.fpgamemory[base + 0x100], 8)
+            session.set_module_attribute("iir", "inputfilter", "1000, 0, -2000")
+            self.assertEqual(
+                session.client.fpgamemory[base + 0x120],
+                filter_register_from_python([1000, 0, -2000]),
+            )
+            session.set_module_attribute("iir", "on", True)
+            self.assertEqual(session.client.fpgamemory[base + 0x104] & 1, 1)
+            session.set_module_attribute("iir", "bypass", True)
+            self.assertEqual(session.client.fpgamemory[base + 0x104] & 2, 2)
+            session.call_module_action("iir", "unity")
+            self.assertEqual(session.iir_settings.loops, 1)
+            self.assertIn(base + 0x8000, session.client.fpgamemory)
+            session.call_module_action("iir", "zero")
+            self.assertEqual(session.client.fpgamemory[base + 0x100], 1)
         finally:
             session.close()
 

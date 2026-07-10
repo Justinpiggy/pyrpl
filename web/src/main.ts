@@ -206,6 +206,7 @@ app.innerHTML = `
         ${[
           ["pid", "PID", "PID controllers", "pid-modules"],
           ["iq", "IQ", "IQ modulators and demodulators", "iq-modules"],
+          ["iir", "IIR", "Infinite impulse response filter", "iir-modules"],
           ["trig", "Trigger", "DSP trigger", "trig-modules"],
           ["pwm", "PWM", "Auxiliary PWM routing", "pwm-modules"],
         ].map(([panelId, title, description, containerId]) => `
@@ -1211,6 +1212,7 @@ const scopePanel = requireElement<HTMLElement>("#scope-panel");
 const asgPanel = requireElement<HTMLElement>("#asg-panel");
 const pidPanel = requireElement<HTMLElement>("#pid-panel");
 const iqPanel = requireElement<HTMLElement>("#iq-panel");
+const iirPanel = requireElement<HTMLElement>("#iir-panel");
 const trigPanel = requireElement<HTMLElement>("#trig-panel");
 const pwmPanel = requireElement<HTMLElement>("#pwm-panel");
 const spectrumPanel = requireElement<HTMLElement>("#spectrumanalyzer-panel");
@@ -1222,6 +1224,7 @@ const panelElements: Record<PanelId, HTMLElement> = {
   asg: asgPanel,
   pid: pidPanel,
   iq: iqPanel,
+  iir: iirPanel,
   trig: trigPanel,
   pwm: pwmPanel,
   spectrumanalyzer: spectrumPanel,
@@ -1268,6 +1271,7 @@ const hkRefresh = requireElement<HTMLButtonElement>("#hk-refresh");
 const hkExpansionGrid = requireElement<HTMLDivElement>("#hk-expansion-grid");
 const pidModules = requireElement<HTMLDivElement>("#pid-modules");
 const iqModules = requireElement<HTMLDivElement>("#iq-modules");
+const iirModules = requireElement<HTMLDivElement>("#iir-modules");
 const trigModules = requireElement<HTMLDivElement>("#trig-modules");
 const pwmModules = requireElement<HTMLDivElement>("#pwm-modules");
 const spectrumModules = requireElement<HTMLElement>("#spectrum-modules");
@@ -1312,8 +1316,8 @@ createRegisterPanel({
 interface ModuleAttribute {
   name: string;
   label: string;
-  type: "select" | "bool" | "number";
-  value: string | number | boolean;
+  type: "select" | "bool" | "number" | "text";
+  value: string | number | boolean | number[] | string[];
   options?: Array<string | number>;
   min?: number;
   max?: number;
@@ -1340,7 +1344,7 @@ interface SavedScopeState {
   state: ScopeState;
 }
 
-type ModulePrimitive = string | number | boolean;
+type ModulePrimitive = string | number | boolean | number[] | string[];
 type ModuleState = Record<string, unknown>;
 type AsgModuleId = "asg0" | "asg1";
 
@@ -1365,9 +1369,10 @@ const asgControls: Record<AsgModuleId, AsgControls> = {
   asg1: createAsgControls("asg1"),
 };
 
-const genericPanelModules: Record<"pid" | "iq" | "trig" | "pwm" | "spectrumanalyzer", string[]> = {
+const genericPanelModules: Record<"pid" | "iq" | "iir" | "trig" | "pwm" | "spectrumanalyzer", string[]> = {
   pid: ["pid0", "pid1", "pid2"],
   iq: ["iq0", "iq1", "iq2"],
+  iir: ["iir"],
   trig: ["trig"],
   pwm: ["pwm0", "pwm1"],
   spectrumanalyzer: ["spectrumanalyzer"],
@@ -1376,6 +1381,7 @@ const genericPanelModules: Record<"pid" | "iq" | "trig" | "pwm" | "spectrumanaly
 const genericPanelContainers: Record<keyof typeof genericPanelModules, HTMLDivElement> = {
   pid: pidModules,
   iq: iqModules,
+  iir: iirModules,
   trig: trigModules,
   pwm: pwmModules,
   spectrumanalyzer: spectrumModules as HTMLDivElement,
@@ -1847,7 +1853,10 @@ function optionLabel(value: string | number): string {
   return value;
 }
 
-function attributeValueLabel(attribute: string, value: string | number | boolean): string {
+function attributeValueLabel(attribute: string, value: ModulePrimitive): string {
+  if (Array.isArray(value)) {
+    return value.join(", ");
+  }
   if (typeof value === "boolean") {
     return String(value);
   }
@@ -1946,15 +1955,15 @@ function setScopeOwner(owner: string | null): void {
 
 async function setScopeAttribute(attribute: string, value: string | number | boolean): Promise<void> {
   const result = await setModuleAttributeValue("scope", attribute, value);
-  applyScopeControlValue(attribute, result.value);
+  applyScopeControlValue(attribute, result.value as string | number | boolean);
   moduleStatus.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
 }
 
 async function setModuleAttributeValue(
   moduleName: string,
   attribute: string,
-  value: string | number | boolean,
-): Promise<{ value: string | number | boolean }> {
+  value: ModulePrimitive,
+): Promise<{ value: ModulePrimitive }> {
   const response = await fetch(`/api/modules/${moduleName}/attributes/${attribute}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -2017,7 +2026,7 @@ async function loadOneAsgControls(moduleName: AsgModuleId): Promise<void> {
 
 function applyAsgState(moduleName: AsgModuleId, state: ModuleState): void {
   for (const [attribute, value] of Object.entries(state)) {
-    if (isModulePrimitive(value)) {
+    if (isScalarModulePrimitive(value)) {
       applyAsgControlValue(moduleName, attribute, value);
     }
   }
@@ -2050,7 +2059,7 @@ async function setAsgAttribute(
   value: string | number | boolean,
 ): Promise<void> {
   const result = await setModuleAttributeValue(moduleName, attribute, value);
-  applyAsgControlValue(moduleName, attribute, result.value);
+  applyAsgControlValue(moduleName, attribute, result.value as string | number | boolean);
   asgControls[moduleName].status.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
 }
 
@@ -2129,7 +2138,7 @@ async function loadHkControls(): Promise<void> {
 
 function applyHkState(state: ModuleState): void {
   for (const [attribute, value] of Object.entries(state)) {
-    if (isModulePrimitive(value)) {
+    if (isScalarModulePrimitive(value)) {
       applyHkControlValue(attribute, value);
     }
   }
@@ -2148,7 +2157,7 @@ function applyHkControlValue(attribute: string, value: string | number | boolean
 
 async function setHkAttribute(attribute: string, value: string | number | boolean): Promise<void> {
   const result = await setModuleAttributeValue("hk", attribute, value);
-  applyHkControlValue(attribute, result.value);
+  applyHkControlValue(attribute, result.value as string | number | boolean);
   hkStatus.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
 }
 
@@ -2261,7 +2270,7 @@ function createGenericAttributeField(
       });
     });
     input = checkbox;
-  } else {
+  } else if (attribute.type === "number") {
     const number = document.createElement("input");
     number.type = "number";
     populateNumber(number, attribute);
@@ -2271,6 +2280,16 @@ function createGenericAttributeField(
       });
     });
     input = number;
+  } else {
+    const text = document.createElement("input");
+    text.type = "text";
+    text.value = formatModuleValue(attribute.value);
+    text.addEventListener("change", () => {
+      setGenericModuleAttribute(moduleName, attribute.name, text.value, statusOutput).catch((error: Error) => {
+        statusOutput.textContent = error.message;
+      });
+    });
+    input = text;
   }
   input.id = `${moduleName}-${attribute.name.replaceAll("_", "-")}`;
   label.appendChild(input);
@@ -2326,7 +2345,7 @@ function orderSpectrumAttributes(attributes: ModuleAttribute[]): ModuleAttribute
 async function setGenericModuleAttribute(
   moduleName: string,
   attribute: string,
-  value: string | number | boolean,
+  value: ModulePrimitive,
   statusOutput: HTMLOutputElement,
 ): Promise<void> {
   const result = await setModuleAttributeValue(moduleName, attribute, value);
@@ -2385,7 +2404,7 @@ function applyGenericModuleValue(moduleName: string, attribute: string, value: M
   if (input instanceof HTMLInputElement && input.type === "checkbox") {
     input.checked = Boolean(value);
   } else {
-    input.value = String(value);
+    input.value = formatModuleValue(value);
   }
 }
 
@@ -2408,6 +2427,15 @@ function setGenericModuleOwner(moduleName: string, owner: string | null): void {
 }
 
 function isModulePrimitive(value: unknown): value is ModulePrimitive {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ||
+    (Array.isArray(value) && value.every((item) => typeof item === "number" || typeof item === "string"));
+}
+
+function formatModuleValue(value: ModulePrimitive): string {
+  return Array.isArray(value) ? value.join(", ") : String(value);
+}
+
+function isScalarModulePrimitive(value: unknown): value is string | number | boolean {
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }
 

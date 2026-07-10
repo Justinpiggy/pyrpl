@@ -2585,3 +2585,49 @@ OK
 conda run -n pyrpl-env npm run test:e2e
 1 Chromium test - OK
 ```
+
+## 2026-07-10 Filter Registers and Initial IIR Migration
+
+### Learned
+
+- PyRPL `FilterRegister` values are packed FPGA words, not plain floats. Each
+  stage uses an enable bit, a highpass bit, and a shift value derived from the
+  requested cutoff frequency. PID `inputfilter`, IQ `bandwidth`, IQ
+  `acbandwidth`, and IIR `inputfilter` must all go through this conversion.
+- IQ `acbandwidth` is a proxy for the inherited `inputfilter`: PyRPL writes the
+  negative of the requested AC bandwidth so the input stage is highpass.
+- Lockbox `InputIq`/PDH setup uses both filters: `bandwidth` configures IQ
+  quadrature filtering and `acbandwidth` is derived from `mod_freq / 128`.
+- The IIR hardware module is a DSP `FilterModule`: input at `0x0`,
+  output_direct at `0x4`, loops at `0x100`, on/bypass bits at `0x104`,
+  overflow at `0x108`, inherited `inputfilter` at `0x120`, and coefficient RAM
+  beginning at `0x8000`.
+- Importing the legacy `pyrpl` package or IIR hardware module directly is not
+  acceptable for the web server path because it initializes Qt. Keep the
+  FastAPI server's register and schema code Qt-free.
+
+### Mistake Prevention
+
+- Do not expose filter-style controls as single numeric fields. They are
+  list-valued in PyRPL and users often enter cascaded lowpass/highpass stages
+  such as `1000, -2000`.
+- Do not let TypeScript ignore array-valued module state updates. Generic
+  controls must render returned lists back into text fields.
+- Avoid importing old PyRPL modules just to reuse descriptors if the import path
+  reaches `pyrpl/__init__.py`; that path starts a QApplication.
+
+### Verification
+
+```text
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_app.py
+Ran 43 tests - OK
+
+conda run -n pyrpl-env npm test
+13 tests - OK
+
+conda run -n pyrpl-env npm run build
+OK
+
+conda run -n pyrpl-env npm run test:e2e
+5 Chromium tests - OK
+```

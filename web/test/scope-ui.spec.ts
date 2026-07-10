@@ -461,18 +461,18 @@ test("ASG and housekeeping panels expose migrated module controls", async ({ pag
   await expect(page.locator("#hk-status")).toContainText("Housekeeping controls ready");
 });
 
-test("PID IQ trigger and PWM panels expose migrated DSP controls", async ({ page }) => {
+test("PID IQ IIR trigger and PWM panels expose migrated DSP controls", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.clear();
   });
 
   await page.goto("/");
-  for (const panelId of ["pid", "iq", "trig", "pwm"]) {
+  for (const panelId of ["pid", "iq", "iir", "trig", "pwm"]) {
     await page.locator(".menu-dropdown summary").click();
     await page.locator(`#panel-${panelId}-enabled`).setChecked(true);
   }
 
-  await expect(page.locator(".workspace-tab")).toContainText(["Scope", "PID", "IQ", "Trigger", "PWM"]);
+  await expect(page.locator(".workspace-tab")).toContainText(["Scope", "PID", "IQ", "IIR", "Trigger", "PWM"]);
 
   await page.getByRole("button", { name: "PID" }).click();
   await expect(page.locator("#pid-panel")).toBeVisible();
@@ -498,6 +498,16 @@ test("PID IQ trigger and PWM panels expose migrated DSP controls", async ({ page
   await expect(page.locator("#iq1-status")).toContainText("output_signal = pfd");
   await page.locator("[data-module='iq1']").getByRole("button", { name: "Sync" }).click();
   await expect(page.locator("#iq1-status")).toContainText(/sync: ok|iq1 state updated/);
+
+  await page.getByRole("button", { name: "IIR" }).click();
+  await expect(page.locator("#iir-panel")).toBeVisible();
+  await page.locator("#iir-input").selectOption("iq0");
+  await expect(page.locator("#iir-status")).toContainText("input = iq0");
+  await page.locator("#iir-inputfilter").fill("1000, 0, -2000");
+  await page.locator("#iir-inputfilter").blur();
+  await expect(page.locator("#iir-status")).toContainText("inputfilter = 1000, 0, -2000");
+  await page.locator("[data-module='iir']").getByRole("button", { name: "Unity" }).click();
+  await expect(page.locator("#iir-status")).toContainText("unity: ok");
 
   await page.getByRole("button", { name: "Trigger" }).click();
   await expect(page.locator("#trig-panel")).toBeVisible();

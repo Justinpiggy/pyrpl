@@ -693,6 +693,21 @@ included as package data.
   Filter-style attributes.
 - Module state load/save/erase works.
 - ASG, PID, IQ, and Scope are usable from browser.
+- Initial IIR panel is available as a workspace module. The first migrated
+  surface covers PyRPL-compatible routing, loops, on/bypass, input filter
+  registers, and unity/zero coefficient loading. The remaining parity work is
+  to migrate PyRPL's pole/zero coefficient-design routine without importing
+  Qt-bound legacy modules into the web server.
+
+### Current Filter/IIR Slice
+
+- PID `inputfilter`, IQ `bandwidth`, IQ `acbandwidth`, and IIR `inputfilter`
+  now use a Qt-free implementation of PyRPL's `FilterRegister` packing.
+- Lockbox PDH inputs now apply `bandwidth` and `mod_freq / 128` AC bandwidth
+  through the assigned IQ module.
+- Generic TypeScript panels now support text/list-valued attributes so cascaded
+  filters and IIR pole/zero lists can round-trip through the UI.
+- IIR is now selectable from the Panels menu as a standard instrument panel.
 
 ### Milestone 4: Acquisition Instruments
 

@@ -3,6 +3,7 @@ export type PanelId =
   | "asg"
   | "pid"
   | "iq"
+  | "iir"
   | "trig"
   | "pwm"
   | "spectrumanalyzer"
@@ -42,6 +43,12 @@ export const PANEL_DEFINITIONS: PanelDefinition[] = [
     id: "iq",
     title: "IQ",
     description: "IQ modulator and demodulator controls",
+    defaultEnabled: false,
+  },
+  {
+    id: "iir",
+    title: "IIR",
+    description: "Infinite impulse response filter controls",
     defaultEnabled: false,
   },
   {

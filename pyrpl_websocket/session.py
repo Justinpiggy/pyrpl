@@ -13,7 +13,11 @@ import numpy as np
 
 from .asg_registers import disable_asg, sync_asg_setting, sync_asg_settings, trigger_asg
 from .dsp_registers import (
+    load_iir_unity_coefficients,
+    load_iir_zero_coefficients,
     arm_trig,
+    sync_iir_setting,
+    sync_iir_settings,
     sync_iq_phases,
     sync_iq_setting,
     sync_iq_settings,
@@ -31,6 +35,7 @@ from .modules import (
     ASG_SETUP_ATTRIBUTES,
     HK_SETUP_ATTRIBUTES,
     IQ_SETUP_ATTRIBUTES,
+    IIR_SETUP_ATTRIBUTES,
     PID_SETUP_ATTRIBUTES,
     PWM_SETUP_ATTRIBUTES,
     SCOPE_SETUP_ATTRIBUTES,
@@ -38,6 +43,7 @@ from .modules import (
     TRIG_SETUP_ATTRIBUTES,
     AsgSettings,
     HkSettings,
+    IirSettings,
     IqSettings,
     PidSettings,
     PwmSettings,
@@ -48,6 +54,8 @@ from .modules import (
     asg_attribute_schema,
     hk_actions,
     hk_attribute_schema,
+    iir_actions,
+    iir_attribute_schema,
     iq_actions,
     iq_attribute_schema,
     module_list,
@@ -63,6 +71,7 @@ from .modules import (
     set_spectrum_attribute,
     set_asg_attribute,
     set_hk_attribute,
+    set_iir_attribute,
     set_scope_attribute,
     set_trig_attribute,
     spectrum_actions,
@@ -101,6 +110,7 @@ class WebSession:
         self.hk_settings = HkSettings()
         self.pid_settings = {f"pid{index}": PidSettings() for index in range(3)}
         self.iq_settings = {f"iq{index}": IqSettings() for index in range(3)}
+        self.iir_settings = IirSettings()
         self.trig_settings = TrigSettings()
         self.pwm_settings = {f"pwm{index}": PwmSettings() for index in range(2)}
         self.spectrum_settings = SpectrumAnalyzerSettings()
@@ -112,6 +122,7 @@ class WebSession:
             "trig": None,
             **{f"pid{index}": None for index in range(3)},
             **{f"iq{index}": None for index in range(3)},
+            "iir": None,
             **{f"pwm{index}": None for index in range(2)},
         }
         self._module_states: dict[str, dict[str, dict]] = self._load_saved_states()
@@ -134,6 +145,7 @@ class WebSession:
             "iq0": self.iq_settings["iq0"].as_dict(),
             "iq1": self.iq_settings["iq1"].as_dict(),
             "iq2": self.iq_settings["iq2"].as_dict(),
+            "iir": self.iir_settings.as_dict(),
             "trig": self.trig_settings.as_dict(),
             "pwm0": self.pwm_settings["pwm0"].as_dict(),
             "pwm1": self.pwm_settings["pwm1"].as_dict(),
@@ -212,6 +224,8 @@ class WebSession:
             return pid_attribute_schema(self.pid_settings[module_name])
         if module_name in self.iq_settings:
             return iq_attribute_schema(self.iq_settings[module_name])
+        if module_name == "iir":
+            return iir_attribute_schema(self.iir_settings)
         if module_name == "trig":
             return trig_attribute_schema(self.trig_settings)
         if module_name in self.pwm_settings:
@@ -232,6 +246,8 @@ class WebSession:
             return self._with_owner(module_name, self.pid_settings[module_name].as_dict())
         if module_name in self.iq_settings:
             return self._with_owner(module_name, self.iq_settings[module_name].as_dict())
+        if module_name == "iir":
+            return self._with_owner(module_name, self.iir_settings.as_dict())
         if module_name == "trig":
             return self._with_owner(module_name, self.trig_settings.as_dict())
         if module_name in self.pwm_settings:
@@ -257,6 +273,8 @@ class WebSession:
             return pid_actions()
         if module_name in self.iq_settings:
             return iq_actions()
+        if module_name == "iir":
+            return iir_actions()
         if module_name == "trig":
             return trig_actions()
         if module_name in self.pwm_settings:
@@ -300,6 +318,10 @@ class WebSession:
                 normalized = set_iq_attribute(settings, attribute, value)
                 sync_iq_setting(self.client, module_name, settings, attribute)
                 return normalized
+            if module_name == "iir":
+                normalized = set_iir_attribute(self.iir_settings, attribute, value)
+                sync_iir_setting(self.client, self.iir_settings, attribute)
+                return normalized
             if module_name == "trig":
                 normalized = set_trig_attribute(self.trig_settings, attribute, value)
                 sync_trig_setting(self.client, self.trig_settings, attribute)
@@ -338,6 +360,18 @@ class WebSession:
                 else:
                     raise KeyError(action)
                 return settings.as_dict()
+            if module_name == "iir":
+                if action == "setup":
+                    sync_iir_settings(self.client, self.iir_settings)
+                elif action == "unity":
+                    load_iir_unity_coefficients(self.client)
+                    self.iir_settings.loops = 1
+                elif action == "zero":
+                    load_iir_zero_coefficients(self.client)
+                    self.iir_settings.loops = 1
+                else:
+                    raise KeyError(action)
+                return self.iir_settings.as_dict()
             if module_name == "trig":
                 if action == "setup":
                     sync_trig_settings(self.client, self.trig_settings)
@@ -586,6 +620,8 @@ class WebSession:
             return getattr(self.pid_settings[module_name], attribute)
         if module_name in self.iq_settings:
             return getattr(self.iq_settings[module_name], attribute)
+        if module_name == "iir":
+            return getattr(self.iir_settings, attribute)
         if module_name == "trig":
             return getattr(self.trig_settings, attribute)
         if module_name in self.pwm_settings:
@@ -614,6 +650,9 @@ class WebSession:
             settings = self.iq_settings[module_name]
             set_iq_attribute(settings, attribute, value)
             sync_iq_setting(self.client, module_name, settings, attribute)
+        elif module_name == "iir":
+            set_iir_attribute(self.iir_settings, attribute, value)
+            sync_iir_setting(self.client, self.iir_settings, attribute)
         elif module_name == "trig":
             set_trig_attribute(self.trig_settings, attribute, value)
             sync_trig_setting(self.client, self.trig_settings, attribute)
@@ -828,11 +867,13 @@ class WebSession:
         iq = self.iq_settings[iq_module]
         iq.input = self._resolve_lockbox_dsp_signal_no_lock(input_model.input_signal)
         iq.frequency = float(getattr(input_model, "mod_freq", 0.0))
+        iq.acbandwidth = abs(iq.frequency) / 128.0
         iq.amplitude = float(getattr(input_model, "mod_amp", 0.0))
         iq.phase = float(getattr(input_model, "mod_phase", 0.0))
         iq.output_direct = str(getattr(input_model, "mod_output", "out1") or "off")
         iq.output_signal = "quadrature"
         iq.gain = 0.0
+        set_iq_attribute(iq, "bandwidth", getattr(input_model, "bandwidth", [0.0, 0.0]))
         iq.quadrature_factor = float(getattr(input_model, "quadrature_factor", 1.0))
         iq.on = True
         sync_iq_settings(self.client, iq_module, iq)
@@ -985,6 +1026,7 @@ class WebSession:
             iq_settings.output_direct = "off"
             iq_settings.output_signal = "quadrature"
             iq_settings.frequency = settings.center
+            iq_settings.acbandwidth = settings.acbandwidth
             iq_settings.phase = 0.0
             iq_settings.gain = 0.0
             iq_settings.amplitude = 0.0
@@ -1177,6 +1219,7 @@ def _empty_saved_states() -> dict[str, dict[str, dict]]:
         ["scope", "asg0", "asg1", "hk", "trig", "spectrumanalyzer"]
         + [f"pid{index}" for index in range(3)]
         + [f"iq{index}" for index in range(3)]
+        + ["iir"]
         + [f"pwm{index}" for index in range(2)]
     )
     return {module_name: {} for module_name in module_names}
@@ -1201,6 +1244,8 @@ def _setup_attributes(module_name: str) -> list[str]:
         return list(PID_SETUP_ATTRIBUTES)
     if module_name in {"iq0", "iq1", "iq2"}:
         return list(IQ_SETUP_ATTRIBUTES)
+    if module_name == "iir":
+        return list(IIR_SETUP_ATTRIBUTES)
     if module_name == "trig":
         return list(TRIG_SETUP_ATTRIBUTES)
     if module_name in {"pwm0", "pwm1"}:
