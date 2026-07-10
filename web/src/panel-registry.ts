@@ -6,6 +6,7 @@ export type PanelId =
   | "trig"
   | "pwm"
   | "spectrumanalyzer"
+  | "lockbox"
   | "housekeeping"
   | "registers";
 
@@ -61,6 +62,12 @@ export const PANEL_DEFINITIONS: PanelDefinition[] = [
     description: "FFT spectrum analyzer controls and plot",
     defaultEnabled: false,
     defaultSplitSizes: [35, 65],
+  },
+  {
+    id: "lockbox",
+    title: "Lockbox",
+    description: "Model-based lock sequence controls",
+    defaultEnabled: false,
   },
   {
     id: "housekeeping",

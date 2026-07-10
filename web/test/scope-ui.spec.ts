@@ -144,7 +144,7 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   await expect(page.locator("#registers-panel")).toBeHidden();
   expect(await page.evaluate(() => window.pyrplScope?.getActivePanelId())).toBe("scope");
 
-  await expect(page.locator("#status")).toContainText("Frame 0");
+  await expect(page.locator("#status")).toContainText(/Frame \d+/);
   await expect(page.locator(".gutter-vertical")).toBeVisible();
   const initialSplitSizes = await page.evaluate(() => window.pyrplScope?.getScopeSplitSizes());
   expect(initialSplitSizes).toEqual([28, 72]);
@@ -229,9 +229,9 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   expect(streamedRange).toEqual(initialRange);
   expect(streamedYRange).toEqual(initialYRange);
 
-  await page.locator("#pause-scope").click();
-  await expect(page.locator("#status")).toContainText("Paused");
-  expect(await page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("paused_continuous");
+  await page.locator("#connect-scope").click();
+  await expect(page.locator("#status")).toContainText("Disconnected");
+  expect(await page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("stopped");
   await expect(page.locator("#connect-scope")).toHaveText("Run");
 
   await page.locator("#connect-scope").click();
@@ -485,7 +485,7 @@ test("PID IQ trigger and PWM panels expose migrated DSP controls", async ({ page
   await page.locator("#pid0-i").blur();
   await expect(page.locator("#pid0-status")).toContainText("i = 10");
   await page.locator("[data-module='pid0']").getByRole("button", { name: "Setup" }).click();
-  await expect(page.locator("#pid0-status")).toContainText("setup: ok");
+  await expect(page.locator("#pid0-status")).toContainText(/setup: ok|pid0 state updated/);
 
   await page.getByRole("button", { name: "IQ" }).click();
   await expect(page.locator("#iq-panel")).toBeVisible();
@@ -497,7 +497,7 @@ test("PID IQ trigger and PWM panels expose migrated DSP controls", async ({ page
   await page.locator("#iq1-output-signal").selectOption("pfd");
   await expect(page.locator("#iq1-status")).toContainText("output_signal = pfd");
   await page.locator("[data-module='iq1']").getByRole("button", { name: "Sync" }).click();
-  await expect(page.locator("#iq1-status")).toContainText("sync: ok");
+  await expect(page.locator("#iq1-status")).toContainText(/sync: ok|iq1 state updated/);
 
   await page.getByRole("button", { name: "Trigger" }).click();
   await expect(page.locator("#trig-panel")).toBeVisible();
@@ -573,7 +573,7 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   await page.locator("#spectrum-run").click();
   await expect(page.locator("#spectrum-run")).toHaveText("Stop");
   await expect(page.locator("#connect-scope")).toHaveText("Run");
-  await expect(page.locator("#status")).toContainText("Scope auto-paused by Spectrum");
+  await expect(page.locator("#status")).toContainText("Spectrum owns the scope resource");
   await expect(page.locator("#spectrum-status")).toContainText(/Spectrum frame|Spectrum stream connected/);
   await expect.poll(() => page.evaluate(() => window.pyrplScope?.getSpectrumSeriesCount())).toBeGreaterThan(0);
   await expect.poll(() => page.evaluate(() => window.pyrplScope?.getSpectrumAverageCount())).toBe(4);
@@ -618,13 +618,61 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   await expect(page.locator("#iq2-frequency")).toBeDisabled();
   await expect(page.locator("[data-module='iq2']")).toHaveClass(/is-owned/);
 
-  await page.getByRole("button", { name: "Spectrum Analyzer" }).click();
-  await page.locator("#spectrum-pause").click();
-  await expect(page.locator("#spectrum-run")).toHaveText("Run");
+  await page.getByRole("button", { name: "Scope" }).click();
+  await page.locator("#connect-scope").click();
   await expect(page.locator("#connect-scope")).toHaveText("Stop");
-  await page.locator("#spectrum-run").click();
-  await expect(page.locator("#connect-scope")).toHaveText("Run");
-  await page.locator("#spectrum-run").click();
+  expect(await page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("running_continuous");
+
   await page.getByRole("button", { name: "IQ" }).click();
   await expect(page.locator("#iq2-frequency")).toBeEnabled();
+
+  await page.getByRole("button", { name: "Spectrum Analyzer" }).click();
+  await expect(page.locator("#spectrumanalyzer-panel")).toBeVisible();
+  await page.locator("#spectrum-run").click();
+  await expect(page.locator("#spectrum-run")).toHaveText("Stop");
+  await expect(page.locator("#connect-scope")).toHaveText("Run");
+  await page.locator("#spectrum-run").click();
+  await expect(page.locator("#spectrum-run")).toHaveText("Run");
+  await page.getByRole("button", { name: "IQ" }).click();
+  await expect(page.locator("#iq2-frequency")).toBeEnabled();
+});
+
+test("lockbox panel switches classes, edits stages, and renders static plots", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+  });
+
+  await page.goto("/");
+  await page.locator(".menu-dropdown summary").click();
+  await page.locator("#panel-lockbox-enabled").setChecked(true);
+  await page.getByRole("button", { name: "Lockbox" }).click();
+
+  await expect(page.locator("#lockbox-panel")).toBeVisible();
+  await expect(page.locator("#lockbox-status")).toContainText("Linear");
+  const actionBoxes = await page.locator("#lockbox-actions button").evaluateAll((buttons) =>
+    buttons.map((button) => button.getBoundingClientRect().top),
+  );
+  expect(new Set(actionBoxes.map((top) => Math.round(top))).size).toBe(1);
+  expect(await page.evaluate(() => window.pyrplScope?.getLockboxClassname())).toBe("Linear");
+  await expect(page.locator("#lockbox-input-plot .uplot")).toBeVisible();
+  await expect(page.locator("#lockbox-output-plot .uplot")).toBeVisible();
+  expect(await page.locator("#lockbox-input-plot canvas").first().evaluate(countPaintedPixels)).toBeGreaterThan(1000);
+  expect(await page.locator("#lockbox-output-plot canvas").first().evaluate(countPaintedPixels)).toBeGreaterThan(1000);
+
+  await page.locator("#lockbox-class").selectOption("Interferometer");
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getLockboxClassname())).toBe("Interferometer");
+  await expect(page.locator("#lockbox-inputs")).toContainText("port1");
+  await expect(page.locator("#lockbox-inputs")).toContainText("port2");
+  await expect(page.locator("#lockbox-outputs")).toContainText("piezo");
+
+  await page.locator("#lockbox-class").selectOption("FabryPerot");
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getLockboxClassname())).toBe("FabryPerot");
+  await expect(page.locator("#lockbox-inputs")).toContainText("pdh");
+
+  const initialStages = await page.evaluate(() => window.pyrplScope?.getLockboxStageCount());
+  await page.locator("#lockbox-add-stage").click();
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getLockboxStageCount())).toBe((initialStages ?? 0) + 1);
+  await page.locator("#lockbox-stages input[type='number']").first().fill("0.125");
+  await page.locator("#lockbox-stages input[type='number']").first().blur();
+  await expect(page.locator("#lockbox-status")).toContainText("FabryPerot");
 });

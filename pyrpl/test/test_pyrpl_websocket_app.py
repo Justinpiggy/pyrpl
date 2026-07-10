@@ -19,6 +19,7 @@ from pyrpl_websocket.hk_registers import (
     HK_P_READ_ADDR,
     HK_P_WRITE_ADDR,
 )
+from pyrpl_websocket.lockbox import LockboxSchemaLibrary, LockboxState
 from pyrpl_websocket.monitor_client import MonitorStats
 from pyrpl_websocket.scope import SCOPE_ADDR_BASE, SCOPE_CH1_OFFSET, SCOPE_CH2_OFFSET, SCOPE_DATA_LENGTH
 from pyrpl_websocket.session import WebSession
@@ -110,6 +111,13 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("/api/modules/{module_name}/states/{state_name}/save", paths)
         self.assertIn("/api/modules/{module_name}/states/{state_name}/load", paths)
         self.assertIn("/api/modules/{module_name}/states/{state_name}", paths)
+        self.assertIn("/api/lockbox", paths)
+        self.assertIn("/api/lockbox/classes", paths)
+        self.assertIn("/api/lockbox/class", paths)
+        self.assertIn("/api/lockbox/stages", paths)
+        self.assertIn("/api/lockbox/stages/{index}", paths)
+        self.assertIn("/api/lockbox/inputs/{input_name}/plot", paths)
+        self.assertIn("/api/lockbox/outputs/{output_name}/transfer_function", paths)
         self.assertIn("/ws/control", paths)
         self.assertIn("/ws/scope", paths)
 
@@ -124,6 +132,221 @@ class WebAppTest(unittest.TestCase):
         try:
             self.assertTrue(session.write_registers(1234, [5, 6]))
             self.assertEqual(session.read_registers(1234, 2), [5, 6])
+        finally:
+            session.close()
+
+    def test_session_lockbox_schema_class_switch_and_stages(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            classes = {entry["name"] for entry in session.lockbox_classes()}
+            self.assertIn("Linear", classes)
+            self.assertIn("FabryPerot", classes)
+
+            schema = session.lockbox_schema()
+            self.assertEqual(schema["classname"], "Linear")
+            self.assertEqual(len(schema["sequence"]), 1)
+            self.assertEqual([item["name"] for item in schema["inputs"]], ["input_from_output"])
+
+            switched = session.set_lockbox_class("Interferometer")
+            self.assertEqual(switched["classname"], "Interferometer")
+            self.assertEqual([item["name"] for item in switched["inputs"]], ["port1", "port2"])
+            self.assertEqual([item["name"] for item in switched["outputs"]], ["piezo"])
+
+            fabry = session.set_lockbox_class("FabryPerot")
+            self.assertEqual([item["name"] for item in fabry["inputs"]], ["transmission", "reflection", "pdh"])
+            pdh_controls = {attribute["name"] for attribute in fabry["inputs"][2]["attributes"]}
+            self.assertIn("mod_freq", pdh_controls)
+            self.assertIn("mod_amp", pdh_controls)
+            self.assertIn("mod_phase", pdh_controls)
+            self.assertIn("mod_output", pdh_controls)
+            self.assertIn("bandwidth", pdh_controls)
+            self.assertIn("quadrature_factor", pdh_controls)
+            high_finesse = session.set_lockbox_class("HighFinesseFabryPerot")
+            self.assertEqual([item["name"] for item in high_finesse["inputs"]], ["transmission", "reflection", "pdh"])
+            high_finesse_pdh_controls = {attribute["name"] for attribute in high_finesse["inputs"][2]["attributes"]}
+            self.assertIn("mod_freq", high_finesse_pdh_controls)
+
+            custom = session.set_lockbox_class("CustomLockbox")
+            self.assertEqual([item["name"] for item in custom["inputs"]], ["custom_input_name1", "custom_input_name2"])
+            custom_controls = {attribute["name"] for attribute in custom["inputs"][0]["attributes"]}
+            self.assertIn("custom_gain_attribute", custom_controls)
+
+            appended = session.append_lockbox_stage()
+            self.assertEqual(len(appended["sequence"]), 2)
+            edited = session.set_lockbox_stage_attribute(1, "setpoint", 0.25)
+            setpoint = next(
+                attribute["value"]
+                for attribute in edited["sequence"][1]["attributes"]
+                if attribute["name"] == "setpoint"
+            )
+            self.assertEqual(setpoint, 0.25)
+            deleted = session.delete_lockbox_stage(0)
+            self.assertEqual(len(deleted["sequence"]), 1)
+        finally:
+            session.close()
+
+    def test_session_lockbox_static_plots_have_data(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_lockbox_class("Interferometer")
+            input_plot = session.lockbox_input_plot("port1", points=64)
+            self.assertEqual(len(input_plot["x"]), 64)
+            self.assertEqual(len(input_plot["series"][0]["values"]), 64)
+            self.assertGreater(max(input_plot["series"][0]["values"]), min(input_plot["series"][0]["values"]))
+
+            transfer = session.lockbox_output_transfer_function("piezo", points=32)
+            self.assertEqual(len(transfer["x"]), 32)
+            self.assertEqual(len(transfer["series"]), 2)
+            self.assertEqual(len(transfer["series"][0]["values"]), 32)
+        finally:
+            session.close()
+
+    def test_session_lockbox_pdh_input_configures_iq_immediately(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            schema = session.set_lockbox_class("FabryPerot")
+            pdh = next(item for item in schema["inputs"] if item["name"] == "pdh")
+            self.assertEqual(pdh["iq_module"], "iq0")
+
+            session.set_lockbox_input_attribute("pdh", "input_signal", "in2")
+            session.set_lockbox_input_attribute("pdh", "mod_freq", 2.5e6)
+            session.set_lockbox_input_attribute("pdh", "mod_amp", 0.2)
+            session.set_lockbox_input_attribute("pdh", "mod_phase", 45.0)
+            session.set_lockbox_input_attribute("pdh", "mod_output", "out2")
+            session.set_lockbox_input_attribute("pdh", "quadrature_factor", 3.0)
+
+            iq = session.iq_settings["iq0"]
+            self.assertEqual(session.module_state("iq0")["owner"], "lockbox")
+            self.assertEqual(iq.input, "in2")
+            self.assertEqual(iq.frequency, 2.5e6)
+            self.assertEqual(iq.amplitude, 0.2)
+            self.assertEqual(iq.phase, 45.0)
+            self.assertEqual(iq.output_direct, "out2")
+            self.assertEqual(iq.output_signal, "quadrature")
+            self.assertEqual(iq.gain, 0.0)
+            self.assertEqual(iq.quadrature_factor, 3.0)
+            self.assertTrue(iq.on)
+
+            session.set_lockbox_stage_attribute(0, "input", "pdh")
+            session.set_lockbox_stage_output_attribute(0, "piezo", "lock_on", True)
+            session.call_lockbox_action("lock")
+            self.assertEqual(session.pid_settings["pid0"].input, "iq0")
+        finally:
+            session.close()
+
+    def test_lockbox_schema_discovers_user_model_controls(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            user_lockbox_dir = Path(dirname) / "lockbox"
+            user_lockbox_dir.mkdir()
+            (user_lockbox_dir / "user_model.py").write_text(
+                "\n".join(
+                    [
+                        "from pyrpl.software_modules.lockbox import *",
+                        "",
+                        "class UserDynamicInput(InputSignal):",
+                        "    _gui_attributes = ['user_gain']",
+                        "    _setup_attributes = _gui_attributes",
+                        "    user_gain = FloatProperty(default=2.5, min=-10, max=10, increment=0.5)",
+                        "    def expected_signal(self, variable):",
+                        "        return self.user_gain * variable",
+                        "",
+                        "class UserDynamicLockbox(Lockbox):",
+                        "    inputs = LockboxModuleDictProperty(sensor=UserDynamicInput)",
+                        "    outputs = LockboxModuleDictProperty(actuator=OutputSignal)",
+                        "    _gui_attributes = ['user_offset']",
+                        "    _setup_attributes = _gui_attributes",
+                        "    user_offset = FloatProperty(default=1.25, min=-5, max=5)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            library = LockboxSchemaLibrary(user_lockbox_dir=user_lockbox_dir)
+            state = LockboxState("UserDynamicLockbox", library=library)
+            schema = state.schema()
+            self.assertEqual([item["name"] for item in schema["inputs"]], ["sensor"])
+            self.assertEqual([item["name"] for item in schema["outputs"]], ["actuator"])
+            self.assertIn("user_offset", {attribute["name"] for attribute in schema["attributes"]})
+            self.assertIn("user_gain", {attribute["name"] for attribute in schema["inputs"][0]["attributes"]})
+
+    def test_session_lockbox_actions_configure_resources_and_pid(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_lockbox_stage_output_attribute(0, "output1", "lock_on", True)
+            locked = session.call_lockbox_action("lock")
+            self.assertEqual(locked["state"]["current_state"], "lock_on")
+            self.assertEqual(session.module_state("pid0")["owner"], "lockbox")
+            self.assertEqual(session.pid_settings["pid0"].input, "in1")
+            self.assertEqual(session.pid_settings["pid0"].setpoint, 0.0)
+            self.assertNotEqual(session.pid_settings["pid0"].p, 0.0)
+            self.assertNotEqual(session.pid_settings["pid0"].i, 0.0)
+
+            unlocked = session.call_lockbox_action("unlock")
+            self.assertEqual(unlocked["state"]["current_state"], "unlock")
+            self.assertIsNone(session.module_state("pid0")["owner"])
+            self.assertEqual(session.pid_settings["pid0"].p, 0.0)
+            self.assertEqual(session.pid_settings["pid0"].i, 0.0)
+
+            swept = session.call_lockbox_action("sweep")
+            self.assertEqual(swept["state"]["current_state"], "sweep")
+            self.assertEqual(session.module_state("pid0")["owner"], "lockbox")
+            self.assertEqual(session.module_state("asg0")["owner"], "lockbox")
+            self.assertEqual(session.pid_settings["pid0"].input, "asg0")
+            self.assertEqual(session.asg_settings["asg0"].waveform, "ramp")
+        finally:
+            session.close()
+
+    def test_session_lockbox_lock_and_sweep_do_not_stop_scope_or_spectrum(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.call_module_action("scope", "continuous")
+            session.set_lockbox_stage_output_attribute(0, "output1", "lock_on", True)
+            session.call_lockbox_action("lock")
+            self.assertEqual(session.scope_settings.running_state, "running_continuous")
+
+            session.call_lockbox_action("unlock")
+            session.call_module_action("scope", "continuous")
+            session.call_lockbox_action("sweep")
+            self.assertEqual(session.scope_settings.running_state, "running_continuous")
+
+            session.call_lockbox_action("unlock")
+            session.call_module_action("spectrumanalyzer", "continuous")
+            self.assertEqual(session.spectrum_settings.running_state, "running_continuous")
+            session.call_lockbox_action("lock")
+            self.assertEqual(session.spectrum_settings.running_state, "running_continuous")
+            self.assertEqual(session.module_state("scope")["owner"], "spectrumanalyzer")
+        finally:
+            session.close()
+
+    def test_hardware_lockbox_calibration_temporarily_uses_scope_without_stopping_stream_state(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.client = SimulatedHardwareScopeClient()
+            session.call_module_action("scope", "continuous")
+            input_name = next(iter(session.lockbox.inputs))
+            before = session.lockbox.inputs[input_name].calibration.amplitude
+            session.call_lockbox_action("calibrate_all")
+            after = session.lockbox.inputs[input_name].calibration.amplitude
+            self.assertNotEqual(after, before)
+            self.assertEqual(session.scope_settings.running_state, "running_continuous")
+            self.assertIsNone(session.module_state("scope")["owner"])
+        finally:
+            session.close()
+
+    def test_session_lockbox_calibration_and_pwm_output(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            input_name = next(iter(session.lockbox.inputs))
+            before = session.lockbox.inputs[input_name].calibration.amplitude
+            session.call_lockbox_action("calibrate_all")
+            after = session.lockbox.inputs[input_name].calibration.amplitude
+            self.assertNotEqual(after, before)
+            self.assertIsNone(session.module_state("scope")["owner"])
+
+            session.set_lockbox_output_attribute("output1", "output_channel", "pwm0")
+            session.set_lockbox_stage_output_attribute(0, "output1", "lock_on", True)
+            session.call_lockbox_action("lock")
+            self.assertEqual(session.module_state("pwm0")["owner"], "lockbox")
+            self.assertEqual(session.pwm_settings["pwm0"].input, "pid0")
         finally:
             session.close()
 
@@ -279,18 +502,26 @@ class WebAppTest(unittest.TestCase):
         finally:
             session.close()
 
-    def test_spectrum_analyzer_owns_and_releases_iq2(self):
+    def test_spectrum_analyzer_owns_and_releases_scope_and_iq2(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))
         try:
+            session.set_module_attribute("spectrumanalyzer", "baseband", False)
+            self.assertIsNone(session.module_state("scope")["owner"])
+            self.assertIsNone(session.module_state("iq2")["owner"])
+
             state = session.call_module_action("spectrumanalyzer", "setup")
-            self.assertEqual(state["resources"], ["iq2"])
+            self.assertEqual(state["resources"], ["iq2", "scope"])
             self.assertEqual(session.module_state("iq2")["owner"], "spectrumanalyzer")
+            self.assertEqual(session.module_state("scope")["owner"], "spectrumanalyzer")
             with self.assertRaises(ValueError):
                 session.set_module_attribute("iq2", "frequency", 1e6)
+            with self.assertRaises(ValueError):
+                session.call_module_action("scope", "continuous")
 
             released = session.call_module_action("spectrumanalyzer", "release")
             self.assertEqual(released["resources"], [])
             self.assertIsNone(session.module_state("iq2")["owner"])
+            self.assertIsNone(session.module_state("scope")["owner"])
             session.set_module_attribute("iq2", "frequency", 1e6)
         finally:
             session.close()

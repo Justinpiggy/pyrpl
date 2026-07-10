@@ -40,6 +40,10 @@ class ModuleAttributeWriteRequest(BaseModel):
     value: Any
 
 
+class LockboxClassRequest(BaseModel):
+    classname: str
+
+
 def _message_id(message: dict[str, Any]) -> Any:
     return message.get("id")
 
@@ -242,7 +246,7 @@ async def handle_control_message(
 def _resource_event_modules(module_name: str, state: dict[str, Any]) -> list[str]:
     if module_name != "spectrumanalyzer":
         return []
-    resource_modules = {"iq2"}
+    resource_modules = {"iq2", "scope"}
     resources = state.get("resources")
     if isinstance(resources, list):
         resource_modules.update(str(resource) for resource in resources)
@@ -250,6 +254,10 @@ def _resource_event_modules(module_name: str, state: dict[str, Any]) -> list[str
     if isinstance(iq_module, str):
         resource_modules.add(iq_module)
     return sorted(resource_modules)
+
+
+def _lockbox_resource_event_modules() -> list[str]:
+    return ["asg0", "asg1", "scope", "pid0", "pid1", "pid2", "iq0", "iq1", "iq2", "pwm0", "pwm1"]
 
 
 async def control_socket(websocket: WebSocket, session: WebSession, events: EventBroker | None = None) -> None:
@@ -346,6 +354,142 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @app.get("/api/modules")
     async def modules():
         return {"modules": app.state.session.modules()}
+
+    @app.get("/api/lockbox/classes")
+    async def lockbox_classes():
+        return {"classes": app.state.session.lockbox_classes()}
+
+    @app.get("/api/lockbox")
+    async def lockbox_schema():
+        return app.state.session.lockbox_schema()
+
+    @app.post("/api/lockbox/class")
+    async def set_lockbox_class(request: LockboxClassRequest):
+        try:
+            schema = app.state.session.set_lockbox_class(request.classname)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        await app.state.events.publish(module_state_event("lockbox", schema))
+        for resource_module in _lockbox_resource_event_modules():
+            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
+        return schema
+
+    @app.post("/api/lockbox/attributes/{attribute}")
+    async def set_lockbox_attribute(attribute: str, request: ModuleAttributeWriteRequest):
+        try:
+            schema = app.state.session.set_lockbox_attribute(attribute, request.value)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unknown lockbox attribute") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        await app.state.events.publish(module_state_event("lockbox", schema))
+        return schema
+
+    @app.post("/api/lockbox/inputs/{input_name}/attributes/{attribute}")
+    async def set_lockbox_input_attribute(input_name: str, attribute: str, request: ModuleAttributeWriteRequest):
+        try:
+            schema = app.state.session.set_lockbox_input_attribute(input_name, attribute, request.value)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unknown lockbox input or attribute") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        await app.state.events.publish(module_state_event("lockbox", schema))
+        for resource_module in _lockbox_resource_event_modules():
+            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
+        return schema
+
+    @app.post("/api/lockbox/outputs/{output_name}/attributes/{attribute}")
+    async def set_lockbox_output_attribute(output_name: str, attribute: str, request: ModuleAttributeWriteRequest):
+        try:
+            schema = app.state.session.set_lockbox_output_attribute(output_name, attribute, request.value)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unknown lockbox output or attribute") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        await app.state.events.publish(module_state_event("lockbox", schema))
+        return schema
+
+    @app.post("/api/lockbox/stages")
+    async def append_lockbox_stage():
+        schema = app.state.session.append_lockbox_stage()
+        await app.state.events.publish(module_state_event("lockbox", schema))
+        return schema
+
+    @app.delete("/api/lockbox/stages/{index}")
+    async def delete_lockbox_stage(index: int):
+        try:
+            schema = app.state.session.delete_lockbox_stage(index)
+        except IndexError as exc:
+            raise HTTPException(status_code=404, detail="Unknown lockbox stage") from exc
+        await app.state.events.publish(module_state_event("lockbox", schema))
+        return schema
+
+    @app.post("/api/lockbox/stages/{index}/attributes/{attribute}")
+    async def set_lockbox_stage_attribute(index: int, attribute: str, request: ModuleAttributeWriteRequest):
+        try:
+            schema = app.state.session.set_lockbox_stage_attribute(index, attribute, request.value)
+        except (IndexError, KeyError) as exc:
+            raise HTTPException(status_code=404, detail="Unknown lockbox stage or attribute") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        await app.state.events.publish(module_state_event("lockbox", schema))
+        return schema
+
+    @app.post("/api/lockbox/stages/{index}/outputs/{output_name}/attributes/{attribute}")
+    async def set_lockbox_stage_output_attribute(
+        index: int,
+        output_name: str,
+        attribute: str,
+        request: ModuleAttributeWriteRequest,
+    ):
+        try:
+            schema = app.state.session.set_lockbox_stage_output_attribute(index, output_name, attribute, request.value)
+        except (IndexError, KeyError) as exc:
+            raise HTTPException(status_code=404, detail="Unknown lockbox stage output or attribute") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        await app.state.events.publish(module_state_event("lockbox", schema))
+        return schema
+
+    @app.get("/api/lockbox/actions")
+    async def get_lockbox_actions():
+        return {"actions": app.state.session.lockbox_actions()}
+
+    @app.post("/api/lockbox/actions/{action}")
+    async def call_lockbox_action(action: str):
+        lockbox_uses_scope = action in {"calibrate_all", "get_analog_offsets"}
+        if lockbox_uses_scope:
+            state = app.state.session.module_state("scope")
+            state["owner"] = "lockbox"
+            await app.state.events.publish(module_state_event("scope", state))
+        try:
+            schema = await asyncio.to_thread(app.state.session.call_lockbox_action, action)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unknown lockbox action") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        finally:
+            if lockbox_uses_scope:
+                await app.state.events.publish(module_state_event("scope", app.state.session.module_state("scope")))
+        await app.state.events.publish(module_action_event("lockbox", action, schema))
+        await app.state.events.publish(module_state_event("lockbox", schema))
+        for resource_module in _lockbox_resource_event_modules():
+            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
+        return schema
+
+    @app.get("/api/lockbox/inputs/{input_name}/plot")
+    async def lockbox_input_plot(input_name: str, points: int = 200):
+        try:
+            return app.state.session.lockbox_input_plot(input_name, points)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unknown lockbox input") from exc
+
+    @app.get("/api/lockbox/outputs/{output_name}/transfer_function")
+    async def lockbox_output_transfer_function(output_name: str, points: int = 200):
+        try:
+            return app.state.session.lockbox_output_transfer_function(output_name, points)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unknown lockbox output") from exc
 
     @app.get("/api/modules/{module_name}")
     async def module_state(module_name: str):

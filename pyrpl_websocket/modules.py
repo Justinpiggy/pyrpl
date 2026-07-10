@@ -470,6 +470,12 @@ def module_list() -> list[dict[str, Any]]:
             "label": "Spectrum Analyzer",
             "description": "FFT spectrum analyzer using the scope and IQ demodulator resources.",
         },
+        {
+            "name": "lockbox",
+            "kind": "software",
+            "label": "Lockbox",
+            "description": "Model-based feedback lock sequence with dynamic inputs, outputs, and stages.",
+        },
     ]
 
 

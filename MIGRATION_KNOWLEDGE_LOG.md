@@ -5,6 +5,429 @@ and implementing the PyRPL web-interface migration. Future work should update
 this file whenever new architecture, protocol, performance, or tooling knowledge
 is discovered.
 
+## 2026-07-09 Lockbox Dynamic Schema Requirement
+
+### Correction
+
+- Lockbox inputs, outputs, stages, and custom user modules must be described
+  from the original PyRPL class/property metadata instead of handwritten web
+  schemas.
+- PDH inputs such as `FPPdh` and `PdhInterferometerPort1` inherit `InputIq`,
+  whose GUI/setup controls are `mod_freq`, `mod_amp`, `mod_phase`,
+  `mod_output`, `bandwidth`, and `quadrature_factor`. A generic `input_signal`
+  row is not sufficient.
+- User-provided lockbox models can define new input/output classes with their
+  own `_gui_attributes`, `_setup_attributes`, and descriptor properties. The
+  web UI must render those dynamically.
+
+### PyRPL Reference
+
+Original PyRPL uses `ModuleMetaClass` to merge inherited `_gui_attributes` and
+`_setup_attributes` across base classes, including multiple-inheritance classes
+like `FPPdh(InputIq, FPAnalogPdh)`.
+
+The Qt lockbox widget renders controls by iterating each module instance's
+`_gui_attributes` and creating widgets from the matching descriptor on the
+module class. Dynamic dictionaries such as `inputs`, `outputs`, and `sequence`
+are created by `LockboxModuleDictProperty` and `ModuleListProperty`.
+
+### Mistake Prevention
+
+Do not flatten a lockbox input to a fixed `{name, kind, input_signal}` shape.
+The frontend schema must preserve the concrete module class and its resolved
+property list so custom lockbox models and PDH/IQ inputs show the correct
+controls.
+
+## 2026-07-09 Lockbox InputIq Setup Is Hardware Behavior
+
+### Correction
+
+- Lockbox inputs that inherit PyRPL `InputIq` are now bound to an IQ module in
+  the web backend.
+- Changing PDH/IQ input controls such as `input_signal`, `mod_freq`,
+  `mod_amp`, `mod_phase`, `mod_output`, and `quadrature_factor` immediately
+  configures the assigned IQ module, matching original PyRPL
+  `InputIq._setup()`.
+- Lock stages and calibration now use the logical input's `signal()` behavior:
+  IQ-backed inputs feed downstream hardware from the assigned IQ module rather
+  than from the raw `input_signal`.
+- IQ module ownership/state events are published when Lockbox input setup
+  changes so the IQ panel reflects that Lockbox is using the module.
+
+### PyRPL Reference
+
+Original PyRPL `InputIq._setup()` calls:
+
+```text
+iq.setup(frequency=mod_freq, amplitude=mod_amp, phase=mod_phase,
+         input=_input_signal_dsp_module(), gain=0, bandwidth=bandwidth,
+         acbandwidth=mod_freq / 128, quadrature_factor=quadrature_factor,
+         output_signal="quadrature", output_direct=mod_output)
+```
+
+Original PyRPL `InputIq.signal()` returns the allocated IQ module name. Any PID
+or scope acquisition using that logical input must use the IQ module signal, not
+the raw analog input.
+
+### Mistake Prevention
+
+When migrating descriptor-driven PyRPL controls, `_gui_attributes` only tells
+the web UI what to draw. `_setup_attributes` and `call_setup=True` tell the
+backend what hardware side effects must happen when the value changes. Do not
+stop at schema rendering; trace the original `_setup()` method and signal
+routing for every dynamic module class.
+
+## 2026-07-09 Stale Spectrum WebSocket Ownership
+
+### Correction
+
+- Stopped Spectrum Analyzer streams must not reacquire the shared scope
+  resource from a late WebSocket polling iteration.
+- `acquire_spectrum_scope_frame()` now returns no data while Spectrum Analyzer
+  is in the stopped state instead of calling the spectrum setup routine.
+
+### Mistake Prevention
+
+For streaming panels, stopping the frontend stream and releasing backend
+resources is not enough if an in-flight WebSocket loop can still make one more
+backend acquisition call. Backend acquisition functions must check the module's
+running state before configuring or reserving shared hardware.
+
+## 2026-07-09 Lockbox Calibration Scope Ownership
+
+### Correction
+
+- Lockbox calibration and analog-offset measurement now temporarily own the
+  scope resource instead of refusing to run while the Scope panel is streaming.
+- Scope WebSocket acquisition/plotting remains active while Lockbox owns the
+  scope. The frontend disables only scope parameter controls while
+  `scope.owner == "lockbox"`, then re-enables them when ownership is released.
+- The FastAPI Lockbox action endpoint now runs Lockbox actions in a worker
+  thread so ownership events can reach the browser during a longer calibration
+  call instead of only after it completes.
+- Added missing `pdh` inputs to the web Lockbox schemas for `FabryPerot` and
+  `HighFinesseFabryPerot`, matching the original PyRPL model definitions.
+
+### PyRPL Reference
+
+Original PyRPL Lockbox calibration uses the scope resource for sweep acquisition
+and temporarily changes scope setup during calibration. The user should still
+be able to watch what is happening; the important restriction is preventing
+simultaneous parameter edits that fight the calibration routine.
+
+Original PyRPL `FabryPerot.inputs` is:
+
+```text
+transmission, reflection, pdh
+```
+
+Original PyRPL `HighFinesseFabryPerot.inputs` is also:
+
+```text
+transmission, reflection, pdh
+```
+
+### Mistake Prevention
+
+Do not equate "Lockbox calibration owns scope" with "stop the Scope panel".
+Ownership should disable conflicting scope parameter controls, but the browser
+plot can keep receiving scope frames.
+
+When adding model schemas by hand, verify each model's
+`LockboxModuleDictProperty` definitions in the original PyRPL code. Missing
+dynamic inputs like `pdh` makes the web panel structurally wrong even if the
+generic controls render correctly.
+
+### Verification
+
+```text
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_app.py
+Ran 40 tests - OK
+
+conda run -n pyrpl-env npm test
+13 tests - OK
+
+conda run -n pyrpl-env npm run build
+OK
+
+conda run -n pyrpl-env npm run test:e2e
+5 Chromium tests - OK
+```
+
+## 2026-07-09 Lockbox Must Not Auto-Stop Scope/Spectrum
+
+### Correction
+
+- Removed invented auto-stop behavior from Lockbox `lock` and `sweep`.
+- Lockbox `lock` now changes only the resources that PyRPL's output/stage
+  routine actually controls: PID/PWM routing, PID setpoint, PID gains, and
+  stage output offsets.
+- Lockbox `sweep` now configures the selected output PID and the Lockbox ASG
+  path without stopping the user Scope or Spectrum Analyzer.
+- Lockbox calibration/offset sampling no longer silently steals a running
+  hardware scope. In fake mode it samples independently; on hardware it now
+  requires a free scope and raises an error if Scope/Spectrum is actively using
+  the shared scope path.
+
+### PyRPL Reference
+
+PyRPL `OutputSignal.lock()`, `OutputSignal.sweep()`, and `OutputSignal.unlock()`
+operate on the output's PID and, for sweep, the lockbox ASG. They do not stop
+the user scope or spectrum analyzer as a general side effect.
+
+PyRPL input calibration uses `sweep_acquire()`, which asks
+`self.pyrpl.scopes.pop(self.name)` for a scope resource. If no free scope is
+available, it catches `InsufficientResourceError`, logs a warning, and aborts
+calibration. It does not forcibly stop another user-visible scope.
+
+### Mistake Prevention
+
+For every migrated Lockbox control, trace the original PyRPL control routine
+before writing backend behavior. Do not add broad resource restrictions just
+because a resource might be convenient to reuse. This is a migration, not a new
+control policy.
+
+Users commonly adjust Lockbox values while watching Scope or Spectrum Analyzer.
+Do not stop those panels when changing Lockbox values, executing lock stages,
+or sweeping an output unless the original PyRPL routine truly takes that
+resource and no free compatible resource is available.
+
+### Verification
+
+```text
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_app.py
+Ran 40 tests - OK
+```
+
+## 2026-07-09 Lockbox Hardware Actions and Compact UI
+
+### Change
+
+- Implemented real Lockbox action behavior in the web backend using the
+  existing register-sync helpers:
+  - `unlock` zeros PID gains, optionally resets PID integrator offsets, and
+    releases Lockbox-owned resources.
+  - `sweep` reserves the selected output PID plus `asg0`, configures the ASG
+    waveform/amplitude/offset/frequency, routes the PID input to `asg0`, and
+    drives the selected output through the PID path.
+  - `lock` executes the configured stage sequence, applies per-stage output
+    `lock_on`/`reset_offset`/`offset`, computes PID setpoint from the selected
+    input model, and scales PID gains by input slope, output `dc_gain`, and
+    stage `gain_factor`.
+  - `calibrate_all` and `get_analog_offsets` sample each input through the
+    scope path, update calibration statistics/analog offsets, then restore the
+    previous scope settings.
+- Added output controls needed by PyRPL Lockbox behavior: `unit`, `dc_gain`,
+  `p`, `i`, voltage limits, sweep offset, sweep waveform, and PWM output
+  channels.
+- Lockbox now publishes resource-state events for PID/ASG/PWM/scope modules so
+  other panels can gray out occupied resources.
+- Reduced frontend control/button/input sizing and made Lockbox action buttons
+  a horizontal row.
+
+### PyRPL Reference
+
+PyRPL `OutputSignal.unlock()` sets PID `p` and `i` to zero and initializes the
+PID output path. `OutputSignal.sweep()` unlocks the output, routes the PID
+input to a lockbox-owned ASG, configures that ASG, sets `pid.setpoint = 0`, and
+sets `pid.p = 1`. `OutputSignal.lock()` computes PID gains from the model input
+slope and output gain, writes PID input/setpoint/offset, then applies the
+scaled gains.
+
+PyRPL `Stage._enable()` first unlocks or offsets outputs according to each
+stage-output setting, then locks outputs whose `lock_on` is true. The web
+migration should preserve this two-pass stage behavior.
+
+### Boundary
+
+This still does not instantiate arbitrary third-party Python Lockbox classes
+inside the web backend. The implemented behavior is register-level compatible
+for the schema-backed lockbox model and uses existing monitor-server protocol
+paths. FPGA firmware and `monitor_server.c` remain untouched.
+
+### Mistake Prevention
+
+Lockbox actions must be implemented in `WebSession`, not only in the pure
+schema model, because they need access to PID/ASG/PWM/scope settings, resource
+ownership, and monitor-server register sync helpers.
+
+When an action changes ownership, publish state events for the affected
+hardware modules. Otherwise the backend may correctly reject manual writes
+while the frontend still looks editable.
+
+Do not leave Lockbox output schema too small. Real PyRPL lock behavior depends
+on output `p`, `i`, `dc_gain`, `unit`, voltage limits, sweep settings, and
+whether the output channel is an analog output or PWM.
+
+### Verification
+
+```text
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_app.py
+Ran 38 tests - OK
+
+conda run -n pyrpl-env npm test
+13 tests - OK
+
+conda run -n pyrpl-env npm run build
+OK
+
+conda run -n pyrpl-env npm run test:e2e
+5 Chromium tests - OK
+```
+
+## 2026-07-09 Initial Lockbox Migration
+
+### Change
+
+- Added an initial Qt-free Lockbox backend model in `pyrpl_websocket.lockbox`.
+- Exposed REST endpoints for Lockbox class discovery, schema loading, class
+  switching, top-level attributes, input/output attributes, dynamic stage
+  append/delete, nested stage-output attributes, actions, and static plot data.
+- Added Lockbox to the workspace panel menu as a disabled-by-default software
+  panel.
+- Added a schema-driven TypeScript Lockbox panel that renders lockbox
+  attributes, inputs, outputs, dynamic sequence stages, per-stage output
+  settings, and static uPlot charts.
+- Added regression tests for Lockbox class switching, dynamic stages, and
+  nonblank static plots.
+
+### PyRPL Reference
+
+PyRPL Lockbox is a nested, model-driven software module. A lockbox class owns
+dynamic `inputs`, `outputs`, and `sequence` stages. Changing `classname` in the
+original PyRPL GUI replaces the whole lockbox object, so the web migration
+should treat a class switch as a structure rebuild and redraw the panel from
+the backend's canonical schema.
+
+Lockbox plots are not scope-like high-rate streams. Input expected-signal plots
+and output transfer-function plots should be recomputed on load or after
+relevant user edits, then drawn in the browser. Do not create a high-rate
+WebSocket stream for these static plots.
+
+### Boundary
+
+This first slice intentionally uses a PyRPL-shaped lightweight backend model
+instead of instantiating the original Qt-era Lockbox object. It does not yet
+execute real hardware lock/sweep/calibration behavior, reserve PID/ASG/scope
+resources, or import third-party user lockbox modules dynamically. Those need
+to be added after the schema-driven panel is stable.
+
+### Mistake Prevention
+
+Do not render Lockbox as a flat generic module card. The original GUI has
+multiple subpanels, dynamic stages, nested per-output stage settings, and
+class-specific input/output sets. The frontend should render the backend's
+canonical schema.
+
+Do not allow the browser to invent stage names or assume stage identity after
+append/delete. The backend owns the canonical sequence; the frontend should
+reload and rerender the returned schema after each structural mutation.
+
+Browser tests that wait for streaming scope status should not require an exact
+first frame number such as `Frame 0`. The stream may advance before the
+assertion, especially as startup work grows. Assert the frame pattern or the
+functional state instead.
+
+Generic module action status can be overwritten by later `module.state.changed`
+events. Tests should allow either the immediate action status or the resulting
+state-update status unless the exact status text is the feature under test.
+
+### Verification
+
+```text
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_app.py
+Ran 36 tests - OK
+
+conda run -n pyrpl-env npm test
+13 tests - OK
+
+conda run -n pyrpl-env npm run build
+OK
+
+conda run -n pyrpl-env npm run test:e2e
+5 Chromium tests - OK
+```
+
+## 2026-07-09 Acquisition Run/Stop and Spectrum Scope Ownership
+
+### Change
+
+- Removed standalone Scope and Spectrum Analyzer Pause buttons from the web UI.
+  The main user-facing controls are now `Single` and `Run`/`Stop`.
+- Replaced the custom Scope/Spectrum auto-pause and auto-resume behavior with
+  explicit stop-on-takeover behavior.
+- Spectrum Analyzer now owns both `iq2` and `scope` while configured/running,
+  and releases both on Stop/Release.
+- Spectrum setup attribute changes no longer reserve hardware while the
+  Spectrum Analyzer is stopped. Resources are reserved when acquisition
+  actions/configuration actually need them.
+- Fixed the Spectrum-then-Scope takeover path: Scope Run now always asks
+  Spectrum Analyzer to Stop/Release before starting, rather than relying on
+  the Spectrum Run button's connected state.
+- Scope tab activation no longer secretly starts Scope in fake/demo mode. Only
+  explicit Run/Stop should change acquisition ownership once the page is open.
+
+### PyRPL Reference
+
+PyRPL's `AcquisitionModule` has `pause()`/`resume()` as internal acquisition
+state transitions, but `stop()` is the user-facing action that cancels the
+current run and resets averaging for the next run. PyRPL's `Scope` also stops
+itself when ownership changes (`_ownership_changed`), and
+`SpectrumAnalyzer` takes scope ownership before configuring scope inputs.
+
+For this web migration, do not invent independent "auto-pause/resume" logic
+between Scope and Spectrum Analyzer. Treat Spectrum as an owner of the shared
+scope resource; starting Spectrum stops Scope, and starting Scope stops
+Spectrum.
+
+### Mistake Prevention
+
+Do not configure/reserve Spectrum Analyzer resources on every stopped-state
+settings edit. In PyRPL, acquisition-module setup collapses stopped/paused
+states back to stopped unless continuous running is active. Eager resource
+reservation before Run can make the later Run action fail because the resource
+is already owned by the same software module and the frontend may still try to
+stop the user Scope panel first.
+
+When removing a user-visible control such as Pause, remove the complete UI
+path: DOM button, element lookup, event handler, e2e selector, and any auto
+resume helper names. Leaving old helper names behind makes future behavior
+look intentional even when it is just stale code.
+
+Never use a frontend button label, `data-connected` flag, or WebSocket state
+as the source of truth for hardware ownership. A stream can be disconnected
+while the backend still owns `scope`/`iq2`, especially after single-shot or
+failed/interrupted acquisitions. Before starting Scope, send Spectrum Stop so
+the backend releases resources; before starting Spectrum, stop Scope only when
+the Scope stream is actually running.
+
+Changing tabs must not start or stop acquisitions. It creates races with the
+explicit Run/Stop controls and differs from PyRPL's instrument model. Tab
+activation may refresh layout, but acquisition state changes must come from
+the acquisition controls.
+
+### Verification
+
+```text
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_app.py
+Ran 34 tests - OK
+
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_scope.py
+Ran 3 tests - OK
+
+PYTHONPATH=. conda run -n pyrpl-env python pyrpl/test/test_pyrpl_websocket_protocol.py
+Ran 2 tests - OK
+
+conda run -n pyrpl-env npm test
+13 tests - OK
+
+conda run -n pyrpl-env npm run build
+OK
+
+conda run -n pyrpl-env npm run test:e2e
+4 Chromium tests - OK
+```
+
 ## 2026-07-09 Spectrum Layout and Scope Axis Precision
 
 ### Change

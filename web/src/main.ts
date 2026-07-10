@@ -1,5 +1,6 @@
 import { ScopeStream } from "./scope-stream";
 import { SpectrumPlot } from "./spectrum-plot";
+import { LockboxPanel, type LockboxSchema } from "./lockbox-panel";
 import Split from "split.js";
 import { PANEL_DEFINITIONS, type PanelId } from "./panel-registry";
 import { createRegisterPanel } from "./register-panel";
@@ -52,7 +53,6 @@ app.innerHTML = `
             <div class="action-row">
               <button id="single-frame" type="button">Single</button>
               <button id="connect-scope" type="button">Run</button>
-              <button id="pause-scope" type="button">Pause</button>
             </div>
             <div class="action-row">
               <button id="save-curve" type="button">Save Curve</button>
@@ -227,7 +227,6 @@ app.innerHTML = `
             <div class="action-row">
               <button id="spectrum-single" type="button">Single</button>
               <button id="spectrum-run" type="button">Run</button>
-              <button id="spectrum-pause" type="button">Pause</button>
               <button id="spectrum-save-curve" type="button">Save Curve</button>
             </div>
             <div class="action-row">
@@ -253,6 +252,50 @@ app.innerHTML = `
               <output id="spectrum-status">Spectrum analyzer ready</output>
             </div>
             <div id="spectrum-plot"></div>
+          </section>
+        </div>
+        </section>
+        <section class="workspace-panel" id="lockbox-panel" data-panel-id="lockbox" hidden>
+        <header class="panel-header">
+          <div>
+            <h2>Lockbox</h2>
+            <p>Model-based feedback sequence</p>
+          </div>
+          <div class="lockbox-header-controls">
+            <label>
+              <span>Class</span>
+              <select id="lockbox-class"></select>
+            </label>
+            <div class="actions" id="lockbox-actions"></div>
+          </div>
+        </header>
+        <div class="panel-content lockbox-content">
+          <section class="module-panel lockbox-overview">
+            <div class="control-row lockbox-attributes" id="lockbox-attributes"></div>
+            <output id="lockbox-status">Lockbox loading...</output>
+          </section>
+          <section class="lockbox-grid">
+            <div class="lockbox-column">
+              <header class="lockbox-section-header">
+                <h3>Inputs</h3>
+              </header>
+              <div id="lockbox-inputs"></div>
+              <div class="lockbox-plot" id="lockbox-input-plot"></div>
+            </div>
+            <div class="lockbox-column">
+              <header class="lockbox-section-header">
+                <h3>Outputs</h3>
+              </header>
+              <div id="lockbox-outputs"></div>
+              <div class="lockbox-plot" id="lockbox-output-plot"></div>
+            </div>
+            <div class="lockbox-column lockbox-sequence-column">
+              <header class="lockbox-section-header">
+                <h3>Sequence</h3>
+                <button id="lockbox-add-stage" type="button">Add Stage</button>
+              </header>
+              <div id="lockbox-stages"></div>
+            </div>
           </section>
         </div>
         </section>
@@ -482,44 +525,44 @@ style.textContent = `
 
   button {
     min-width: 0;
-    height: 28px;
+    height: 24px;
     border: 1px solid #53616b;
     border-radius: 6px;
     background: var(--button);
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+    padding: 0 7px;
+  }
+
+  .plot-button {
+    width: 30px;
+    padding: 0 4px;
+  }
+
+  select {
+    height: 28px;
+    width: 100%;
+    border: 1px solid #53616b;
+    border-radius: 6px;
+    background: #090d10;
     color: var(--text);
     font: inherit;
     font-size: 12px;
     padding: 0 8px;
   }
 
-  .plot-button {
-    width: 34px;
-    padding: 0 4px;
-  }
-
-  select {
-    height: 36px;
-    width: 100%;
-    border: 1px solid #53616b;
-    border-radius: 6px;
-    background: #090d10;
-    color: var(--text);
-    font: inherit;
-    font-size: 13px;
-    padding: 0 10px;
-  }
-
   input[type="number"],
   input[type="text"] {
-    height: 36px;
+    height: 28px;
     width: 100%;
     border: 1px solid #53616b;
     border-radius: 6px;
     background: #090d10;
     color: var(--text);
     font: inherit;
-    font-size: 13px;
-    padding: 0 10px;
+    font-size: 12px;
+    padding: 0 8px;
   }
 
   .select-control,
@@ -538,7 +581,7 @@ style.textContent = `
   }
 
   .toggle-control {
-    height: 36px;
+    height: 28px;
     white-space: nowrap;
   }
 
@@ -631,9 +674,9 @@ style.textContent = `
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    min-height: 48px;
+    min-height: 42px;
     border-bottom: 1px solid var(--panel-border);
-    padding: 7px 10px;
+    padding: 5px 8px;
   }
 
   .spectrum-header {
@@ -650,8 +693,8 @@ style.textContent = `
     display: flex;
     flex-direction: column;
     min-height: 0;
-    gap: 8px;
-    padding: 8px;
+    gap: 6px;
+    padding: 6px;
     overflow: hidden;
   }
 
@@ -800,6 +843,162 @@ style.textContent = `
     overflow: auto;
   }
 
+  .lockbox-header-controls {
+    display: grid;
+    grid-template-columns: minmax(150px, 220px) auto;
+    align-items: end;
+    gap: 8px;
+  }
+
+  #lockbox-actions {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: end;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  #lockbox-actions button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .lockbox-header-controls label {
+    display: grid;
+    gap: 3px;
+  }
+
+  .lockbox-header-controls label span {
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .lockbox-content {
+    overflow: auto;
+  }
+
+  .lockbox-overview {
+    flex: 0 0 auto;
+  }
+
+  .lockbox-attributes {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+
+  .lockbox-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(280px, 1fr));
+    gap: 6px;
+    min-height: 0;
+  }
+
+  .lockbox-column {
+    display: grid;
+    grid-template-rows: auto auto minmax(220px, 280px);
+    align-content: start;
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .lockbox-sequence-column {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .lockbox-section-header,
+  .lockbox-card-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .lockbox-section-header h3,
+  .lockbox-card-title h3 {
+    margin: 0;
+    font-size: 13px;
+  }
+
+  .lockbox-card-title span {
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  #lockbox-inputs,
+  #lockbox-outputs,
+  #lockbox-stages {
+    display: grid;
+    gap: 6px;
+    min-height: 0;
+  }
+
+  #lockbox-stages {
+    overflow: auto;
+  }
+
+  .lockbox-card {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 6px;
+  }
+
+  .lockbox-control-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+    gap: 6px;
+    align-items: end;
+  }
+
+  .lockbox-card label {
+    display: grid;
+    gap: 3px;
+  }
+
+  .lockbox-card label span {
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .lockbox-stage-output-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 6px;
+  }
+
+  .lockbox-stage-output {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    border: 1px solid #1e2a31;
+    border-radius: 6px;
+    padding: 6px;
+  }
+
+  .lockbox-stage-output h4 {
+    margin: 0;
+    font-size: 12px;
+  }
+
+  .lockbox-stage-output label {
+    display: grid;
+    gap: 3px;
+  }
+
+  .lockbox-plot {
+    min-width: 0;
+    min-height: 220px;
+    overflow: hidden;
+    background: #05080a;
+  }
+
+  .lockbox-plot > .uplot {
+    max-width: 100%;
+    max-height: 100%;
+  }
+
   .housekeeping-top-row {
     grid-template-columns: minmax(110px, 180px) auto minmax(180px, 1fr);
   }
@@ -846,16 +1045,16 @@ style.textContent = `
 	    display: grid;
 	    grid-template-columns: 1fr;
 	    align-items: end;
-	    gap: 8px;
+	    gap: 6px;
 	    min-height: 0;
-	    padding: 10px;
+	    padding: 8px;
 	    overflow: hidden;
 	  }
 
     .control-row {
       display: grid;
       align-items: end;
-      gap: 8px;
+      gap: 6px;
     }
 
     .signal-row {
@@ -985,7 +1184,9 @@ style.textContent = `
       .signal-row,
       .tune-row,
       .register-row,
-      .spectrum-content {
+      .spectrum-content,
+      .lockbox-grid,
+      .lockbox-header-controls {
         grid-template-columns: 1fr;
       }
 	
@@ -1013,6 +1214,7 @@ const iqPanel = requireElement<HTMLElement>("#iq-panel");
 const trigPanel = requireElement<HTMLElement>("#trig-panel");
 const pwmPanel = requireElement<HTMLElement>("#pwm-panel");
 const spectrumPanel = requireElement<HTMLElement>("#spectrumanalyzer-panel");
+const lockboxPanelElement = requireElement<HTMLElement>("#lockbox-panel");
 const housekeepingPanel = requireElement<HTMLElement>("#housekeeping-panel");
 const registersPanel = requireElement<HTMLElement>("#registers-panel");
 const panelElements: Record<PanelId, HTMLElement> = {
@@ -1023,6 +1225,7 @@ const panelElements: Record<PanelId, HTMLElement> = {
   trig: trigPanel,
   pwm: pwmPanel,
   spectrumanalyzer: spectrumPanel,
+  lockbox: lockboxPanelElement,
   housekeeping: housekeepingPanel,
   registers: registersPanel,
 };
@@ -1030,7 +1233,6 @@ const emptyWorkspace = requireElement<HTMLElement>("#empty-workspace");
 const status = requireElement<HTMLSpanElement>("#status");
 const connectButton = requireElement<HTMLButtonElement>("#connect-scope");
 const singleFrameButton = requireElement<HTMLButtonElement>("#single-frame");
-const pauseButton = requireElement<HTMLButtonElement>("#pause-scope");
 const saveCurveButton = requireElement<HTMLButtonElement>("#save-curve");
 const zoomOutButton = requireElement<HTMLButtonElement>("#zoom-out");
 const zoomInButton = requireElement<HTMLButtonElement>("#zoom-in");
@@ -1073,7 +1275,6 @@ const spectrumPlotHost = requireElement<HTMLDivElement>("#spectrum-plot");
 const spectrumStatus = requireElement<HTMLOutputElement>("#spectrum-status");
 const spectrumSingleButton = requireElement<HTMLButtonElement>("#spectrum-single");
 const spectrumRunButton = requireElement<HTMLButtonElement>("#spectrum-run");
-const spectrumPauseButton = requireElement<HTMLButtonElement>("#spectrum-pause");
 const spectrumSaveCurveButton = requireElement<HTMLButtonElement>("#spectrum-save-curve");
 const spectrumZoomOutButton = requireElement<HTMLButtonElement>("#spectrum-zoom-out");
 const spectrumZoomInButton = requireElement<HTMLButtonElement>("#spectrum-zoom-in");
@@ -1084,6 +1285,18 @@ const spectrumPanRightButton = requireElement<HTMLButtonElement>("#spectrum-pan-
 const spectrumPanUpButton = requireElement<HTMLButtonElement>("#spectrum-pan-up");
 const spectrumPanDownButton = requireElement<HTMLButtonElement>("#spectrum-pan-down");
 const spectrumZoomResetButton = requireElement<HTMLButtonElement>("#spectrum-zoom-reset");
+const lockboxPanel = new LockboxPanel({
+  root: lockboxPanelElement,
+  classSelect: requireElement<HTMLSelectElement>("#lockbox-class"),
+  status: requireElement<HTMLOutputElement>("#lockbox-status"),
+  actions: requireElement<HTMLElement>("#lockbox-actions"),
+  inputs: requireElement<HTMLElement>("#lockbox-inputs"),
+  outputs: requireElement<HTMLElement>("#lockbox-outputs"),
+  stages: requireElement<HTMLElement>("#lockbox-stages"),
+  addStage: requireElement<HTMLButtonElement>("#lockbox-add-stage"),
+  inputPlot: requireElement<HTMLElement>("#lockbox-input-plot"),
+  outputPlot: requireElement<HTMLElement>("#lockbox-output-plot"),
+});
 const sessionLine = requireElement<HTMLParagraphElement>("#session-line");
 createRegisterPanel({
   readAddr: requireElement<HTMLInputElement>("#register-read-addr"),
@@ -1119,6 +1332,7 @@ interface ScopeState {
   threshold?: number;
   hysteresis?: number;
   running_state?: string;
+  owner?: string | null;
 }
 
 interface SavedScopeState {
@@ -1177,6 +1391,23 @@ interface GenericModuleControls {
 }
 
 const genericModuleControls = new Map<string, GenericModuleControls>();
+const scopeParameterControls: Array<HTMLInputElement | HTMLSelectElement | HTMLButtonElement> = [
+  scopeInput1,
+  scopeInput2,
+  scopeTrigger,
+  scopeRunMode,
+  scopeDuration,
+  scopeAverage,
+  scopeTraceAverage,
+  scopeTriggerDelay,
+  scopeThreshold,
+  scopeHysteresis,
+  scopeStateSelect,
+  scopeStateName,
+  scopeStateSave,
+  scopeStateLoad,
+  scopeStateDelete,
+];
 
 let stream = new ScopeStream(plotHost, (message) => {
   status.textContent = message;
@@ -1187,8 +1418,6 @@ let spectrumPlot = new SpectrumPlot(spectrumPlotHost, (message) => {
 let eventSocket: WebSocket | null = null;
 let eventCount = 0;
 let runningState = "stopped";
-let scopeAutoPausedBySpectrum = false;
-let spectrumAutoPausedByScope = false;
 let workspaceState = loadWorkspaceState();
 let currentSession: { fake: boolean } | null = null;
 let scopeSplit: Split.Instance | null = null;
@@ -1221,6 +1450,8 @@ function exposeDebugState(): void {
     getSpectrumAverageCount: () => spectrumPlot.getAverageCount(),
     getSpectrumXRange: () => spectrumPlot.getXRange(),
     getSpectrumYRange: () => spectrumPlot.getYRange(),
+    getLockboxClassname: () => lockboxPanel.getClassname(),
+    getLockboxStageCount: () => lockboxPanel.getStageCount(),
   };
 }
 
@@ -1283,6 +1514,9 @@ function applyWorkspaceState(): void {
     window.requestAnimationFrame(() => spectrumPlot.refreshLayout());
   } else {
     destroySpectrumSplit();
+  }
+  if (visiblePanels.has("lockbox")) {
+    window.requestAnimationFrame(() => lockboxPanel.refreshLayout());
   }
 }
 
@@ -1441,6 +1675,7 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
       onDrag: () => {
         stream.refreshLayout();
         spectrumPlot.refreshLayout();
+        lockboxPanel.refreshLayout();
       },
       onDragEnd: (sizes) => {
         workspaceState = {
@@ -1450,6 +1685,7 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
         saveWorkspaceState(workspaceState);
         stream.refreshLayout();
         spectrumPlot.refreshLayout();
+        lockboxPanel.refreshLayout();
       },
     },
   );
@@ -1489,9 +1725,6 @@ async function setPanelEnabled(panelId: PanelId, enabled: boolean): Promise<void
     callScopeAction("stop").catch((error: Error) => {
       moduleStatus.textContent = error.message;
     });
-    resumeSpectrumAutoPausedByScope().catch((error: Error) => {
-      spectrumStatus.textContent = error.message;
-    });
     return;
   }
   if (panelId === "scope" && enabled && workspaceState.activePanelId === "scope") {
@@ -1501,9 +1734,6 @@ async function setPanelEnabled(panelId: PanelId, enabled: boolean): Promise<void
     stopSpectrumStream("Spectrum panel disabled");
     callSpectrumAction("stop").catch((error: Error) => {
       spectrumStatus.textContent = error.message;
-    });
-    resumeScopeAutoPausedBySpectrum().catch((error: Error) => {
-      moduleStatus.textContent = error.message;
     });
   }
 }
@@ -1516,10 +1746,13 @@ async function setActivePanel(panelId: PanelId): Promise<void> {
   saveWorkspaceState(workspaceState);
   applyWorkspaceState();
   if (panelId === "scope") {
-    await activateScopePanel();
+    window.requestAnimationFrame(() => stream.refreshLayout());
   }
   if (panelId === "spectrumanalyzer") {
     window.requestAnimationFrame(() => spectrumPlot.refreshLayout());
+  }
+  if (panelId === "lockbox") {
+    window.requestAnimationFrame(() => lockboxPanel.refreshLayout());
   }
 }
 
@@ -1529,6 +1762,9 @@ async function setWorkspaceLayoutMode(layoutMode: WorkspaceLayoutMode): Promise<
   applyWorkspaceState();
   if (workspaceState.panels.scope.enabled && layoutMode !== "tabs") {
     window.requestAnimationFrame(() => stream.refreshLayout());
+  }
+  if (workspaceState.panels.lockbox.enabled && layoutMode !== "tabs") {
+    window.requestAnimationFrame(() => lockboxPanel.refreshLayout());
   }
 }
 
@@ -1542,7 +1778,6 @@ async function activateScopePanel(): Promise<void> {
 
 function setRunningState(state: string): void {
   runningState = state;
-  pauseButton.disabled = !state.startsWith("running_");
 }
 
 function startStream(): void {
@@ -1561,25 +1796,12 @@ function stopStream(message = "Disconnected"): void {
   status.textContent = message;
 }
 
-async function pauseScopeForSpectrum(): Promise<void> {
+async function stopScopeForSpectrum(): Promise<void> {
   if (connectButton.dataset.connected !== "true") {
     return;
   }
-  scopeAutoPausedBySpectrum = true;
-  await callScopeAction("pause");
-  stopStream("Scope auto-paused by Spectrum");
-}
-
-async function resumeScopeAutoPausedBySpectrum(): Promise<void> {
-  if (!scopeAutoPausedBySpectrum) {
-    return;
-  }
-  scopeAutoPausedBySpectrum = false;
-  if (!workspaceState.panels.scope.enabled) {
-    return;
-  }
-  await callScopeAction("continuous");
-  startStream();
+  await callScopeAction("stop");
+  stopStream("Scope stopped: Spectrum owns the scope resource");
 }
 
 async function callScopeAction(action: string): Promise<Record<string, unknown>> {
@@ -1706,6 +1928,19 @@ function applyScopeState(state: ScopeState): void {
   }
   if (state.running_state) {
     setRunningState(state.running_state);
+  }
+  if ("owner" in state) {
+    setScopeOwner(typeof state.owner === "string" ? state.owner : null);
+  }
+}
+
+function setScopeOwner(owner: string | null): void {
+  scopeControlsPane.classList.toggle("is-owned", owner !== null);
+  for (const control of scopeParameterControls) {
+    control.disabled = owner !== null;
+  }
+  if (owner) {
+    moduleStatus.textContent = `scope occupied by ${owner}`;
   }
 }
 
@@ -2266,6 +2501,10 @@ function connectEvents(): void {
         if (controls && !controls.owner && message.module !== "spectrumanalyzer") {
           controls.status.textContent = `${message.module} state updated`;
         }
+      } else if (message.type === "module.state.changed" && message.module === "lockbox") {
+        lockboxPanel.applySchema(message.state as LockboxSchema).catch((error: Error) => {
+          moduleStatus.textContent = error.message;
+        });
       } else if (message.type === "module.states.changed" && message.module === "scope") {
         populateStateSelect(message.states ?? []);
         moduleStatus.textContent = `${message.states.length} saved state${message.states.length === 1 ? "" : "s"}`;
@@ -2303,7 +2542,6 @@ async function callSpectrumAction(action: string): Promise<Record<string, unknow
   const payload = await response.json();
   const state = payload.state as { running_state?: string; last_action?: string };
   spectrumPlot.setSettings((payload.state ?? {}) as Record<string, unknown>);
-  setSpectrumRunningState(state.running_state ?? "stopped");
   spectrumStatus.textContent = `${action}: ${state.running_state ?? "ok"}`;
   return payload;
 }
@@ -2324,32 +2562,15 @@ function stopSpectrumStream(message = "Spectrum stopped"): void {
   spectrumStatus.textContent = message;
 }
 
-function setSpectrumRunningState(state: string): void {
-  spectrumPauseButton.disabled = !state.startsWith("running_");
-}
-
-async function pauseSpectrumForScope(): Promise<void> {
-  if (spectrumRunButton.dataset.connected !== "true") {
-    return;
+async function stopSpectrumForScope(): Promise<void> {
+  await callSpectrumAction("stop");
+  if (spectrumRunButton.dataset.connected === "true" || spectrumPlot.isConnected()) {
+    stopSpectrumStream("Spectrum stopped: Scope owns the scope resource");
   }
-  spectrumAutoPausedByScope = true;
-  await callSpectrumAction("pause");
-  stopSpectrumStream("Spectrum auto-paused by Scope");
-}
-
-async function resumeSpectrumAutoPausedByScope(): Promise<void> {
-  if (!spectrumAutoPausedByScope) {
-    return;
-  }
-  spectrumAutoPausedByScope = false;
-  if (!workspaceState.panels.spectrumanalyzer.enabled) {
-    return;
-  }
-  await callSpectrumAction("continuous");
-  startSpectrumStream();
 }
 
 async function runSingleFrame(): Promise<void> {
+  await stopSpectrumForScope();
   await callScopeAction("single");
   await fetchSingleFrame();
 }
@@ -2412,14 +2633,11 @@ connectButton.addEventListener("click", () => {
   void (async () => {
     try {
       if (connectButton.dataset.connected === "true") {
-        scopeAutoPausedBySpectrum = false;
         await callScopeAction("stop");
         stopStream();
-        await resumeSpectrumAutoPausedByScope();
         return;
       }
-      scopeAutoPausedBySpectrum = false;
-      await pauseSpectrumForScope();
+      await stopSpectrumForScope();
       await callScopeAction("continuous");
       startStream();
     } catch (error) {
@@ -2432,19 +2650,6 @@ singleFrameButton.addEventListener("click", () => {
   runSingleFrame().catch((error: Error) => {
     status.textContent = error.message;
   });
-});
-
-pauseButton.addEventListener("click", () => {
-  void (async () => {
-    try {
-      scopeAutoPausedBySpectrum = false;
-      await callScopeAction("pause");
-      stopStream("Paused");
-      await resumeSpectrumAutoPausedByScope();
-    } catch (error) {
-      moduleStatus.textContent = error instanceof Error ? error.message : String(error);
-    }
-  })();
 });
 
 saveCurveButton.addEventListener("click", () => {
@@ -2469,43 +2674,34 @@ panDownButton.addEventListener("click", () => stream.panY(0.2));
 zoomResetButton.addEventListener("click", () => stream.resetZoom());
 
 spectrumSingleButton.addEventListener("click", () => {
-  callSpectrumAction("single")
-    .then(() => {
-      spectrumPlot.connect();
-      window.setTimeout(() => spectrumPlot.close(), 300);
-    })
-    .catch((error: Error) => {
-      spectrumStatus.textContent = error.message;
-    });
-});
-
-spectrumRunButton.addEventListener("click", () => {
   void (async () => {
     try {
-      if (spectrumRunButton.dataset.connected === "true") {
-        spectrumAutoPausedByScope = false;
-        await callSpectrumAction("stop");
-        stopSpectrumStream();
-        await resumeScopeAutoPausedBySpectrum();
-        return;
-      }
-      spectrumAutoPausedByScope = false;
-      await pauseScopeForSpectrum();
-      await callSpectrumAction("continuous");
-      startSpectrumStream();
+      await stopScopeForSpectrum();
+      await callSpectrumAction("single");
+      spectrumPlot.connect();
+      window.setTimeout(() => {
+        spectrumPlot.close();
+        callSpectrumAction("stop").catch((error: Error) => {
+          spectrumStatus.textContent = error.message;
+        });
+      }, 300);
     } catch (error) {
       spectrumStatus.textContent = error instanceof Error ? error.message : String(error);
     }
   })();
 });
 
-spectrumPauseButton.addEventListener("click", () => {
+spectrumRunButton.addEventListener("click", () => {
   void (async () => {
     try {
-      spectrumAutoPausedByScope = false;
-      await callSpectrumAction("pause");
-      stopSpectrumStream("Spectrum paused");
-      await resumeScopeAutoPausedBySpectrum();
+      if (spectrumRunButton.dataset.connected === "true") {
+        await callSpectrumAction("stop");
+        stopSpectrumStream();
+        return;
+      }
+      await stopScopeForSpectrum();
+      await callSpectrumAction("continuous");
+      startSpectrumStream();
     } catch (error) {
       spectrumStatus.textContent = error instanceof Error ? error.message : String(error);
     }
@@ -2698,6 +2894,7 @@ async function startup(): Promise<void> {
   await loadAsgControls();
   await loadHkControls();
   await loadGenericPanels();
+  await lockboxPanel.load();
   connectEvents();
   applyWorkspaceState();
   if (!workspaceState.activePanelId) {

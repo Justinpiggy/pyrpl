@@ -10,7 +10,17 @@ interface Window {
     getTraceAverage: () => number;
     getRunningState: () => string;
     isPanelEnabled: (
-      panelId: "scope" | "asg" | "pid" | "iq" | "trig" | "pwm" | "spectrumanalyzer" | "housekeeping" | "registers",
+      panelId:
+        | "scope"
+        | "asg"
+        | "pid"
+        | "iq"
+        | "trig"
+        | "pwm"
+        | "spectrumanalyzer"
+        | "lockbox"
+        | "housekeeping"
+        | "registers",
     ) => boolean;
     getScopeSplitSizes: () => [number, number];
     getWorkspaceLayoutMode: () => "tabs" | "split-horizontal" | "split-vertical";
@@ -23,6 +33,7 @@ interface Window {
       | "trig"
       | "pwm"
       | "spectrumanalyzer"
+      | "lockbox"
       | "housekeeping"
       | "registers"
       | null;
@@ -34,5 +45,7 @@ interface Window {
     getSpectrumAverageCount: () => number;
     getSpectrumXRange: () => { min: number; max: number };
     getSpectrumYRange: () => { min: number; max: number };
+    getLockboxClassname: () => string | null;
+    getLockboxStageCount: () => number;
   };
 }
