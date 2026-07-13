@@ -43,6 +43,10 @@ export function loadWorkspaceState(): WorkspaceState {
   } catch {
     return defaultWorkspaceState();
   }
+  return normalizeWorkspaceState(saved);
+}
+
+export function normalizeWorkspaceState(saved: unknown): WorkspaceState {
   if (!saved || typeof saved !== "object") {
     return defaultWorkspaceState();
   }

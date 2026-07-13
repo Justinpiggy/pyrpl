@@ -40,6 +40,10 @@ class ModuleAttributeWriteRequest(BaseModel):
     value: Any
 
 
+class WorkspaceWriteRequest(BaseModel):
+    workspace: dict[str, Any]
+
+
 class LockboxClassRequest(BaseModel):
     classname: str
 
@@ -65,6 +69,26 @@ async def handle_control_message(
 
     if command == "session.get":
         return {"id": _message_id(message), "ok": True, "type": "session", "session": session.info()}
+
+    if command == "workspace.get":
+        return {
+            "id": _message_id(message),
+            "ok": True,
+            "type": "workspace",
+            "workspace": session.workspace_state(),
+        }
+
+    if command == "workspace.set":
+        try:
+            workspace = session.save_workspace_state(message.get("workspace", {}))
+        except (TypeError, ValueError) as exc:
+            return _control_error(message, "bad_request", str(exc))
+        return {
+            "id": _message_id(message),
+            "ok": True,
+            "type": "workspace",
+            "workspace": workspace,
+        }
 
     if command == "module.list":
         return {"id": _message_id(message), "ok": True, "type": "module.list", "modules": session.modules()}
@@ -346,6 +370,23 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @app.get("/api/session")
     async def session_info():
         return app.state.session.info()
+
+    @app.get("/api/config")
+    async def config_info():
+        info = app.state.session.info()
+        return {"config_file": info.get("config_file")}
+
+    @app.get("/api/workspace")
+    async def get_workspace():
+        return {"workspace": app.state.session.workspace_state()}
+
+    @app.post("/api/workspace")
+    async def save_workspace(request: WorkspaceWriteRequest):
+        try:
+            workspace = app.state.session.save_workspace_state(request.workspace)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"workspace": workspace}
 
     @app.get("/api/assets")
     async def assets():

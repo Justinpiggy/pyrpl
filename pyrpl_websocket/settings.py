@@ -15,6 +15,8 @@ class ServerSettings:
     bind_port: int = 8000
     scope_interval: float = 0.05
     state_file: str | None = None
+    config: str | None = None
+    source: str | None = None
 
     @property
     def fake(self) -> bool:

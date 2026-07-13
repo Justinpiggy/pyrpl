@@ -733,6 +733,24 @@ included as package data.
 - PyQt GUI remains available as legacy/developer fallback.
 - CI covers backend API and frontend renderer smoke tests.
 
+### Parity Gate For Each Panel
+
+Before a panel is treated as migrated, compare it against
+`WEB_PARITY_AUDIT.md`. The web implementation must account for the original
+PyRPL `_gui_attributes`, `_setup_attributes`, widget-specific action buttons,
+and control routines. Missing original functions should be implemented or
+listed as explicit parity gaps; debug helpers and web-only convenience features
+should not be promoted to normal user controls unless the original workflow
+requires them.
+
+### Configuration File Compatibility
+
+The web server now uses a PyRPL-compatible YAML config by default:
+`~/pyrpl_user_dir/config/pyrpl-websocket.yml`, or the equivalent directory under
+`PYRPL_USER_DIR`. Module setup branches and `<module>_states` branches follow
+legacy PyRPL layout. Web-only workspace layout is kept under
+`pyrpl_websocket.workspace` so it does not collide with legacy module data.
+
 ## Open Design Questions
 
 - Should the first web backend still import `qtpy`, or should the module layer

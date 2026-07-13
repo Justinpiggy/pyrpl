@@ -19,6 +19,9 @@ export default defineConfig({
     command:
       "python -m pyrpl_websocket --hostname _FAKE_ --bind-host 127.0.0.1 --bind-port 8765 --scope-interval 0.2",
     cwd: "..",
+    env: {
+      PYRPL_USER_DIR: "/tmp/pyrpl-websocket-e2e-user-dir",
+    },
     url: "http://127.0.0.1:8765",
     reuseExistingServer: false,
     timeout: 15_000,

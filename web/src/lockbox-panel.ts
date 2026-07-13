@@ -1,6 +1,8 @@
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
+import { PLOT_COLORS, plotAxis } from "./plot-theme";
+
 export interface LockboxAttribute {
   name: string;
   label: string;
@@ -400,19 +402,13 @@ export class LockboxPanel {
           {},
           ...payload.series.map((series, index) => ({
             label: series.label,
-            stroke: index === 0 ? "#4fd17f" : "#72a7ff",
+            stroke: index === 0 ? PLOT_COLORS.green : PLOT_COLORS.blue,
             width: 2,
           })),
         ],
         axes: [
-          {
-            stroke: "#9aacb6",
-            grid: { stroke: "#26333b", width: 1 },
-          },
-          {
-            stroke: "#9aacb6",
-            grid: { stroke: "#26333b", width: 1 },
-          },
+          plotAxis(),
+          plotAxis(),
         ],
       },
       [payload.x, ...payload.series.map((series) => series.values)],

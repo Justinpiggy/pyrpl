@@ -10,8 +10,9 @@ import {
   loadWorkspaceState,
   normalizeLayoutMode,
   normalizeSplitSizes,
+  normalizeWorkspaceState,
   normalizeWorkspaceSplitSizes,
-  saveWorkspaceState,
+  saveWorkspaceState as saveWorkspaceStateLocal,
   type WorkspaceState,
   type WorkspaceLayoutMode,
 } from "./workspace";
@@ -377,6 +378,12 @@ style.textContent = `
     --muted: #9aacb6;
     --button: #1d272e;
     --button-hover: #283640;
+    --plot-bg: #05080a;
+    --plot-text: #edf4f7;
+    --plot-axis: #93a7b3;
+    --plot-grid: #1c2a33;
+    --plot-yellow: #f2c94c;
+    --plot-magenta: #f05bd7;
   }
 
   * {
@@ -818,37 +825,106 @@ style.textContent = `
 
   .iir-card {
     grid-column: 1 / -1;
-    min-height: min(720px, calc(100vh - 160px));
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto auto auto;
   }
 
   .iir-card .generic-module-row {
-    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   }
 
   .iir-plot {
-    min-height: 460px;
+    min-height: 0;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 6px;
+    grid-template-rows: auto auto auto;
+    gap: 8px;
   }
 
   .iir-plot-toolbar {
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     color: var(--muted);
     font-size: 11px;
   }
 
+  .iir-plot-toolbar button {
+    padding: 4px 10px;
+    min-height: 26px;
+  }
+
   .iir-plot-grid {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 6px;
+    grid-template-rows: repeat(2, clamp(360px, 40vh, 520px));
+    gap: 8px;
     min-height: 0;
+    overflow: hidden;
   }
 
   .iir-plot-frame {
     min-width: 0;
     min-height: 0;
+    position: relative;
+    contain: size layout;
+    overflow: hidden;
+    background: var(--plot-bg);
+  }
+
+  .iir-list-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(170px, 1fr));
+    gap: 8px;
+    min-height: 0;
+  }
+
+  .iir-list-editor {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+    border: 1px solid var(--border);
+    padding: 6px;
+  }
+
+  .iir-list-editor header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px 26px 26px;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .iir-list-editor header span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .iir-list-editor button {
+    min-width: 0;
+    padding: 3px 0;
+  }
+
+  .iir-list-values {
+    display: grid;
+    gap: 3px;
+    max-height: 116px;
+    overflow: auto;
+  }
+
+  .iir-list-value {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    align-items: center;
+    gap: 4px;
+    padding: 2px;
+  }
+
+  .iir-list-value.is-selected {
+    outline: 1px solid var(--plot-yellow);
+    background: rgba(242, 201, 76, 0.08);
   }
 
   .iir-marker {
@@ -862,7 +938,7 @@ style.textContent = `
     border: 0;
     border-radius: 50%;
     background: transparent;
-    color: #f4d44d;
+    color: var(--plot-yellow);
     font-size: 13px;
     font-weight: 700;
     line-height: 1;
@@ -871,7 +947,7 @@ style.textContent = `
   }
 
   .iir-marker.is-zero {
-    color: #f05bd7;
+    color: var(--plot-magenta);
   }
 
   .iir-marker.is-complex {
@@ -880,8 +956,8 @@ style.textContent = `
 
   .iir-marker.is-selected,
   .iir-marker.is-dragging {
-    outline: 2px solid #f4d44d;
-    background: rgba(244, 212, 77, 0.14);
+    outline: 2px solid var(--plot-yellow);
+    background: rgba(242, 201, 76, 0.14);
   }
 
   .module-panel.is-owned {
@@ -1061,7 +1137,7 @@ style.textContent = `
     min-width: 0;
     min-height: 220px;
     overflow: hidden;
-    background: #05080a;
+    background: var(--plot-bg);
   }
 
   .lockbox-plot > .uplot {
@@ -1188,22 +1264,32 @@ style.textContent = `
     min-height: 0;
     height: 100%;
     overflow: hidden;
-    background: #05080a;
+    background: var(--plot-bg);
   }
 
   #scope-plot > .uplot,
-  #spectrum-plot > .uplot {
+  #spectrum-plot > .uplot,
+  .iir-plot-frame > .uplot,
+  .lockbox-plot > .uplot {
     max-width: 100%;
     max-height: 100%;
   }
 
   .uplot {
+    color: var(--plot-text);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
 
   .uplot .u-title,
-  .uplot .u-legend {
-    color: var(--text);
+  .uplot .u-legend,
+  .uplot .u-legend th,
+  .uplot .u-legend td {
+    color: var(--plot-text);
+  }
+
+  .uplot .u-cursor-x,
+  .uplot .u-cursor-y {
+    border-color: var(--plot-axis);
   }
 
   .uplot .u-over {
@@ -1400,6 +1486,12 @@ interface ScopeState {
   run_mode?: string;
   duration?: number;
   average?: boolean;
+  ch1_active?: boolean;
+  ch2_active?: boolean;
+  ch_math_active?: boolean;
+  math_formula?: string;
+  xy_mode?: boolean;
+  rolling_mode?: boolean;
   trace_average?: number;
   trigger_delay?: number;
   threshold?: number;
@@ -1502,6 +1594,31 @@ let workspaceSplit: Split.Instance | null = null;
 let workspaceSplitMode: WorkspaceLayoutMode | null = null;
 let workspaceSplitPanelSignature = "";
 
+function saveWorkspaceState(state: WorkspaceState): void {
+  saveWorkspaceStateLocal(state);
+  void fetch("/api/workspace", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ workspace: state }),
+  }).catch(() => {
+    /* Local storage remains the fallback if the server is unavailable. */
+  });
+}
+
+async function loadWorkspaceStateFromConfig(): Promise<void> {
+  const response = await fetch("/api/workspace");
+  if (!response.ok) {
+    return;
+  }
+  const payload = await response.json();
+  if (payload.workspace && typeof payload.workspace === "object") {
+    workspaceState = normalizeWorkspaceState(payload.workspace);
+    saveWorkspaceStateLocal(workspaceState);
+  } else {
+    saveWorkspaceState(workspaceState);
+  }
+}
+
 function exposeDebugState(): void {
   window.pyrplScope = {
     getFrameSequence: () => stream.getFrameSequence(),
@@ -1520,12 +1637,16 @@ function exposeDebugState(): void {
     getActivePanelId: () => workspaceState.activePanelId,
     getCsvLineCount: () => stream.exportCsv().trimEnd().split("\n").length,
     getDisplayedStats: () => stream.getDisplayedStats(),
+    getDisplayedDataFingerprint: () => stream.getDisplayedDataFingerprint(),
     moduleStatusText: () => moduleStatus.textContent ?? "",
     statusText: () => status.textContent ?? "",
     getSpectrumSeriesCount: () => spectrumPlot.getSeriesCount(),
     getSpectrumAverageCount: () => spectrumPlot.getAverageCount(),
     getSpectrumXRange: () => spectrumPlot.getXRange(),
     getSpectrumYRange: () => spectrumPlot.getYRange(),
+    getIirXRange: () => iirPlot?.getXRange() ?? null,
+    getIirMagnitudeYRange: () => iirPlot?.getMagnitudeYRange() ?? null,
+    getIirPhaseYRange: () => iirPlot?.getPhaseYRange() ?? null,
     getLockboxClassname: () => lockboxPanel.getClassname(),
     getLockboxStageCount: () => lockboxPanel.getStageCount(),
   };
@@ -1965,6 +2086,12 @@ function applyScopeControlValue(attribute: string, value: string | number | bool
     updatePlotTimeSettings();
   } else if (attribute === "average") {
     scopeAverage.checked = Boolean(value);
+  } else if (attribute === "ch1_active") {
+    showCh1Toggle.checked = Boolean(value);
+    stream.setChannelVisible(1, showCh1Toggle.checked);
+  } else if (attribute === "ch2_active") {
+    showCh2Toggle.checked = Boolean(value);
+    stream.setChannelVisible(2, showCh2Toggle.checked);
   } else if (attribute === "trace_average") {
     scopeTraceAverage.value = String(value);
     stream.setTraceAverage(Number(value));
@@ -2060,6 +2187,10 @@ async function loadScopeControls(): Promise<void> {
   populateSelect(scopeRunMode, attributes.get("run_mode")!);
   populateSelect(scopeDuration, attributes.get("duration")!);
   scopeAverage.checked = Boolean(attributes.get("average")?.value);
+  showCh1Toggle.checked = Boolean(attributes.get("ch1_active")?.value ?? true);
+  stream.setChannelVisible(1, showCh1Toggle.checked);
+  showCh2Toggle.checked = Boolean(attributes.get("ch2_active")?.value ?? true);
+  stream.setChannelVisible(2, showCh2Toggle.checked);
   populateNumber(scopeTraceAverage, attributes.get("trace_average")!);
   populateNumber(scopeTriggerDelay, attributes.get("trigger_delay")!);
   populateNumber(scopeThreshold, attributes.get("threshold")!);
@@ -2290,6 +2421,9 @@ async function buildGenericModuleCard(container: HTMLElement, moduleName: string
     ? orderSpectrumAttributes(attributesPayload.attributes as ModuleAttribute[])
     : (attributesPayload.attributes as ModuleAttribute[]);
   for (const attribute of attributes) {
+    if (moduleName === "iir" && isIirPoleZeroList(attribute.name)) {
+      continue;
+    }
     const field = createGenericAttributeField(moduleName, attribute, statusOutput);
     controls.inputs.set(attribute.name, field.input);
     controls.fields.set(attribute.name, field.label);
@@ -2332,6 +2466,13 @@ async function buildGenericModuleCard(container: HTMLElement, moduleName: string
   }
   container.appendChild(card);
   applyGenericModuleState(moduleName, statePayload.state ?? {});
+}
+
+function isIirPoleZeroList(attribute: string): boolean {
+  return attribute === "real_poles" ||
+    attribute === "real_zeros" ||
+    attribute === "complex_poles" ||
+    attribute === "complex_zeros";
 }
 
 function createGenericAttributeField(
@@ -2850,10 +2991,18 @@ spectrumZoomResetButton.addEventListener("click", () => spectrumPlot.resetZoom()
 
 showCh1Toggle.addEventListener("change", () => {
   stream.setChannelVisible(1, showCh1Toggle.checked);
+  setScopeAttribute("ch1_active", showCh1Toggle.checked).catch((error: Error) => {
+    moduleStatus.textContent = error.message;
+    showCh1Toggle.checked = stream.getChannelVisible(1);
+  });
 });
 
 showCh2Toggle.addEventListener("change", () => {
   stream.setChannelVisible(2, showCh2Toggle.checked);
+  setScopeAttribute("ch2_active", showCh2Toggle.checked).catch((error: Error) => {
+    moduleStatus.textContent = error.message;
+    showCh2Toggle.checked = stream.getChannelVisible(2);
+  });
 });
 
 scopeInput1.addEventListener("change", () => {
@@ -3021,6 +3170,7 @@ async function startup(): Promise<void> {
   await loadGenericPanels();
   await lockboxPanel.load();
   connectEvents();
+  await loadWorkspaceStateFromConfig();
   applyWorkspaceState();
   if (!workspaceState.activePanelId) {
     status.textContent = "No panel enabled";

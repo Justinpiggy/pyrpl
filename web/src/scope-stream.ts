@@ -1,5 +1,7 @@
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
+
+import { PLOT_COLORS, plotAxis } from "./plot-theme";
 import {
   averageFrameData,
   clampXRange,
@@ -236,6 +238,20 @@ export class ScopeStream {
     };
   }
 
+  getDisplayedDataFingerprint(): number | null {
+    if (!this.displayedData) {
+      return null;
+    }
+    let hash = 2166136261;
+    const step = Math.max(1, Math.floor(this.displayedData.x.length / 512));
+    for (let index = 0; index < this.displayedData.x.length; index += step) {
+      hash = fnvNumber(hash, this.displayedData.x[index]);
+      hash = fnvNumber(hash, this.displayedData.ch1[index]);
+      hash = fnvNumber(hash, this.displayedData.ch2[index]);
+    }
+    return hash >>> 0;
+  }
+
   downloadCsv(filename: string): void {
     const blob = new Blob([this.exportCsv()], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -264,29 +280,25 @@ export class ScopeStream {
         y: { auto: false, min: DEFAULT_Y_MIN, max: DEFAULT_Y_MAX },
       },
       axes: [
-        {
+        plotAxis({
           label: "Time",
-          stroke: "#93a7b3",
-          grid: { stroke: "#1c2a33", width: 1 },
           values: (plot, ticks) => this.formatTimeTicks(plot, ticks as number[]),
-        },
-        {
+        }),
+        plotAxis({
           label: "Amplitude",
-          stroke: "#93a7b3",
-          grid: { stroke: "#1c2a33", width: 1 },
-        },
+        }),
       ],
       series: [
         {},
         {
           label: "CH1",
-          stroke: "#4fd17f",
+          stroke: PLOT_COLORS.green,
           width: 1.5,
           points: { show: false },
         },
         {
           label: "CH2",
-          stroke: "#ef6461",
+          stroke: PLOT_COLORS.red,
           width: 1.5,
           points: { show: false },
         },
@@ -560,4 +572,17 @@ function minMax(data: Float32Array, prefix: "ch1" | "ch2"): Record<`${typeof pre
     [`${prefix}Min`]: min === Number.POSITIVE_INFINITY ? 0 : min,
     [`${prefix}Max`]: max === Number.NEGATIVE_INFINITY ? 0 : max,
   } as Record<`${typeof prefix}Min` | `${typeof prefix}Max`, number>;
+}
+
+function fnvNumber(hash: number, value: number): number {
+  const normalized = Math.round(Number.isFinite(value) ? value * 1_000_000 : 0);
+  hash ^= normalized & 0xff;
+  hash = Math.imul(hash, 16777619);
+  hash ^= (normalized >> 8) & 0xff;
+  hash = Math.imul(hash, 16777619);
+  hash ^= (normalized >> 16) & 0xff;
+  hash = Math.imul(hash, 16777619);
+  hash ^= (normalized >> 24) & 0xff;
+  hash = Math.imul(hash, 16777619);
+  return hash;
 }

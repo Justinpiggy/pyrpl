@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 from pyrpl_websocket.app import create_app, handle_control_message
 from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
@@ -104,6 +105,8 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("/", paths)
         self.assertIn("/api/health", paths)
         self.assertIn("/api/session", paths)
+        self.assertIn("/api/config", paths)
+        self.assertIn("/api/workspace", paths)
         self.assertIn("/api/assets", paths)
         self.assertIn("/api/register/read", paths)
         self.assertIn("/api/register/write", paths)
@@ -650,6 +653,14 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.client.fpgamemory[base + 0x4], 2)
             session.set_module_attribute("iir", "loops", 8)
             self.assertEqual(session.client.fpgamemory[base + 0x100], 8)
+            first_design = tuple(session.client.fpgamemory.get(base + 0x8000 + 4 * index, 0) for index in range(24))
+            self.assertTrue(any(value != 0 for value in first_design))
+            session.set_module_attribute("iir", "real_poles", "-1000")
+            session.set_module_attribute("iir", "real_zeros", "-100")
+            second_design = tuple(session.client.fpgamemory.get(base + 0x8000 + 4 * index, 0) for index in range(24))
+            self.assertTrue(any(value != 0 for value in second_design))
+            self.assertNotEqual(first_design, second_design)
+            self.assertEqual(session.client.fpgamemory[base + 0x104] & 1, 1)
             session.set_module_attribute("iir", "inputfilter", "1000, 0, -2000")
             self.assertEqual(
                 session.client.fpgamemory[base + 0x120],
@@ -659,11 +670,9 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.client.fpgamemory[base + 0x104] & 1, 1)
             session.set_module_attribute("iir", "bypass", True)
             self.assertEqual(session.client.fpgamemory[base + 0x104] & 2, 2)
-            session.call_module_action("iir", "unity")
-            self.assertEqual(session.iir_settings.loops, 1)
-            self.assertIn(base + 0x8000, session.client.fpgamemory)
-            session.call_module_action("iir", "zero")
-            self.assertEqual(session.client.fpgamemory[base + 0x100], 1)
+            self.assertEqual({action["name"] for action in session.module_actions("iir")}, {"setup"})
+            with self.assertRaises(KeyError):
+                session.call_module_action("iir", "unity")
         finally:
             session.close()
 
@@ -701,7 +710,8 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.client.fpgamemory[trig_base + 0x11C], float_to_register(0.0625))
             session.set_module_attribute("trig", "phase_offset", 180)
             self.assertEqual(session.client.fpgamemory[trig_base + 0x110], phase_to_register(180, bits=14))
-            session.call_module_action("trig", "arm")
+            self.assertEqual({action["name"] for action in session.module_actions("trig")}, {"setup"})
+            session.call_module_action("trig", "setup")
             self.assertTrue(session.module_state("trig")["armed"])
             self.assertEqual(session.client.fpgamemory[trig_base + 0x100] & 1, 1)
 
@@ -736,7 +746,7 @@ class WebAppTest(unittest.TestCase):
             self.assertIn("single", actions)
             self.assertIn("continuous", actions)
             self.assertIn("stop", actions)
-            self.assertIn("trigger_test", actions)
+            self.assertNotIn("trigger_test", actions)
 
             continuous = session.call_module_action("scope", "continuous")
             self.assertEqual(continuous["running_state"], "running_continuous")
@@ -922,6 +932,44 @@ class WebAppTest(unittest.TestCase):
                 second.set_module_attribute("scope", "threshold", -0.375)
                 loaded = second.load_module_state("scope", "persisted")
                 self.assertEqual(loaded["threshold"], 0.375)
+            finally:
+                second.close()
+
+    def test_session_uses_pyrpl_compatible_yaml_config(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_file = str(Path(tmpdir) / "web_config.yml")
+            first = WebSession(ServerSettings(hostname="_FAKE_", config=config_file))
+            try:
+                first.set_module_attribute("scope", "threshold", 0.25)
+                first.set_module_attribute("scope", "ch2_active", False)
+                first.set_module_attribute("iq1", "frequency", 1e6)
+                first.save_module_state("scope", "high")
+                first.save_workspace_state(
+                    {
+                        "activePanelId": "scope",
+                        "layoutMode": "split-horizontal",
+                        "workspaceSplitSizes": [60, 40],
+                        "panels": {"scope": {"enabled": True, "splitSizes": [30, 70]}},
+                    }
+                )
+            finally:
+                first.close()
+
+            payload = yaml.safe_load(Path(config_file).read_text(encoding="utf-8"))
+            self.assertEqual(payload["pyrpl"]["name"], "web_config")
+            self.assertEqual(payload["scope"]["threshold"], 0.25)
+            self.assertFalse(payload["scope"]["ch2_active"])
+            self.assertEqual(payload["iq1"]["frequency"], 1e6)
+            self.assertEqual(payload["scope_states"]["high"]["threshold"], 0.25)
+            self.assertEqual(payload["pyrpl_websocket"]["workspace"]["layoutMode"], "split-horizontal")
+
+            second = WebSession(ServerSettings(hostname="_FAKE_", config=config_file))
+            try:
+                self.assertEqual(second.get_module_attribute("scope", "threshold"), 0.25)
+                self.assertFalse(second.get_module_attribute("scope", "ch2_active"))
+                self.assertEqual(second.get_module_attribute("iq1", "frequency"), 1e6)
+                self.assertEqual(second.module_states("scope")[0]["name"], "high")
+                self.assertEqual(second.workspace_state()["workspaceSplitSizes"], [60, 40])
             finally:
                 second.close()
 

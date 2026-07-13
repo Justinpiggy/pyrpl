@@ -12,10 +12,8 @@ from threading import Lock
 import numpy as np
 
 from .asg_registers import disable_asg, sync_asg_setting, sync_asg_settings, trigger_asg
+from .config import WebConfig
 from .dsp_registers import (
-    load_iir_unity_coefficients,
-    load_iir_zero_coefficients,
-    arm_trig,
     sync_iir_setting,
     sync_iir_settings,
     sync_iq_phases,
@@ -116,6 +114,8 @@ class WebSession:
         self.pwm_settings = {f"pwm{index}": PwmSettings() for index in range(2)}
         self.spectrum_settings = SpectrumAnalyzerSettings()
         self.lockbox = LockboxState()
+        config_enabled = settings.config is not None or settings.source is not None
+        self.config = None if settings.state_file or not config_enabled else WebConfig(settings.config, settings.source)
         self.module_owners: dict[str, str | None] = {
             "scope": None,
             "asg0": None,
@@ -126,6 +126,7 @@ class WebSession:
             "iir": None,
             **{f"pwm{index}": None for index in range(2)},
         }
+        self._load_config_setup_attributes()
         self._module_states: dict[str, dict[str, dict]] = self._load_saved_states()
         self._fake_scope_clock = 0
         self._hardware_rolling_started = False
@@ -153,6 +154,7 @@ class WebSession:
             "spectrumanalyzer": self.spectrum_settings.as_dict(),
             "lockbox": self.lockbox.schema(),
             "owners": dict(self.module_owners),
+            "config_file": str(self.config.path) if self.config and self.config.path else self.settings.state_file,
         }
 
     def modules(self) -> list[dict]:
@@ -299,43 +301,52 @@ class WebSession:
                 normalized = set_scope_attribute(self.scope_settings, attribute, value)
                 sync_scope_setting(self.client, self.scope_settings, attribute)
                 self._hardware_rolling_started = False
+                self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name in self.asg_settings:
                 settings = self.asg_settings[module_name]
                 normalized = set_asg_attribute(settings, attribute, value)
                 sync_asg_setting(self.client, _asg_channel(module_name), settings, attribute)
+                self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name == "hk":
                 normalized = set_hk_attribute(self.hk_settings, attribute, value)
                 sync_hk_setting(self.client, self.hk_settings, attribute)
+                self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name in self.pid_settings:
                 settings = self.pid_settings[module_name]
                 normalized = set_pid_attribute(settings, attribute, value)
                 sync_pid_setting(self.client, module_name, settings, attribute)
+                self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name in self.iq_settings:
                 settings = self.iq_settings[module_name]
                 normalized = set_iq_attribute(settings, attribute, value)
                 sync_iq_setting(self.client, module_name, settings, attribute)
+                self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name == "iir":
                 normalized = set_iir_attribute(self.iir_settings, attribute, value)
                 sync_iir_setting(self.client, self.iir_settings, attribute)
+                self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name == "trig":
                 normalized = set_trig_attribute(self.trig_settings, attribute, value)
                 sync_trig_setting(self.client, self.trig_settings, attribute)
+                self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name in self.pwm_settings:
                 settings = self.pwm_settings[module_name]
                 normalized = set_pwm_attribute(settings, attribute, value)
                 sync_pwm_setting(self.client, module_name, settings, attribute)
+                self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name == "spectrumanalyzer":
                 normalized = set_spectrum_attribute(self.spectrum_settings, attribute, value)
                 if attribute != "trace_average" and self.spectrum_settings.running_state == "running_continuous":
                     self._configure_spectrum_no_lock()
+                self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             raise KeyError(module_name)
 
@@ -364,20 +375,12 @@ class WebSession:
             if module_name == "iir":
                 if action == "setup":
                     sync_iir_settings(self.client, self.iir_settings)
-                elif action == "unity":
-                    load_iir_unity_coefficients(self.client)
-                    self.iir_settings.loops = 1
-                elif action == "zero":
-                    load_iir_zero_coefficients(self.client)
-                    self.iir_settings.loops = 1
                 else:
                     raise KeyError(action)
                 return self.iir_settings.as_dict()
             if module_name == "trig":
                 if action == "setup":
                     sync_trig_settings(self.client, self.trig_settings)
-                elif action == "arm":
-                    arm_trig(self.client, self.trig_settings)
                 else:
                     raise KeyError(action)
                 return self.trig_settings.as_dict()
@@ -484,6 +487,8 @@ class WebSession:
             state = self._module_states[module_name][state_name]
             for attribute, value in state.items():
                 self._set_module_attribute_no_lock(module_name, attribute, value)
+            if self.config is not None:
+                self.config.set_module_setup(module_name, self._module_setup_dict(module_name))
             return self.module_state(module_name)
 
     def delete_module_state(self, module_name: str, state_name: str) -> dict:
@@ -494,6 +499,18 @@ class WebSession:
             state = self._module_states[module_name].pop(state_name)
             self._persist_saved_states()
             return {"name": state_name, "state": state}
+
+    def workspace_state(self) -> dict | None:
+        with self._lock:
+            return self.config.workspace() if self.config else None
+
+    def save_workspace_state(self, workspace: dict) -> dict:
+        with self._lock:
+            if not isinstance(workspace, dict):
+                raise ValueError("workspace must be an object")
+            if self.config is None:
+                return dict(workspace)
+            return self.config.set_workspace(workspace)
 
     def read_registers(self, addr: int, length: int) -> list[int]:
         with self._lock:
@@ -583,7 +600,27 @@ class WebSession:
     def close(self) -> None:
         self.client.close()
 
+    def _load_config_setup_attributes(self) -> None:
+        if self.config is None:
+            return
+        for module_name in _empty_saved_states():
+            setup = self.config.module_setup(module_name)
+            if not setup:
+                continue
+            for attribute, value in setup.items():
+                if attribute not in _setup_attributes(module_name):
+                    continue
+                try:
+                    self._set_module_attribute_no_lock(module_name, attribute, value)
+                except (KeyError, TypeError, ValueError):
+                    continue
+
     def _load_saved_states(self) -> dict[str, dict[str, dict]]:
+        if self.config is not None:
+            loaded = _empty_saved_states()
+            for module_name in loaded:
+                loaded[module_name] = self.config.module_states(module_name)
+            return loaded
         if not self.settings.state_file:
             return _empty_saved_states()
         path = Path(self.settings.state_file)
@@ -607,12 +644,27 @@ class WebSession:
         return loaded
 
     def _persist_saved_states(self) -> None:
+        if self.config is not None:
+            for module_name, states in self._module_states.items():
+                self.config.set_module_states(module_name, states)
+            return
         if not self.settings.state_file:
             return
         path = Path(self.settings.state_file)
         if path.parent != Path("."):
             path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self._module_states, indent=2, sort_keys=True), encoding="utf-8")
+
+    def _persist_module_setup_if_needed(self, module_name: str, attribute: str) -> None:
+        if self.config is None or attribute not in _setup_attributes(module_name):
+            return
+        self.config.set_module_setup(module_name, self._module_setup_dict(module_name))
+
+    def _module_setup_dict(self, module_name: str) -> dict:
+        return {
+            attribute: self._module_setting_value(module_name, attribute)
+            for attribute in _setup_attributes(module_name)
+        }
 
     def _module_setting_value(self, module_name: str, attribute: str):
         if module_name == "scope":
@@ -882,6 +934,7 @@ class WebSession:
         iq.quadrature_factor = float(getattr(input_model, "quadrature_factor", 1.0))
         iq.on = True
         sync_iq_settings(self.client, iq_module, iq)
+        sync_iq_setting(self.client, iq_module, iq, "on")
         return iq_module
 
     def _resolve_lockbox_dsp_signal_no_lock(self, signal: str) -> str:
@@ -1038,6 +1091,7 @@ class WebSession:
             iq_settings.quadrature_factor = 1.0
             iq_settings.on = True
             sync_iq_settings(self.client, settings.iq_module, iq_settings)
+            sync_iq_setting(self.client, settings.iq_module, iq_settings, "on")
             self.scope_settings.input1 = settings.iq_module
             self.scope_settings.input2 = "iq2_2"
         self.scope_settings.trigger_source = "immediately"

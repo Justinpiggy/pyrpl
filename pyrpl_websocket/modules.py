@@ -51,12 +51,18 @@ SCOPE_RUNNING_STATES = [
 SCOPE_SETUP_ATTRIBUTES = [
     "input1",
     "input2",
-    "trigger_source",
     "duration",
+    "average",
+    "trigger_source",
     "trigger_delay",
     "threshold",
     "hysteresis",
-    "average",
+    "ch1_active",
+    "ch2_active",
+    "ch_math_active",
+    "math_formula",
+    "xy_mode",
+    "rolling_mode",
     "trace_average",
     "run_mode",
 ]
@@ -96,11 +102,6 @@ SCOPE_ACTIONS = [
         "label": "Save Curve",
         "description": "Placeholder for saving the currently displayed browser curve.",
     },
-    {
-        "name": "trigger_test",
-        "label": "Test Trigger",
-        "description": "Evaluate the current trigger settings against one acquired frame.",
-    },
 ]
 
 ASG_WAVEFORMS = ["sin", "cos", "ramp", "halframp", "square", "dc"]
@@ -139,7 +140,6 @@ PID_SETUP_ATTRIBUTES = [
     "p",
     "i",
     "inputfilter",
-    "ival",
     "max_voltage",
     "min_voltage",
     "pause_gains",
@@ -163,8 +163,6 @@ IQ_SETUP_ATTRIBUTES = [
     "quadrature_factor",
     "modulation_at_2f",
     "demodulation_at_2f",
-    "on",
-    "pfd_on",
 ]
 IQ_ACTIONS = [
     {"name": "setup", "label": "Setup", "description": "Synchronize IQ settings and phase-align IQ modules."},
@@ -186,8 +184,6 @@ IIR_SETUP_ATTRIBUTES = [
 ]
 IIR_ACTIONS = [
     {"name": "setup", "label": "Setup", "description": "Synchronize IIR routing, filter, and coefficients."},
-    {"name": "unity", "label": "Unity", "description": "Load the same unity coefficients as PyRPL's _setup_unity()."},
-    {"name": "zero", "label": "Zero", "description": "Load the same zero coefficients as PyRPL's _setup_zero()."},
 ]
 
 TRIG_TRIGGER_SOURCES = ["off", "pos_edge", "neg_edge", "both_edge"]
@@ -205,7 +201,6 @@ TRIG_SETUP_ATTRIBUTES = [
 ]
 TRIG_ACTIONS = [
     {"name": "setup", "label": "Setup", "description": "Synchronize trigger settings and arm it."},
-    {"name": "arm", "label": "Arm", "description": "Arm the trigger module."},
 ]
 
 PWM_SETUP_ATTRIBUTES = ["input"]
@@ -262,6 +257,12 @@ class ScopeSettings:
     threshold: float = 0.0
     hysteresis: float = 0.01
     average: bool = False
+    ch1_active: bool = True
+    ch2_active: bool = True
+    ch_math_active: bool = False
+    math_formula: str = "ch1 * ch2"
+    xy_mode: bool = False
+    rolling_mode: bool = True
     trace_average: int = 1
     run_mode: str = "rolling"
     running_state: str = "stopped"
@@ -540,6 +541,12 @@ def scope_attribute_schema(settings: ScopeSettings) -> list[dict[str, Any]]:
         _select("run_mode", "Run Mode", settings.run_mode, SCOPE_RUN_MODES),
         _select("duration", "Duration", settings.duration, SCOPE_DURATIONS),
         _boolean("average", "FPGA Average", settings.average),
+        _boolean("ch1_active", "CH1", settings.ch1_active),
+        _boolean("ch2_active", "CH2", settings.ch2_active),
+        _boolean("ch_math_active", "Math", settings.ch_math_active),
+        _text("math_formula", "Math Formula", settings.math_formula),
+        _boolean("xy_mode", "XY", settings.xy_mode),
+        _boolean("rolling_mode", "Rolling", settings.rolling_mode),
         _number("trace_average", "Trace Average", settings.trace_average, 1, 1024, step=1),
         _number("trigger_delay", "Trigger Delay", settings.trigger_delay, -10.0, 8e-9 * 2**30),
         _number("threshold", "Threshold", settings.threshold, -1.0, 1.0),
@@ -618,8 +625,6 @@ def iq_attribute_schema(settings: IqSettings) -> list[dict[str, Any]]:
         _number("quadrature_factor", "Quadrature", settings.quadrature_factor, -131071.0, 131071.0),
         _select("modulation_at_2f", "Mod 2f", settings.modulation_at_2f, IQ_TOGGLE_OPTIONS),
         _select("demodulation_at_2f", "Demod 2f", settings.demodulation_at_2f, IQ_TOGGLE_OPTIONS),
-        _boolean("on", "On", settings.on),
-        _boolean("pfd_on", "PFD", settings.pfd_on),
     ]
 
 
@@ -709,10 +714,14 @@ def set_scope_attribute(settings: ScopeSettings, name: str, value: Any) -> Any:
         normalized = _require_option(name, str(value), SCOPE_RUNNING_STATES)
     elif name == "duration":
         normalized = _nearest_duration(float(value))
-    elif name == "average":
+    elif name in {"average", "ch1_active", "ch2_active", "ch_math_active", "xy_mode", "rolling_mode"}:
         normalized = bool(value)
+        if name == "rolling_mode":
+            settings.run_mode = "rolling" if normalized else "continuous"
     elif name == "trace_average":
         normalized = int(round(_clamp(float(value), 1, 1024)))
+    elif name == "math_formula":
+        normalized = str(value)
     elif name == "trigger_delay":
         normalized = _clamp(float(value), -10.0, 8e-9 * 2**30)
     elif name == "threshold":

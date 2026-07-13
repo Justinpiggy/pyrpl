@@ -1,6 +1,82 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 
+const defaultWorkspace = {
+  activePanelId: "scope",
+  layoutMode: "tabs",
+  workspaceSplitSizes: [50, 50],
+  panels: {
+    scope: { enabled: true, splitSizes: [28, 72] },
+    asg: { enabled: false },
+    pid: { enabled: false },
+    iq: { enabled: false },
+    iir: { enabled: false },
+    trig: { enabled: false },
+    pwm: { enabled: false },
+    spectrumanalyzer: { enabled: false, splitSizes: [35, 65] },
+    lockbox: { enabled: false },
+    housekeeping: { enabled: false },
+    registers: { enabled: false },
+  },
+};
+
+async function setModuleAttribute(page: Page, module: string, attribute: string, value: unknown): Promise<void> {
+  const response = await page.request.post(`/api/modules/${module}/attributes/${attribute}`, { data: { value } });
+  expect(response.ok()).toBe(true);
+}
+
+async function resetServerConfig(page: Page): Promise<void> {
+  await page.request.post("/api/modules/scope/actions/stop");
+  await page.request.post("/api/modules/spectrumanalyzer/actions/stop");
+  await page.request.post("/api/lockbox/actions/unlock");
+  await page.request.post("/api/workspace", { data: { workspace: defaultWorkspace } });
+
+  await setModuleAttribute(page, "scope", "input1", "in1");
+  await setModuleAttribute(page, "scope", "input2", "in2");
+  await setModuleAttribute(page, "scope", "trigger_source", "immediately");
+  await setModuleAttribute(page, "scope", "run_mode", "rolling");
+  await setModuleAttribute(page, "scope", "duration", 1.073741824);
+  await setModuleAttribute(page, "scope", "trigger_delay", 0);
+  await setModuleAttribute(page, "scope", "threshold", 0);
+  await setModuleAttribute(page, "scope", "hysteresis", 0.01);
+  await setModuleAttribute(page, "scope", "average", false);
+  await setModuleAttribute(page, "scope", "trace_average", 1);
+  await setModuleAttribute(page, "scope", "ch1_active", true);
+  await setModuleAttribute(page, "scope", "ch2_active", true);
+
+  for (const module of ["asg0", "asg1"]) {
+    await setModuleAttribute(page, module, "waveform", "sin");
+    await setModuleAttribute(page, module, "amplitude", module === "asg0" ? 0.8 : 0);
+    await setModuleAttribute(page, module, "offset", 0);
+    await setModuleAttribute(page, module, "frequency", 1000);
+    await setModuleAttribute(page, module, "trigger_source", "off");
+    await setModuleAttribute(page, module, "output_direct", "off");
+    await setModuleAttribute(page, module, "start_phase", 0);
+    await setModuleAttribute(page, module, "cycles_per_burst", 0);
+  }
+
+  await setModuleAttribute(page, "pid0", "input", "off");
+  await setModuleAttribute(page, "pid0", "p", 0);
+  await setModuleAttribute(page, "pid0", "i", 0);
+  await setModuleAttribute(page, "iq1", "input", "off");
+  await setModuleAttribute(page, "iq1", "frequency", 0);
+  await setModuleAttribute(page, "iq1", "output_signal", "quadrature");
+  await setModuleAttribute(page, "trig", "input", "off");
+  await setModuleAttribute(page, "trig", "trigger_source", "off");
+  await setModuleAttribute(page, "trig", "threshold", 0);
+  await setModuleAttribute(page, "pwm0", "input", "off");
+  await setModuleAttribute(page, "hk", "led", 0);
+  await setModuleAttribute(page, "hk", "expansion_P1_output", true);
+  await setModuleAttribute(page, "hk", "expansion_P1", false);
+  await setModuleAttribute(page, "iir", "real_poles", "");
+  await setModuleAttribute(page, "iir", "real_zeros", "");
+  await setModuleAttribute(page, "iir", "complex_poles", "");
+  await setModuleAttribute(page, "iir", "complex_zeros", "");
+  await setModuleAttribute(page, "iir", "inputfilter", "");
+  await setModuleAttribute(page, "spectrumanalyzer", "trace_average", 1);
+  await setModuleAttribute(page, "spectrumanalyzer", "baseband", true);
+}
+
 async function countPaintedPixels(canvas: HTMLCanvasElement): Promise<number> {
   const context = canvas.getContext("2d");
   if (!context) {
@@ -16,50 +92,6 @@ async function countPaintedPixels(canvas: HTMLCanvasElement): Promise<number> {
   return painted;
 }
 
-async function canvasFingerprint(canvas: HTMLCanvasElement): Promise<number> {
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return 0;
-  }
-  const image = context.getImageData(0, 0, canvas.width, canvas.height);
-  let hash = 2166136261;
-  for (let index = 0; index < image.data.length; index += 4) {
-    hash ^= image.data[index];
-    hash = Math.imul(hash, 16777619);
-    hash ^= image.data[index + 1];
-    hash = Math.imul(hash, 16777619);
-    hash ^= image.data[index + 2];
-    hash = Math.imul(hash, 16777619);
-    hash ^= image.data[index + 3];
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-async function plotFingerprint(page: Page): Promise<number> {
-  return page.locator("#scope-plot canvas").evaluateAll((canvases) => {
-    let combined = 2166136261;
-    for (const canvas of canvases) {
-      const context = canvas.getContext("2d");
-      if (!context) {
-        continue;
-      }
-      const image = context.getImageData(0, 0, canvas.width, canvas.height);
-      for (let index = 0; index < image.data.length; index += 4) {
-        combined ^= image.data[index];
-        combined = Math.imul(combined, 16777619);
-        combined ^= image.data[index + 1];
-        combined = Math.imul(combined, 16777619);
-        combined ^= image.data[index + 2];
-        combined = Math.imul(combined, 16777619);
-        combined ^= image.data[index + 3];
-        combined = Math.imul(combined, 16777619);
-      }
-    }
-    return combined >>> 0;
-  });
-}
-
 test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) => {
   const browserMessages: string[] = [];
   page.on("pageerror", (error) => browserMessages.push(error.message));
@@ -68,6 +100,7 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
     window.localStorage.clear();
   });
 
+  await resetServerConfig(page);
   await page.goto("/");
   await expect(page.locator("#scope-panel")).toBeVisible();
   await expect(page.locator("#empty-workspace")).toBeHidden();
@@ -172,7 +205,8 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   const paintedPixels = await page.locator("#scope-plot canvas").first().evaluate(countPaintedPixels);
   expect(paintedPixels).toBeGreaterThan(1000);
 
-  const initialFingerprint = await plotFingerprint(page);
+  const initialFingerprint = await page.evaluate(() => window.pyrplScope?.getDisplayedDataFingerprint());
+  expect(initialFingerprint).not.toBeNull();
   const initialSequence = await page.evaluate(() => window.pyrplScope?.getFrameSequence());
   await page.waitForFunction(
     (sequence) => {
@@ -181,7 +215,7 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
     },
     initialSequence,
   );
-  const laterFingerprint = await plotFingerprint(page);
+  const laterFingerprint = await page.evaluate(() => window.pyrplScope?.getDisplayedDataFingerprint());
   expect(laterFingerprint).not.toBe(initialFingerprint);
 
   const initialRange = await page.evaluate(() => window.pyrplScope?.getXRange());
@@ -428,6 +462,7 @@ test("ASG and housekeeping panels expose migrated module controls", async ({ pag
     window.localStorage.clear();
   });
 
+  await resetServerConfig(page);
   await page.goto("/");
   await page.locator(".menu-dropdown summary").click();
   await page.locator("#panel-asg-enabled").setChecked(true);
@@ -466,6 +501,7 @@ test("PID IQ IIR trigger and PWM panels expose migrated DSP controls", async ({ 
     window.localStorage.clear();
   });
 
+  await resetServerConfig(page);
   await page.goto("/");
   for (const panelId of ["pid", "iq", "iir", "trig", "pwm"]) {
     await page.locator(".menu-dropdown summary").click();
@@ -513,6 +549,48 @@ test("PID IQ IIR trigger and PWM panels expose migrated DSP controls", async ({ 
   if (!iirPlotBox) {
     throw new Error("Missing IIR plot box");
   }
+  expect(iirPlotBox.width).toBeGreaterThan(500);
+  expect(iirPlotBox.height).toBeGreaterThan(240);
+  const initialIirRange = await page.evaluate(() => window.pyrplScope?.getIirXRange());
+  const initialIirYRange = await page.evaluate(() => window.pyrplScope?.getIirMagnitudeYRange());
+  expect(initialIirRange).toBeTruthy();
+  expect(initialIirYRange).toBeTruthy();
+  await iirPlot.hover({ position: { x: iirPlotBox.width * 0.5, y: iirPlotBox.height * 0.5 } });
+  await page.mouse.wheel(0, -700);
+  const zoomedIirRange = await page.evaluate(() => window.pyrplScope?.getIirXRange());
+  const zoomedIirYRange = await page.evaluate(() => window.pyrplScope?.getIirMagnitudeYRange());
+  expect(zoomedIirRange).toBeTruthy();
+  expect(zoomedIirYRange).toBeTruthy();
+  expect(zoomedIirRange!.max - zoomedIirRange!.min).toBeLessThan(initialIirRange!.max - initialIirRange!.min);
+  expect(zoomedIirYRange!.max - zoomedIirYRange!.min).toBeLessThan(initialIirYRange!.max - initialIirYRange!.min);
+  const zoomedIirPlotBox = await iirPlot.boundingBox();
+  if (!zoomedIirPlotBox) {
+    throw new Error("Missing zoomed IIR plot box");
+  }
+  await page.mouse.move(zoomedIirPlotBox.x + zoomedIirPlotBox.width * 0.55, zoomedIirPlotBox.y + zoomedIirPlotBox.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(zoomedIirPlotBox.x + zoomedIirPlotBox.width * 0.35, zoomedIirPlotBox.y + zoomedIirPlotBox.height * 0.55, { steps: 6 });
+  await page.mouse.up();
+  const pannedIirRange = await page.evaluate(() => window.pyrplScope?.getIirXRange());
+  expect(pannedIirRange).toBeTruthy();
+  expect(pannedIirRange!.max - pannedIirRange!.min).toBeCloseTo(zoomedIirRange!.max - zoomedIirRange!.min, 6);
+  expect(Math.abs(pannedIirRange!.min - zoomedIirRange!.min)).toBeGreaterThan(0.02);
+  await page.locator("#iir-zoom-reset").click();
+  const resetIirRange = await page.evaluate(() => window.pyrplScope?.getIirXRange());
+  expect(resetIirRange).toBeTruthy();
+  expect(resetIirRange!.min).toBeCloseTo(initialIirRange!.min, 6);
+  expect(resetIirRange!.max).toBeCloseTo(initialIirRange!.max, 6);
+  await page.waitForTimeout(1000);
+  const stableIirPlotBox = await iirPlot.boundingBox();
+  if (!stableIirPlotBox) {
+    throw new Error("Missing stable IIR plot box");
+  }
+  expect(Math.abs(stableIirPlotBox.height - iirPlotBox.height)).toBeLessThan(2);
+  await expect(page.locator("#iir-real-poles-count")).toHaveValue("1");
+  await page.locator("#iir-real-poles-count").fill("2");
+  await page.locator("#iir-real-poles-count").blur();
+  await expect(page.locator("#iir-real-poles-count")).toHaveValue("2");
+  await expect(page.locator(".iir-marker.is-pole")).toHaveCount(4);
   await iirPlot.click({
     position: { x: iirPlotBox.width * 0.55, y: iirPlotBox.height * 0.5 },
     modifiers: ["Shift"],
@@ -522,8 +600,8 @@ test("PID IQ IIR trigger and PWM panels expose migrated DSP controls", async ({ 
   await page.locator("#iir-inputfilter").fill("1000, 0, -2000");
   await page.locator("#iir-inputfilter").blur();
   await expect(page.locator("#iir-status")).toContainText("inputfilter = 1000, 0, -2000");
-  await page.locator("[data-module='iir']").getByRole("button", { name: "Unity" }).click();
-  await expect(page.locator("#iir-status")).toContainText("unity: ok");
+  await expect(page.locator("[data-module='iir']").getByRole("button", { name: "Unity" })).toHaveCount(0);
+  await expect(page.locator("[data-module='iir']").getByRole("button", { name: "Zero" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Trigger" }).click();
   await expect(page.locator("#trig-panel")).toBeVisible();
@@ -534,8 +612,9 @@ test("PID IQ IIR trigger and PWM panels expose migrated DSP controls", async ({ 
   await page.locator("#trig-threshold").fill("0.125");
   await page.locator("#trig-threshold").blur();
   await expect(page.locator("#trig-status")).toContainText("threshold = 0.125");
-  await page.locator("[data-module='trig']").getByRole("button", { name: "Arm" }).click();
-  await expect(page.locator("#trig-status")).toContainText("arm: ok");
+  await expect(page.locator("[data-module='trig']").getByRole("button", { name: "Arm" })).toHaveCount(0);
+  await page.locator("[data-module='trig']").getByRole("button", { name: "Setup" }).click();
+  await expect(page.locator("#trig-status")).toContainText(/setup: ok|trig state updated/);
 
   await page.getByRole("button", { name: "PWM" }).click();
   await expect(page.locator("#pwm-panel")).toBeVisible();
@@ -550,6 +629,7 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
     window.localStorage.clear();
   });
 
+  await resetServerConfig(page);
   await page.goto("/");
   for (const panelId of ["iq", "spectrumanalyzer"]) {
     await page.locator(".menu-dropdown summary").click();
@@ -668,6 +748,7 @@ test("lockbox panel switches classes, edits stages, and renders static plots", a
     window.localStorage.clear();
   });
 
+  await resetServerConfig(page);
   await page.goto("/");
   await page.locator(".menu-dropdown summary").click();
   await page.locator("#panel-lockbox-enabled").setChecked(true);

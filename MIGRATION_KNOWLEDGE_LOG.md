@@ -2671,3 +2671,234 @@ OK
 conda run -n pyrpl-env npm run test:e2e
 5 Chromium tests - OK
 ```
+
+## 2026-07-10 Web Parity Audit Rule
+
+### Learned
+
+- Migration work must start from the original PyRPL `_gui_attributes`,
+  `_setup_attributes`, widget layout, and control routines. The web panel should
+  then reproduce that surface, not a guessed replacement.
+- A register being writable is not enough reason to expose it in the web GUI.
+  For example, IQ `on` and `pfd_on` are real registers, but they are not in
+  PyRPL's IQ GUI/setup attributes; they should be controlled by routines such as
+  spectrum analyzer or lockbox PDH, not shown as normal IQ user controls.
+- A method existing in PyRPL is not enough reason to add a button. IIR
+  `_setup_unity()` and `_setup_zero()` exist, but the original GUI comments them
+  out as debugging helpers, so the web UI should not advertise them.
+- PyRPL's trigger module arms during `_setup()`. A separate web Arm button is
+  unnecessary unless the original GUI exposes that workflow.
+- GUI-only state and setup state are different. PID `ival` appears in the
+  original GUI but is not in `_setup_attributes`, so it should be directly
+  editable but not saved/restored as part of a setup state.
+
+### Mistake Prevention
+
+- Before adding a web control or action, record the original file and attribute
+  list that justify it.
+- Before declaring a panel migrated, compare it against `WEB_PARITY_AUDIT.md`
+  and either implement missing original controls or leave a visible parity gap.
+- Do not hide omissions in browser-only state. Scope channel visibility now
+  maps to PyRPL `ch1_active`/`ch2_active`, so saved state and backend state
+  match the original GUI better.
+
+## 2026-07-10 PyRPL-Compatible Web Config Files
+
+### Learned
+
+- PyRPL's default user directory is `PYRPL_USER_DIR` when set, otherwise
+  `~/pyrpl_user_dir`. Config files live in the `config` subdirectory and use
+  `.yml` extension.
+- PyRPL config files store module setup attributes directly under root module
+  branches such as `scope`, `asg0`, and `iq1`.
+- Saved states use separate root branches named `<module>_states`, for example
+  `scope_states: high: ...`.
+- The web UI layout has no PyRPL legacy equivalent, so it is stored in a
+  namespaced branch: `pyrpl_websocket.workspace`. This keeps old PyRPL module
+  branches readable by the legacy GUI while preserving web-only layout.
+
+### Mistake Prevention
+
+- Do not put web module state into a separate JSON file by default. That makes
+  the web migration diverge from PyRPL's YAML config workflow.
+- Do not import `pyrpl.memory.MemoryTree` into the FastAPI server path. It uses
+  Qt timers, so the web config helper must remain Qt-free while matching the
+  same path and branch conventions.
+- Browser tests must reset server-side workspace/module config, not just
+  `localStorage`, because layout and controls are now remembered in the YAML
+  config file.
+
+## 2026-07-10 Module Manager And Ownership Parity
+
+### Learned
+
+- Original PyRPL ownership is implemented by `Module.owner` plus
+  `ModuleManager.pop(owner)` / `ModuleManager.free(module)`, not by a separate
+  global ownership dictionary.
+- `ModuleManager.pop(owner)` chooses the last currently free hardware module
+  in that manager's list and sets the module's own `owner`.
+- Releasing ownership in PyRPL is not just a visual unlock. Setting
+  `owner = None` re-enables autosave and reloads the module setup attributes
+  from the config file.
+- Some modules override ownership behavior. In particular, `Scope` stops when
+  it becomes owned by another module.
+- Spectrum analyzer is special in original PyRPL: it directly takes `rp.iq2`
+  and sets `iq2.owner = self.name` instead of using `pyrpl.iqs.pop()`, while
+  it uses `pyrpl.scopes.pop(self.name)` for the scope.
+
+### Current Web Difference
+
+- The web server currently uses `WebSession.module_owners` as a separate
+  ownership table. This is useful for UI locking, but it does not fully migrate
+  PyRPL's ownership side effects.
+- Web release currently clears an owner flag but does not reload that hardware
+  module's setup attributes from the YAML config the way PyRPL does.
+- Web reservation currently asks for a named module, rather than offering a
+  manager-level `pop(owner)` that picks the last free module of a resource type.
+- Spectrum analyzer and lockbox have custom reservations that approximate the
+  original behavior, but they are not yet driven through a shared
+  PyRPL-compatible manager abstraction.
+
+### Mistake Prevention
+
+- Do not invent new resource arbitration for each migrated module. Add a
+  Qt-free web `ModuleManager` equivalent and route scope, ASG, PID, IQ, PWM,
+  IIR, trig, and housekeeping reservations through it.
+- On release, restore the module's persisted setup attributes unless the
+  original PyRPL module intentionally behaves differently.
+- Preserve documented PyRPL special cases such as spectrum analyzer's dedicated
+  `iq2` ownership.
+
+## 2026-07-10 IIR Plot/List Editing Parity
+
+### Learned
+
+- Original PyRPL IIR is a graph-centered editor. The magnitude and phase plots
+  are the primary UI, with the general settings beside them and the four
+  pole/zero list widgets below them.
+- The four lists `complex_poles`, `complex_zeros`, `real_poles`, and
+  `real_zeros` are the source of truth. Plot clicks and drags must update
+  those lists, and list edits must update the plot.
+- The original list widgets provide add/remove/selection behavior, so replacing
+  them with a single raw text box omits important function.
+- PyRPL click behavior is: plain click selects nearest pole/zero, CTRL-click
+  adds a real pole, SHIFT-click adds a real zero, CTRL double-click adds a
+  complex pole, and SHIFT double-click adds a complex zero.
+- For uPlot inside split panels, resize must follow the panel/container, not
+  only `window.resize`; otherwise cursor/crosshair overlays and marker layers
+  can become geometrically stale.
+
+### Mistake Prevention
+
+- Do not treat IIR poles/zeros as generic text fields. Keep explicit count,
+  add/remove, selection, and per-element editing controls.
+- Browser tests for graph-heavy panels should assert real plot dimensions and
+  at least one interaction that changes the underlying backend list.
+
+## 2026-07-10 IIR Plot Growth Regression
+
+### Mistake
+
+- I repeated an earlier scope-layout mistake in the IIR plot: the resize code
+  measured a container whose height was influenced by the uPlot size being
+  written back into it. That creates a feedback loop where the page grows while
+  idle.
+- The full knowledge log has become long enough that important rules are easy
+  to miss during implementation.
+
+### Fix
+
+- Added `MIGRATION_KNOWLEDGE_SUMMARY.md` as a short checklist to read before
+  migration edits.
+- Bounded the IIR card height in CSS and made the plot grid consume that fixed
+  area.
+- Changed the IIR resize path to measure fixed plot frame boxes and skip
+  resizing while hidden, rather than using fallback dimensions that can push
+  layout larger.
+- Added a browser regression check that the IIR plot height remains stable
+  after waiting while the page is idle.
+
+### Mistake Prevention
+
+- Before touching frontend plots, check the summary's Plot/Layout Rules.
+- Any graph panel using `ResizeObserver` must have a test that waits and
+  compares dimensions over time.
+
+## 2026-07-10 Shared Plot Theme
+
+### Learned
+
+- Plot color drift happened because scope, spectrum analyzer, IIR, and lockbox
+  each hard-coded their own uPlot axis, grid, background, and trace colors.
+- Plot visual constants should be shared in TypeScript for uPlot options and in
+  CSS variables for DOM-level title, legend, cursor, and background styling.
+
+### Fix
+
+- Added `web/src/plot-theme.ts` with shared axis/grid/text/background and trace
+  colors.
+- Updated scope, spectrum analyzer, IIR, and lockbox uPlot options to use the
+  shared theme.
+- Updated global uPlot CSS so plot title, legend, cursor lines, and plot
+  backgrounds match across panels.
+
+### Mistake Prevention
+
+- New graph panels should import `plot-theme.ts` instead of introducing local
+  plot color literals.
+
+## 2026-07-10 IIR Coefficient Hardware Sync
+
+### Mistake
+
+- I migrated the IIR pole/zero controls and plot first, but the backend only
+  wrote simple routing/control registers. It did not run the original PyRPL
+  `IirFilter` design calculation or write the IIR coefficient RAM, so changing
+  poles and zeros did not update the Red Pitaya board.
+
+### Fix
+
+- `sync_iir_setting` now treats `loops`, `gain`, `real_zeros`, `real_poles`,
+  `complex_zeros`, and `complex_poles` as setup-driving attributes.
+- The web backend loads the original PyRPL `iir_theory.py` math without
+  importing the Qt-backed IIR package, computes coefficients with the FPGA
+  constants, writes `loops`, and writes the coefficient words at IIR base
+  `+ 0x8000`.
+- Added a regression test that pole/zero changes produce nonzero coefficient
+  RAM data and that a later pole/zero edit changes the coefficient image.
+
+### Mistake Prevention
+
+- For hardware modules, every control that changes a plot or browser model must
+  be traced to its original PyRPL `call_setup`/register side effect.
+- Do not call an IIR migration complete until the coefficient RAM write path is
+  verified, not just the Bode plot.
+
+## 2026-07-11 IIR Plot Navigation Parity
+
+### Learned
+
+- Original PyRPL IIR uses PyQtGraph plots, so users inherit free plot
+  navigation from the graph widget while also using CTRL/SHIFT click shortcuts
+  for pole/zero editing.
+- The web IIR plot should preserve user-selected x/y scales across refreshes.
+  Refreshing plot data must not always reset scales, otherwise zoom and pan feel
+  broken.
+- uPlot has several internal overlay layers. Mouse tests should recompute plot
+  bounding boxes after scrolling/zooming and should verify the pointer really
+  lands on the plot, not on a stale page coordinate.
+
+### Fix
+
+- Added an IIR plot reset button inside the IIR panel.
+- Added mouse wheel zoom, left-drag pan, and right/middle-drag zoom for both
+  magnitude and phase plots, with linked x-axis scaling.
+- Added browser coverage for IIR wheel zoom, drag pan, reset zoom, stable plot
+  height, and the existing pole/zero marker editing workflow.
+
+### Mistake Prevention
+
+- For plot interaction tests, prefer locator-relative actions or recompute the
+  locator bounding box immediately before absolute `page.mouse` operations.
+- When a graph has interactive overlays, attach navigation handling where all
+  relevant plot layers can reach it, and explicitly skip marker/edit controls.

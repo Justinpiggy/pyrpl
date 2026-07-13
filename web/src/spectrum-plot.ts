@@ -1,5 +1,7 @@
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
+
+import { PLOT_COLORS, plotAxis } from "./plot-theme";
 import { parseScopeFrame } from "./scope-frame";
 
 type StatusCallback = (message: string) => void;
@@ -282,14 +284,14 @@ export class SpectrumPlot {
         y: { auto: false },
       },
       axes: [
-        { label: "Frequency (Hz)", stroke: "#9aacb6", grid: { stroke: "#1d272e", width: 1 } },
-        { label: unit, stroke: "#9aacb6", grid: { stroke: "#1d272e", width: 1 } },
+        plotAxis({ label: "Frequency (Hz)" }),
+        plotAxis({ label: unit }),
       ],
       series: [
         {},
         ...labels.map((label, index) => ({
           label,
-          stroke: index === 0 ? "#4fd17f" : index === 1 ? "#62a8ff" : "#f2c94c",
+          stroke: index === 0 ? PLOT_COLORS.green : index === 1 ? PLOT_COLORS.blue : PLOT_COLORS.yellow,
           width: 1.4,
           points: { show: false },
         })),

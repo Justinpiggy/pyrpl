@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import math
+import types
+from pathlib import Path
+from functools import lru_cache
 
 from .modules import IirSettings, IqSettings, PidSettings, PwmSettings, TrigSettings
 from .monitor_client import DummyClient, MonitorClient
@@ -33,7 +36,6 @@ PID_SETUP_ATTRIBUTES = (
     "p",
     "i",
     "inputfilter",
-    "ival",
     "max_voltage",
     "min_voltage",
     "pause_gains",
@@ -53,8 +55,6 @@ IQ_SETUP_ATTRIBUTES = (
     "quadrature_factor",
     "modulation_at_2f",
     "demodulation_at_2f",
-    "on",
-    "pfd_on",
 )
 TRIG_SETUP_ATTRIBUTES = (
     "input",
@@ -71,11 +71,17 @@ PWM_SETUP_ATTRIBUTES = ("input",)
 IIR_SETUP_ATTRIBUTES = (
     "input",
     "loops",
+    "real_zeros",
+    "real_poles",
+    "complex_zeros",
+    "complex_poles",
     "output_direct",
     "inputfilter",
+    "gain",
     "on",
     "bypass",
 )
+IIR_COEFFICIENT_ATTRIBUTES = {"loops", "real_zeros", "real_poles", "complex_zeros", "complex_poles", "gain"}
 
 
 def sync_pid_setting(client: MonitorClient | DummyClient, module_name: str, settings: PidSettings, attribute: str) -> None:
@@ -210,8 +216,8 @@ def sync_iir_setting(client: MonitorClient | DummyClient, settings: IirSettings,
         _write_word(client, base + 0x0, DSP_INPUT_VALUES[settings.input])
     elif attribute == "output_direct":
         _write_word(client, base + 0x4, DSP_OUTPUT_DIRECT_VALUES[settings.output_direct])
-    elif attribute == "loops":
-        _write_word(client, base + 0x100, max(3, min(1023, int(settings.loops))))
+    elif attribute in IIR_COEFFICIENT_ATTRIBUTES:
+        sync_iir_design(client, settings)
     elif attribute == "on":
         _write_bool_bit(client, base + 0x104, 0, settings.on)
     elif attribute == "bypass":
@@ -221,25 +227,107 @@ def sync_iir_setting(client: MonitorClient | DummyClient, settings: IirSettings,
 
 
 def sync_iir_settings(client: MonitorClient | DummyClient, settings: IirSettings) -> None:
-    for attribute in IIR_SETUP_ATTRIBUTES:
+    for attribute in ("input", "output_direct", "inputfilter", "bypass"):
         sync_iir_setting(client, settings, attribute)
+    sync_iir_design(client, settings)
+    sync_iir_setting(client, settings, "on")
 
 
-def load_iir_unity_coefficients(client: MonitorClient | DummyClient) -> None:
+def sync_iir_design(client: MonitorClient | DummyClient, settings: IirSettings) -> None:
+    """Run PyRPL's IIR design step and write loops plus coefficient RAM."""
+
     base = dsp_addr_base("iir")
-    stages = _read_constant(client, base + 0x208, 16)
-    coefficients = [[0.0, 0.0, 0.0, 1.0, 0.0, 0.0] for _ in range(stages)]
-    coefficients[0][0] = 1.0
-    _write_iir_coefficients(client, coefficients)
-    _write_word(client, base + 0x100, 1)
+    bitlength = _read_constant(client, base + 0x200, 32)
+    shift = _read_constant(client, base + 0x204, 29)
+    stages = _read_constant(client, base + 0x208, 14)
+    if stages <= 0:
+        raise RuntimeError("This FPGA bitfile does not report IIR coefficient stages.")
+
+    _write_bool_bit(client, base + 0x104, 0, False)
+    iir_theory = _load_iir_theory()
+    iir_filter = iir_theory.IirFilter(
+        zeros=_iir_values(settings.real_zeros, settings.complex_zeros),
+        poles=_iir_values(settings.real_poles, settings.complex_poles),
+        gain=settings.gain,
+        loops=max(3, min(1023, int(settings.loops))),
+        dt=8e-9,
+        minloops=3,
+        maxloops=1023,
+        iirstages=stages,
+        totalbits=bitlength,
+        shiftbits=shift,
+        inputfilter=0,
+        moduledelay=5,
+    )
+    settings.loops = int(iir_filter.loops)
+    _write_word(client, base + 0x100, settings.loops)
+    _write_iir_coefficients(client, base, iir_filter.coefficients, stages, bitlength, shift)
+    settings.on = True
+    _write_bool_bit(client, base + 0x104, 0, True)
 
 
-def load_iir_zero_coefficients(client: MonitorClient | DummyClient) -> None:
-    base = dsp_addr_base("iir")
-    stages = _read_constant(client, base + 0x208, 16)
-    coefficients = [[0.0, 0.0, 0.0, 1.0, 0.0, 0.0] for _ in range(stages)]
-    _write_iir_coefficients(client, coefficients)
-    _write_word(client, base + 0x100, 1)
+def _iir_values(real_values: list[float], complex_values: list[str]) -> list[complex]:
+    values = [complex(float(value), 0.0) for value in real_values]
+    for value in complex_values:
+        values.append(complex(str(value).strip().replace("i", "j")))
+    return values
+
+
+def _write_iir_coefficients(
+    client: MonitorClient | DummyClient,
+    base: int,
+    coefficients,
+    stages: int,
+    bitlength: int,
+    shift: int,
+) -> None:
+    np = _np()
+    values = np.array([section for section in coefficients], dtype=np.float64)
+    if len(values) > stages:
+        raise RuntimeError("Filter contains too many IIR sections to be implemented.")
+    data = np.zeros(stages * 8, dtype=np.uint32)
+    for section_index in range(len(values)):
+        for coefficient_index in range(6):
+            if coefficient_index in {2, 3}:
+                continue
+            packed_index = coefficient_index - 2 if coefficient_index > 3 else coefficient_index
+            value = float(values[section_index, coefficient_index])
+            if coefficient_index > 3:
+                value *= -1.0
+            hi, lo = _from_double(value, bitlength=bitlength, shift=shift)
+            data[section_index * 8 + packed_index * 2 + 1] = hi
+            data[section_index * 8 + packed_index * 2] = lo
+    client.writes(base + 0x8000, [int(value) for value in data])
+
+
+def _from_double(value: float, bitlength: int = 32, shift: int = 29) -> tuple[int, int]:
+    raw = int(round(float(value) * 2**shift))
+    raw &= 2**bitlength - 1
+    hi = (raw >> 32) & ((1 << 32) - 1)
+    lo = raw & ((1 << 32) - 1)
+    return hi, lo
+
+
+def _np():
+    import numpy as np
+
+    return np
+
+
+@lru_cache(maxsize=1)
+def _load_iir_theory():
+    """Load original PyRPL IIR math without importing the Qt-backed package."""
+
+    source_path = Path(__file__).resolve().parents[1] / "pyrpl" / "hardware_modules" / "iir" / "iir_theory.py"
+    source = source_path.read_text(encoding="utf-8")
+    source = source.replace(
+        "from ...errors import ExpectedPyrplError",
+        "class ExpectedPyrplError(Exception):\n    pass",
+    )
+    module = types.ModuleType("pyrpl_websocket._pyrpl_iir_theory")
+    module.__file__ = str(source_path)
+    exec(compile(source, str(source_path), "exec"), module.__dict__)
+    return module
 
 
 def dsp_addr_base(module_name: str) -> int:
@@ -343,33 +431,6 @@ def _read_constant(client: MonitorClient | DummyClient, addr: int, fallback: int
     return value if value > 0 else fallback
 
 
-def _write_iir_coefficients(client: MonitorClient | DummyClient, coefficients: list[list[float]]) -> None:
-    base = dsp_addr_base("iir")
-    bitlength = _read_constant(client, base + 0x200, 64)
-    shift = _read_constant(client, base + 0x204, 32)
-    stages = _read_constant(client, base + 0x208, 16)
-    data = [0] * (stages * 8)
-    for index, coefficient in enumerate(coefficients[:stages]):
-        for j in range(6):
-            if j == 2 or j == 3:
-                continue
-            value = float(coefficient[j])
-            k = j - 2 if j > 3 else j
-            if j > 3:
-                value *= -1.0
-            hi, lo = _fixed_double_words(value, bitlength=bitlength, shift=shift)
-            data[index * 8 + k * 2 + 1] = hi
-            data[index * 8 + k * 2] = lo
-    _write_words(client, base + 0x8000, data)
-
-
-def _fixed_double_words(value: float, bitlength: int, shift: int) -> tuple[int, int]:
-    raw = int(round(value * 2**shift)) & (2**bitlength - 1)
-    hi = (raw >> 32) & 0xFFFFFFFF
-    lo = raw & 0xFFFFFFFF
-    return hi, lo
-
-
 def float_to_register(value: float, bits: int = 14, norm: float = 2**13, signed: bool = True) -> int:
     raw = int(round(float(value) * norm))
     if raw == 0 and value > 0:
@@ -418,7 +479,3 @@ def _write_bool_bit(
 
 def _write_word(client: MonitorClient | DummyClient, addr: int, value: int) -> None:
     client.writes(addr, [int(value) & 0xFFFFFFFF])
-
-
-def _write_words(client: MonitorClient | DummyClient, addr: int, values: list[int]) -> None:
-    client.writes(addr, [int(value) & 0xFFFFFFFF for value in values])

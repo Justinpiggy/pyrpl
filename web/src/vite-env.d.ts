@@ -41,12 +41,16 @@ interface Window {
       | null;
     getCsvLineCount: () => number;
     getDisplayedStats: () => { ch1Min: number; ch1Max: number; ch2Min: number; ch2Max: number } | null;
+    getDisplayedDataFingerprint: () => number | null;
     moduleStatusText: () => string;
     statusText: () => string;
     getSpectrumSeriesCount: () => number;
     getSpectrumAverageCount: () => number;
     getSpectrumXRange: () => { min: number; max: number };
     getSpectrumYRange: () => { min: number; max: number };
+    getIirXRange: () => { min: number; max: number } | null;
+    getIirMagnitudeYRange: () => { min: number; max: number } | null;
+    getIirPhaseYRange: () => { min: number; max: number } | null;
     getLockboxClassname: () => string | null;
     getLockboxStageCount: () => number;
   };

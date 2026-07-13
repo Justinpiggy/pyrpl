@@ -489,6 +489,7 @@ class RedPitaya(object):
             self.parameters["serverdirname"], self.parameters["serverbinfilename"]
         )
         self.put_file(source, bin_file_path)
+        print("bin_file_path",bin_file_path)
 
         update_cmd = "/opt/redpitaya/sbin/overlay.sh pyrpl {}".format(bin_file_path)
 
@@ -499,7 +500,7 @@ class RedPitaya(object):
             )
             self.put_file(dtbo_source, dtbo_file_path)
             update_cmd = "{} {}".format(update_cmd, dtbo_file_path)
-
+        print(update_cmd)
         # kill all other servers to prevent reading while fpga is flashed
         self.end()
         self.ssh.ask("killall nginx")
@@ -526,15 +527,15 @@ class RedPitaya(object):
         sleep(3.0)  # wait a bit for the fpga to be programmed
         self.logger.debug("About to restart the redpitaya service")
 
-        # Clean up temporary files in serverdirname
-        self.ssh.ask(
-            "rm -f "
-            + os.path.join(self.parameters["serverdirname"], self.parameters["serverdtbofilename"])
-        )
-        self.ssh.ask(
-            "rm -f "
-            + os.path.join(self.parameters["serverdirname"], self.parameters["serverbinfilename"])
-        )
+        # # Clean up temporary files in serverdirname
+        # self.ssh.ask(
+        #     "rm -f "
+        #     + os.path.join(self.parameters["serverdirname"], self.parameters["serverdtbofilename"])
+        # )
+        # self.ssh.ask(
+        #     "rm -f "
+        #     + os.path.join(self.parameters["serverdirname"], self.parameters["serverbinfilename"])
+        # )
 
         self.ssh.ask("nginx -p //opt//www//")
         self.ssh.ask("systemctl start redpitaya_nginx")  # for 0.94 and higher

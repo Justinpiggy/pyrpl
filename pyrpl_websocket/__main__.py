@@ -7,6 +7,7 @@ import argparse
 import uvicorn
 
 from .app import create_app
+from .config import DEFAULT_CONFIG_NAME
 from .settings import ServerSettings
 
 
@@ -25,7 +26,17 @@ def main() -> None:
     parser.add_argument(
         "--state-file",
         default=None,
-        help="Optional JSON file for persisted web module states.",
+        help="Deprecated JSON state file. Use --config for PyRPL-compatible YAML.",
+    )
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="PyRPL-compatible YAML config name or path. Defaults to pyrpl-websocket.yml in PYRPL_USER_DIR/config.",
+    )
+    parser.add_argument(
+        "--source",
+        default=None,
+        help="Optional PyRPL-compatible source config copied when --config does not exist.",
     )
     args = parser.parse_args()
     settings = ServerSettings(
@@ -35,6 +46,8 @@ def main() -> None:
         bind_port=args.bind_port,
         scope_interval=args.scope_interval,
         state_file=args.state_file,
+        config=args.config if args.config is not None else DEFAULT_CONFIG_NAME,
+        source=args.source,
     )
     uvicorn.run(
         create_app(settings),
