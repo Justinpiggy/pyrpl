@@ -728,6 +728,7 @@ test("PID IQ IIR trigger and PWM panels expose migrated DSP controls", async ({ 
   await page.locator("#iir-tf-type").selectOption("continuous");
   await expect(page.locator(".iir-plot-status")).toContainText("continuous");
   await page.locator("#iir-plot-data").setChecked(false);
+  await expect(page.locator("#iir-status")).toContainText("plot_data = false");
   const hiddenCurveResponse = await page.request.get("/api/modules/iir/plot?points=128");
   expect(hiddenCurveResponse.ok()).toBe(true);
   const hiddenCurvePlot = await hiddenCurveResponse.json();

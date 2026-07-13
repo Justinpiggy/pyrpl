@@ -29,34 +29,31 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics"
 ]
 
-# Core dependencies only
+# Dependencies shared by the desktop and headless web runtimes.
 dependencies = [
-    "scp",
-    "pyyaml",
-    "pyqtgraph",
-    "numpy>=1.9",
-    "paramiko>=2.0",
-    "qtpy",
-    "qasync"
+    "numpy>=1.21",
+    "pyyaml>=5.4",
 ]
 
 [project.optional-dependencies]
 
-qt-pyqt5 = ["PyQt5"]
-qt-pyqt6 = ["PyQt6"]
-qt-pyside2 = ["PySide2"]
-qt-pyside6 = ["PySide6"]
+desktop = ["scp", "pyqtgraph", "paramiko>=2.0", "qtpy", "qasync"]
+qt-pyqt5 = ["scp", "pyqtgraph", "paramiko>=2.0", "qtpy", "qasync", "PyQt5"]
+qt-pyqt6 = ["scp", "pyqtgraph", "paramiko>=2.0", "qtpy", "qasync", "PyQt6"]
+qt-pyside2 = ["scp", "pyqtgraph", "paramiko>=2.0", "qtpy", "qasync", "PySide2"]
+qt-pyside6 = ["scp", "pyqtgraph", "paramiko>=2.0", "qtpy", "qasync", "PySide6"]
 
 web-redpitaya = [
-    "fastapi",
-    "uvicorn",
-    "wsproto",
+    "fastapi>=0.115,<0.116",
+    "pydantic>=1.10.24,<2",
+    "uvicorn>=0.30,<0.31",
+    "wsproto==1.2.0",
 ]
 
 web = [
-    "fastapi",
-    "uvicorn",
-    "wsproto",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+    "wsproto>=1.2,<2",
 ]
 
 # Development dependencies (includes all test dependencies plus docs/build tools)
@@ -99,12 +96,16 @@ ipython = [
     "ipykernel<6.30"
 ]
 
+[project.scripts]
+pyrpl-web = "pyrpl_websocket.__main__:main"
+pyrpl-web-audit = "pyrpl_websocket.dependency_audit:main"
+
 [tool.setuptools]
 packages = { find = {} }
 
 [tool.setuptools.package-data]
 pyrpl = ["fpga/*", "monitor_server/*", "config/*", "widgets/images/*"]
-pyrpl_websocket = ["static/*"]
+pyrpl_websocket = ["static/*", "frontend/index.html", "frontend/assets/*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "pyrpl._version.__version__" }

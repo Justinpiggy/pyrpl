@@ -14,6 +14,7 @@ import yaml
 from pyrpl_websocket.app import create_app, handle_control_message
 from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
 from pyrpl_websocket.curve_store import CurveStore, configured_curve_store
+from pyrpl_websocket.dependency_audit import audit_report
 from pyrpl_websocket.assets import asset_info
 from pyrpl_websocket.dsp_registers import (
     dsp_addr_base,
@@ -47,6 +48,38 @@ from pyrpl_websocket.telemetry import (
     read_sampler_signal,
     voltage_to_pwm,
 )
+
+
+async def asgi_http_request(app, path: str, headers=None, query: str = ""):
+    sent = []
+    requested = False
+
+    async def receive():
+        nonlocal requested
+        if not requested:
+            requested = True
+            return {"type": "http.request", "body": b"", "more_body": False}
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": query.encode(),
+        "root_path": "",
+        "headers": headers or [],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 8000),
+    }
+    await app(scope, receive, send)
+    return sent
 
 
 class SimulatedHardwareScopeClient:
@@ -154,6 +187,54 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("/ws/control", paths)
         self.assertIn("/ws/scope", paths)
         self.assertIn("/ws/networkanalyzer", paths)
+
+    def test_http_authentication_protects_api_and_redacts_token(self):
+        app = create_app(ServerSettings(hostname="_FAKE_", auth_token="lab-secret"))
+        unauthorized = asyncio.run(asgi_http_request(app, "/api/health"))
+        self.assertEqual(unauthorized[0]["status"], 401)
+
+        authorized = asyncio.run(
+            asgi_http_request(
+                app,
+                "/api/health",
+                headers=[(b"authorization", b"Bearer lab-secret")],
+            )
+        )
+        self.assertEqual(authorized[0]["status"], 200)
+        body = next(message["body"] for message in authorized if message["type"] == "http.response.body")
+        self.assertNotIn(b"lab-secret", body)
+        self.assertIn(b'"auth_enabled":true', body)
+
+        cookie_login = asyncio.run(asgi_http_request(app, "/api/health", query="token=lab-secret"))
+        headers = dict(cookie_login[0]["headers"])
+        self.assertIn(b"pyrpl_web_token=lab-secret", headers[b"set-cookie"])
+
+    def test_dependency_audit_enforces_armv7_pure_python_stack(self):
+        versions = {
+            "numpy": "1.24.0",
+            "PyYAML": "6.0.1",
+            "fastapi": "0.115.0",
+            "starlette": "0.38.6",
+            "pydantic": "1.10.24",
+            "uvicorn": "0.30.6",
+            "wsproto": "1.2.0",
+            "h11": "0.14.0",
+            "pydantic_core": None,
+            "uvloop": None,
+            "httptools": None,
+            "watchfiles": None,
+        }
+        with mock.patch("pyrpl_websocket.dependency_audit._version", side_effect=versions.get):
+            report = audit_report(machine="armv7l")
+        self.assertTrue(report["ok"])
+        self.assertTrue(report["target_armv7"])
+
+        versions["pydantic"] = "2.10.0"
+        versions["pydantic_core"] = "2.27.0"
+        with mock.patch("pyrpl_websocket.dependency_audit._version", side_effect=versions.get):
+            report = audit_report(machine="armv7l")
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("Pydantic 1" in error for error in report["errors"]))
 
     def test_asset_info_finds_copied_monitor_server_assets(self):
         assets = asset_info()

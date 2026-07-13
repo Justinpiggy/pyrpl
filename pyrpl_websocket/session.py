@@ -6,7 +6,7 @@ import json
 import struct
 import time
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 
@@ -158,7 +158,7 @@ class WebSession:
 
     def info(self) -> dict:
         return {
-            "settings": asdict(self.settings),
+            "settings": self.settings.public_dict(),
             "fake": self.settings.fake,
             "reads": self.client.stats.reads,
             "writes": self.client.stats.writes,

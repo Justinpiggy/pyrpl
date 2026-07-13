@@ -10,7 +10,7 @@ PYRPL_DIR = REPO_ROOT / "pyrpl"
 FPGA_DIR = PYRPL_DIR / "fpga"
 MONITOR_SERVER_DIR = PYRPL_DIR / "monitor_server"
 MONITOR_SERVER_C = MONITOR_SERVER_DIR / "monitor_server.c"
-WEB_DIST_DIR = REPO_ROOT / "web" / "dist"
+WEB_DIST_DIR = Path(__file__).resolve().parent / "frontend"
 WEB_DIST_ASSETS_DIR = WEB_DIST_DIR / "assets"
 
 

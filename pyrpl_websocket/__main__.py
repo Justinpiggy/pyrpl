@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import logging
+import os
 
 import uvicorn
 
 from .app import create_app
 from .config import DEFAULT_CONFIG_NAME
 from .settings import ServerSettings
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -43,6 +48,11 @@ def main() -> None:
         default=None,
         help="PyRPL-compatible curve directory. Defaults to PYRPL_USER_DIR/curve.",
     )
+    parser.add_argument(
+        "--auth-token",
+        default=os.environ.get("PYRPL_WEB_TOKEN"),
+        help="Optional HTTP/WebSocket token. Prefer PYRPL_WEB_TOKEN to avoid shell history.",
+    )
     args = parser.parse_args()
     settings = ServerSettings(
         hostname=args.hostname,
@@ -54,7 +64,14 @@ def main() -> None:
         config=args.config if args.config is not None else DEFAULT_CONFIG_NAME,
         source=args.source,
         curve_dir=args.curve_dir,
+        auth_token=args.auth_token,
     )
+    if settings.bind_host not in {"127.0.0.1", "::1", "localhost"} and not settings.auth_token:
+        LOGGER.warning(
+            "PyRPL hardware control is exposed on %s without authentication. "
+            "Use --auth-token/PYRPL_WEB_TOKEN or bind to loopback.",
+            settings.bind_host,
+        )
     uvicorn.run(
         create_app(settings),
         host=settings.bind_host,

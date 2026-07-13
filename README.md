@@ -102,6 +102,22 @@ In a command line terminal, type
 python -m pyrpl your_configuration_name
 ```
 A GUI should open, let you configure the RedPitaya device you would like to use, and you can start playing around with pyrpl. Different strings for 'your_configuration_name' create different configurations that will be automatically remembered by PyRPL, for example if you have several different redpitayas. Different RedPitayas with different configuration names can be run simultaneously in separate terminals.
+
+## Web Interface
+
+The headless FastAPI/TypeScript interface can be installed without Qt or the
+desktop SSH stack:
+
+```bash
+pip install -e ".[web]"
+npm --prefix web ci
+npm --prefix web run build
+pyrpl-web --hostname _FAKE_
+```
+
+See [WEB_DEPLOYMENT.md](WEB_DEPLOYMENT.md) for Red Pitaya ARMv7 installation,
+the dependency audit, `monitor_server` startup expectations, authentication,
+SSH tunneling, and systemd deployment.
 A GUI should open, let you configure the RedPitaya device you would like to use, and you can start playing around with pyrpl. Different strings for 'your_configuration_name' create different configurations that will be automatically remembered by PyRPL, for example if you have several different redpitayas. Different RedPitayas with different configuration names can be run simultaneously in separate terminals.
 
 ## Issues

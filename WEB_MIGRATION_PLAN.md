@@ -203,7 +203,11 @@ until the board is available, the next software-only work is:
 2. Move Spectrum Analyzer's original 16x FFT zero-padding into a browser Web
    Worker and validate the final normalization on hardware. Acquisition controls,
    linked RBW/span behavior, and browser-side averaging are migrated.
-3. Complete ARM packaging, dependency audit, security guidance, and CI.
+
+ARM packaging, dependency audit, security guidance, and CI are complete. The
+headless wheel now contains the compiled frontend, the Red Pitaya extra pins a
+pure-Python Python 3.10 ASGI stack, token authentication covers HTTP and
+WebSocket routes, and CI checks the browser, backend, wheel, and ARMv7 policy.
 
 The PyRPL configuration editor and custom CurveDB backend support are now
 complete. The editor exposes the active local file and top-level module branches
@@ -245,6 +249,19 @@ fastapi
 uvicorn
 wsproto
 ```
+
+Implemented package policy:
+
+- `.[web-redpitaya]` pins FastAPI 0.115, Pydantic 1, minimal Uvicorn 0.30,
+  and wsproto 1.2.
+- Desktop Qt and SSH dependencies live in desktop/Qt extras and are not pulled
+  into the headless installation.
+- `pyrpl-web-audit --strict-armv7` rejects Pydantic 2 and optional compiled
+  ASGI accelerators on the ARMv7 deployment path.
+- Vite builds directly into `pyrpl_websocket/frontend`, which is included in
+  the wheel; Node.js is not required on the Red Pitaya.
+- `WEB_DEPLOYMENT.md` documents loopback/SSH-tunnel deployment, optional token
+  authentication, direct-LAN precautions, and systemd startup.
 
 If FastAPI/Pydantic creates install or runtime pressure on the board, the
 fallback is Starlette plus handwritten lightweight validation. Starlette keeps

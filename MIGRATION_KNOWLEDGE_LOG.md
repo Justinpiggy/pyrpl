@@ -3204,3 +3204,55 @@ conda run -n pyrpl-env npm run test:e2e
   second Red Pitaya. A partial AST interpreter would invent semantics and hide
   failures. Keep this as an explicit trusted headless-plugin gap until a real
   runtime object contract is designed.
+# 2026-07-13: ARM Packaging, Authentication, And CI
+
+## Original problem found
+
+- The nominal `web-redpitaya` extra still inherited Qt, pyqtgraph, Paramiko,
+  SCP, and qasync from the project's base dependencies. It was therefore not a
+  genuinely headless ARM installation.
+- Vite built the current application into ignored `web/dist`, while wheel
+  package data only contained the old `pyrpl_websocket/static` prototype. A
+  source checkout worked, but an installed production wheel would serve stale
+  frontend code.
+- The old dependency audit only printed versions and could not reject an
+  unsuitable ARMv7 stack.
+
+## Implemented contract
+
+- Base dependencies are now only NumPy and PyYAML. Desktop packages moved to
+  `desktop` and the binding-specific Qt extras; existing `qt-*` installation
+  commands still install the complete desktop stack.
+- `web-redpitaya` pins FastAPI 0.115, Pydantic 1.10, minimal Uvicorn 0.30, and
+  wsproto 1.2. This avoids Pydantic 2's Rust core and Uvicorn's optional native
+  accelerators on 32-bit Zynq ARM.
+- Vite now emits directly to `pyrpl_websocket/frontend`; package data and a
+  wheel verification script ensure the built index, hashed assets, and console
+  commands are present.
+- `pyrpl-web-audit --strict-armv7` checks Python 3.10+, required packages,
+  frontend assets, Pydantic major version, and forbidden accelerators.
+- `PYRPL_WEB_TOKEN`/`--auth-token` enables constant-time bearer, query-token,
+  and HttpOnly cookie authentication for all HTTP and WebSocket routes. Public
+  settings redact the token. A non-loopback unauthenticated bind emits a clear
+  warning.
+- Added a systemd unit, environment template, ARM deployment/security guide,
+  Vite development proxy, and CI jobs for frontend tests/build, backend tests,
+  Playwright, wheel inspection, and ARMv7 dependency policy.
+
+## Testing lesson
+
+The full browser run initially failed after toggling IIR `plot_data` because the
+test queried `/api/modules/iir/plot` immediately after `setChecked(false)`.
+The DOM action had completed, but its asynchronous REST write and plot refresh
+had not. This was a test race, not persisted CurveDB corruption. Wait for the
+visible module status (`plot_data = false`) or another application-level
+completion signal before asserting backend state after an asynchronous UI
+control.
+
+## Verification
+
+- 64 backend tests pass through headless unittest discovery.
+- 14 TypeScript/unit tests pass.
+- The focused IIR Playwright workflow passes after synchronizing on status.
+- A wheel built without build isolation contains the compiled frontend and
+  both `pyrpl-web` and `pyrpl-web-audit` entry points.

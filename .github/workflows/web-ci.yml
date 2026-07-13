@@ -1,0 +1,57 @@
+name: Web Interface CI
+
+on:
+  push:
+    branches: [main, master, develop, pyrpl-websocket]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  web-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install headless Python runtime
+        run: python -m pip install -e ".[web]"
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+      - name: Test and build frontend
+        working-directory: web
+        run: |
+          npm test
+          npm run build
+      - name: Test backend
+        run: python -m unittest discover -s pyrpl/test -p test_pyrpl_websocket_app.py
+      - name: Install browser
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run browser workflows
+        working-directory: web
+        run: npm run test:e2e
+      - name: Build and inspect wheel
+        run: |
+          python -m pip install build
+          python -m build --wheel
+          python scripts/verify_web_wheel.py dist/*.whl
+
+  armv7-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install bounded Red Pitaya runtime
+        run: python -m pip install -e ".[web-redpitaya]"
+      - name: Enforce ARMv7 dependency policy
+        run: pyrpl-web-audit --strict-armv7

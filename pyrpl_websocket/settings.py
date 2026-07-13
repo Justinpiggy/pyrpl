@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 
 @dataclass
@@ -18,7 +18,14 @@ class ServerSettings:
     config: str | None = None
     source: str | None = None
     curve_dir: str | None = None
+    auth_token: str | None = None
 
     @property
     def fake(self) -> bool:
         return self.hostname in {"_FAKE_", "_FAKE_REDPITAYA_"}
+
+    def public_dict(self) -> dict:
+        values = asdict(self)
+        values.pop("auth_token", None)
+        values["auth_enabled"] = bool(self.auth_token)
+        return values

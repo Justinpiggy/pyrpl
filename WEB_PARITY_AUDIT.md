@@ -42,6 +42,18 @@ gap.
 | Configuration | `pyrpl/software_modules/pyrpl_config.py`, `pyrpl_config_widget.py`, `memory.py` | The active local config path, top-level branch selector, YAML refresh, validated atomic save, and immediate known-module setup reload are migrated. The browser cannot redirect `configfile` to an arbitrary server path; selecting a different file remains a startup/CLI operation. |
 | Lockbox | `pyrpl/software_modules/lockbox/*`, `lockbox_widget.py`, model classes in `pyrpl/software_modules/lockbox/models` and user lockbox dirs | Dynamic model/schema discovery, inputs/outputs/stages, PDH IQ setup, original fixed Lockbox actions, per-input and all-input sweep calibration, stage execution/duration, assisted/manual PID design, live output reconfiguration, selectable expected-signal plots, and complete open-loop magnitude/phase plots with flat/filter/CurveDB analog plants and optional IIR are migrated. Calibration temporarily locks Scope controls, forwards its capture to the Scope stream, and restores the prior Scope setup. Remaining gap: arbitrary trusted custom methods can access the entire PyRPL object graph, loops, hardware, and external devices; executing them requires an explicit headless plugin/runtime contract and cannot be represented faithfully by descriptor metadata alone. |
 
+## Deployment Parity
+
+- The web wheel is self-contained for browser assets and does not require Qt,
+  Paramiko, or Node.js at runtime.
+- `.[web-redpitaya]` is the ARMv7/Python 3.10 installation contract. Its audit
+  rejects Pydantic 2 and optional compiled Uvicorn accelerators.
+- Optional bearer/cookie authentication protects both REST and WebSocket
+  control paths. It is a LAN access guard, not transport encryption; SSH
+  tunneling or an HTTPS reverse proxy remains required on untrusted networks.
+- Actual installation and acquisition validation on the Zynq-7000 board is
+  deferred until hardware is available.
+
 ## Immediate Parity Fixes Applied
 
 - Removed IIR Unity/Zero from the web action list and backend action handler.

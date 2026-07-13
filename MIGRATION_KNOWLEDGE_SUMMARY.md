@@ -174,3 +174,24 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   claim arbitrary-method parity by inventing an AST subset; a future solution
   needs an explicit headless plugin API that provides the real hardware/session
   object graph.
+
+## ARM Packaging And Security Rules
+
+- Keep the base package headless: NumPy and PyYAML are shared dependencies;
+  Qt, pyqtgraph, Paramiko, SCP, and qasync belong in desktop extras.
+- Red Pitaya ARMv7 uses `.[web-redpitaya]`: FastAPI 0.115, Pydantic 1,
+  minimal Uvicorn 0.30, and wsproto 1.2. Do not install
+  `uvicorn[standard]`, Pydantic 2/pydantic-core, uvloop, httptools, or
+  watchfiles on this path.
+- Build Vite assets into `pyrpl_websocket/frontend` and include that directory
+  as wheel package data. A production wheel must never silently serve the old
+  prototype in `pyrpl_websocket/static`.
+- Run `pyrpl-web-audit --strict-armv7` after installation. The audit checks
+  Python, package versions, forbidden accelerators, and packaged frontend
+  presence.
+- Keep loopback binding as the default. Direct LAN binding should use
+  `PYRPL_WEB_TOKEN`; authentication must protect REST and every WebSocket route
+  and must never expose the token in health/session payloads.
+- UI tests must wait for the observable completion of asynchronous control
+  writes before directly querying backend state. Browser input helpers complete
+  DOM interaction, not the application's subsequent fetch and plot refresh.

@@ -1,0 +1,14 @@
+[Unit]
+Description=PyRPL web control server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/pyrpl-web.env
+ExecStart=/usr/bin/python3 -m pyrpl_websocket --hostname 127.0.0.1 --port 2222 --bind-host 0.0.0.0 --bind-port 8000
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

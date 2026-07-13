@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 from contextlib import asynccontextmanager
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable
 
 import yaml
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -386,6 +386,46 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             app.state.session.close()
 
     app = FastAPI(title="PyRPL WebSocket Prototype", version="0.1.0", lifespan=lifespan)
+
+    def valid_token(candidates: list[str | None]) -> bool:
+        if not settings.auth_token:
+            return True
+        return any(
+            candidate is not None and secrets.compare_digest(candidate, settings.auth_token)
+            for candidate in candidates
+        )
+
+    @app.middleware("http")
+    async def authenticate_http(request: Request, call_next):
+        authorization = request.headers.get("authorization", "")
+        bearer = authorization[7:] if authorization.lower().startswith("bearer ") else None
+        query_token = request.query_params.get("token")
+        if not valid_token([bearer, request.cookies.get("pyrpl_web_token"), query_token]):
+            return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+        response = await call_next(request)
+        if settings.auth_token and query_token and secrets.compare_digest(query_token, settings.auth_token):
+            response.set_cookie(
+                "pyrpl_web_token",
+                settings.auth_token,
+                httponly=True,
+                samesite="strict",
+                secure=request.url.scheme == "https",
+            )
+        return response
+
+    async def authenticate_websocket(websocket: WebSocket) -> bool:
+        authorization = websocket.headers.get("authorization", "")
+        bearer = authorization[7:] if authorization.lower().startswith("bearer ") else None
+        candidates = [
+            bearer,
+            websocket.cookies.get("pyrpl_web_token"),
+            websocket.query_params.get("token"),
+        ]
+        if valid_token(candidates):
+            return True
+        await websocket.close(code=1008, reason="Authentication required")
+        return False
+
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     if use_vite_frontend:
         app.mount("/assets", StaticFiles(directory=WEB_DIST_ASSETS_DIR), name="frontend-assets")
@@ -411,7 +451,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @app.get("/api/health")
     async def health():
-        return {"ok": True, "settings": asdict(settings)}
+        return {"ok": True, "settings": settings.public_dict()}
 
     @app.get("/api/session")
     async def session_info():
@@ -829,14 +869,20 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @app.websocket("/ws/control")
     async def control(websocket: WebSocket):
+        if not await authenticate_websocket(websocket):
+            return
         await control_socket(websocket, app.state.session, app.state.events, invalidate_acquisition_stream)
 
     @app.websocket("/ws/events")
     async def events(websocket: WebSocket):
+        if not await authenticate_websocket(websocket):
+            return
         await event_socket(websocket, app.state.events)
 
     @app.websocket("/ws/scope")
     async def scope_stream(websocket: WebSocket):
+        if not await authenticate_websocket(websocket):
+            return
         await websocket.accept()
         app.state.scope_stream_generation += 1
         generation = app.state.scope_stream_generation
@@ -867,6 +913,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @app.websocket("/ws/spectrumanalyzer")
     async def spectrum_stream(websocket: WebSocket):
+        if not await authenticate_websocket(websocket):
+            return
         await websocket.accept()
         app.state.spectrum_stream_generation += 1
         generation = app.state.spectrum_stream_generation
@@ -902,6 +950,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @app.websocket("/ws/networkanalyzer")
     async def network_analyzer_stream(websocket: WebSocket):
+        if not await authenticate_websocket(websocket):
+            return
         await websocket.accept()
         try:
             while True:
