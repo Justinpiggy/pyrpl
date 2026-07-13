@@ -2922,3 +2922,27 @@ conda run -n pyrpl-env npm run test:e2e
 - An old scope state event could overwrite a number input while the user was
   typing, causing blur to submit the stale value. Focused controls now retain
   the local edit until it commits.
+
+## 2026-07-13 CurveDB And Curve Viewer Migration
+
+- Original standalone PyRPL CurveDB stores each curve in
+  `PYRPL_USER_DIR/curve/<pk>.dat` as a pickle containing
+  `[pk, params, [x_values, y_values]]`. The web store reads and writes this
+  exact structure, including complex y-values, instead of creating a web-only
+  database format.
+- Scope saves one record per active channel. Baseband Spectrum Analyzer saves
+  active channel/cross records and stores values in `curve_unit` (`Vpk^2`), not
+  whichever transformed display unit is visible. Network Analyzer saves its
+  complex coherent response.
+- Diff review found Spectrum trace averaging was applied after display-unit
+  conversion. Original PyRPL averages linear spectrum values first. The browser
+  now keeps a linear `Vpk^2` averaged frame, derives the displayed frame from
+  it, and persists the linear frame directly.
+- Curve Viewer parity includes the newest 100 primary keys, a selected curve
+  plot, YAML parameter editing, Save Params, Delete Curve, and Refresh.
+- A dynamically populated `<select size>` retained `selectedIndex = -1` even
+  after options appeared. Explicitly select the newest primary key before
+  loading the curve; do not assume the browser selects the first option.
+- Browser coverage now verifies persistent Scope saving, complex magnitude and
+  phase rendering, raw CurveDB compatibility, YAML edits, deletion, and stable
+  three-pane Split.js layout.

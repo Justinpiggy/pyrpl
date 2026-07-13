@@ -38,6 +38,8 @@ export class NetworkAnalyzerPanel {
   private x: number[] = [];
   private magnitude: number[] = [];
   private phase: number[] = [];
+  private real: number[] = [];
+  private imaginary: number[] = [];
   private redrawFrame: number | null = null;
   private resizeFrame: number | null = null;
   private userScaled = false;
@@ -114,7 +116,14 @@ export class NetworkAnalyzerPanel {
     this.singleButton.addEventListener("click", () => void this.start("single"));
     this.runButton.addEventListener("click", () => void this.start("continuous"));
     this.stopButton.addEventListener("click", () => void this.stop());
-    this.saveButton.addEventListener("click", () => this.downloadCsv());
+    this.saveButton.addEventListener("click", () => {
+      void this.persistCurve()
+        .then(() => {
+          this.downloadCsv();
+          this.status.textContent = "Curve saved";
+        })
+        .catch((error: Error) => { this.status.textContent = error.message; });
+    });
     this.resetButton.addEventListener("click", () => this.resetZoom());
   }
 
@@ -169,12 +178,16 @@ export class NetworkAnalyzerPanel {
       this.x = new Array(point.points).fill(Number.NaN);
       this.magnitude = new Array(point.points).fill(Number.NaN);
       this.phase = new Array(point.points).fill(Number.NaN);
+      this.real = new Array(point.points).fill(Number.NaN);
+      this.imaginary = new Array(point.points).fill(Number.NaN);
       this.userScaled = false;
     }
     this.x[point.index] = point.x;
     const value = Math.hypot(point.real, point.imag);
     this.magnitude[point.index] = 20 * Math.log10(Math.max(value, 1e-20));
     this.phase[point.index] = Math.atan2(point.imag, point.real) * 180 / Math.PI;
+    this.real[point.index] = point.real;
+    this.imaginary[point.index] = point.imag;
     if (this.logscale !== point.logscale) {
       this.logscale = point.logscale;
       this.recreatePlots();
@@ -334,6 +347,40 @@ export class NetworkAnalyzerPanel {
     link.download = `network-analyzer-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  private async persistCurve(): Promise<void> {
+    const count = contiguousFiniteCount(this.x);
+    if (count === 0) throw new Error("No network analyzer curve to save");
+    const nameInput = this.controlsHost.querySelector<HTMLInputElement>("#networkanalyzer-curve-name");
+    const response = await fetch("/api/curves", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        x: this.x.slice(0, count),
+        y: this.real.slice(0, count),
+        y_imag: this.imaginary.slice(0, count),
+        params: {
+          ...this.currentControlParameters(),
+          name: nameInput?.value || "networkanalyzer curve",
+          module: "networkanalyzer",
+        },
+      }),
+    });
+    if (!response.ok) throw new Error(`Save curve failed: ${response.status}`);
+  }
+
+  private currentControlParameters(): Record<string, unknown> {
+    const params: Record<string, unknown> = {};
+    for (const input of this.controlsHost.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select")) {
+      const name = input.id.replace(/^networkanalyzer-/, "").replaceAll("-", "_");
+      params[name] = input instanceof HTMLInputElement && input.type === "checkbox"
+        ? input.checked
+        : input instanceof HTMLInputElement && input.type === "number"
+          ? Number(input.value)
+          : input.value;
+    }
+    return params;
   }
 }
 

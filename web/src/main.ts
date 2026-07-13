@@ -3,6 +3,7 @@ import { SpectrumPlot } from "./spectrum-plot";
 import { IirPlot } from "./iir-plot";
 import { LockboxPanel, type LockboxSchema } from "./lockbox-panel";
 import { NetworkAnalyzerPanel } from "./network-analyzer-panel";
+import { CurveViewerPanel } from "./curve-viewer-panel";
 import Split from "split.js";
 import { PANEL_DEFINITIONS, type PanelId } from "./panel-registry";
 import { createRegisterPanel } from "./register-panel";
@@ -56,6 +57,7 @@ app.innerHTML = `
             <div class="action-row">
               <button id="single-frame" type="button">Single</button>
               <button id="connect-scope" type="button">Run</button>
+              <input id="scope-curve-name" class="curve-name-input" type="text" value="scope curve" aria-label="Curve Name" />
             </div>
             <div class="action-row">
               <button id="save-curve" type="button">Save Curve</button>
@@ -231,6 +233,7 @@ app.innerHTML = `
             <div class="action-row">
               <button id="spectrum-single" type="button">Single</button>
               <button id="spectrum-run" type="button">Run</button>
+              <input id="spectrum-curve-name" class="curve-name-input" type="text" value="pyrpl spectrum" aria-label="Curve Name" />
               <button id="spectrum-save-curve" type="button">Save Curve</button>
             </div>
             <div class="action-row">
@@ -278,6 +281,30 @@ app.innerHTML = `
             <section class="network-plots split-pane">
               <div class="network-plot-frame"><div id="network-magnitude-plot"></div></div>
               <div class="network-plot-frame"><div id="network-phase-plot"></div></div>
+            </section>
+          </div>
+        </section>
+        <section class="workspace-panel" id="curveviewer-panel" data-panel-id="curveviewer" hidden>
+          <header class="panel-header">
+            <div><h2>Curve Viewer</h2></div>
+            <div class="action-row">
+              <button id="curve-viewer-save-params" type="button" disabled>Save Params</button>
+              <button id="curve-viewer-delete" type="button" disabled>Delete Curve</button>
+              <button id="curve-viewer-refresh" type="button">Refresh</button>
+            </div>
+          </header>
+          <div class="panel-content curve-viewer-content">
+            <section class="curve-viewer-list-pane split-pane">
+              <label><span>Curve</span><select id="curve-viewer-select" size="12"></select></label>
+            </section>
+            <section class="curve-viewer-plot-pane split-pane">
+              <div class="curve-viewer-plot-frame"><div id="curve-viewer-magnitude"></div></div>
+              <div class="curve-viewer-plot-frame"><div id="curve-viewer-phase"></div></div>
+            </section>
+            <section class="curve-viewer-params-pane split-pane">
+              <label><span>Name</span><input id="curve-viewer-name" type="text" readonly /></label>
+              <label><span>Parameters</span><textarea id="curve-viewer-params" spellcheck="false"></textarea></label>
+              <output id="curve-viewer-status">Curve viewer ready</output>
             </section>
           </div>
         </section>
@@ -572,6 +599,11 @@ style.textContent = `
     padding: 0 4px;
   }
 
+  .curve-name-input {
+    width: 130px !important;
+    height: 24px !important;
+  }
+
   select {
     height: 28px;
     width: 100%;
@@ -764,6 +796,66 @@ style.textContent = `
 
   .network-plot-frame {
     position: relative;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--plot-bg);
+  }
+
+  .curve-viewer-content {
+    display: flex;
+    flex-direction: row;
+  }
+
+  .curve-viewer-list-pane,
+  .curve-viewer-params-pane {
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+    padding: 6px;
+    overflow: hidden;
+  }
+
+  .curve-viewer-list-pane label,
+  .curve-viewer-params-pane label {
+    display: grid;
+    min-height: 0;
+    gap: 3px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  #curve-viewer-select {
+    height: 100%;
+  }
+
+  #curve-viewer-params {
+    width: 100%;
+    min-height: 0;
+    resize: none;
+    border: 1px solid #53616b;
+    background: #090d10;
+    color: var(--text);
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 6px;
+  }
+
+  .curve-viewer-params-pane {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .curve-viewer-plot-pane {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .curve-viewer-plot-pane.is-complex {
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  .curve-viewer-plot-frame {
     min-height: 0;
     overflow: hidden;
     background: var(--plot-bg);
@@ -1448,6 +1540,7 @@ const trigPanel = requireElement<HTMLElement>("#trig-panel");
 const pwmPanel = requireElement<HTMLElement>("#pwm-panel");
 const spectrumPanel = requireElement<HTMLElement>("#spectrumanalyzer-panel");
 const networkAnalyzerPanelElement = requireElement<HTMLElement>("#networkanalyzer-panel");
+const curveViewerPanelElement = requireElement<HTMLElement>("#curveviewer-panel");
 const lockboxPanelElement = requireElement<HTMLElement>("#lockbox-panel");
 const housekeepingPanel = requireElement<HTMLElement>("#housekeeping-panel");
 const registersPanel = requireElement<HTMLElement>("#registers-panel");
@@ -1461,6 +1554,7 @@ const panelElements: Record<PanelId, HTMLElement> = {
   pwm: pwmPanel,
   spectrumanalyzer: spectrumPanel,
   networkanalyzer: networkAnalyzerPanelElement,
+  curveviewer: curveViewerPanelElement,
   lockbox: lockboxPanelElement,
   housekeeping: housekeepingPanel,
   registers: registersPanel,
@@ -1470,6 +1564,7 @@ const status = requireElement<HTMLSpanElement>("#status");
 const connectButton = requireElement<HTMLButtonElement>("#connect-scope");
 const singleFrameButton = requireElement<HTMLButtonElement>("#single-frame");
 const saveCurveButton = requireElement<HTMLButtonElement>("#save-curve");
+const scopeCurveName = requireElement<HTMLInputElement>("#scope-curve-name");
 const zoomOutButton = requireElement<HTMLButtonElement>("#zoom-out");
 const zoomInButton = requireElement<HTMLButtonElement>("#zoom-in");
 const zoomYOutButton = requireElement<HTMLButtonElement>("#zoom-y-out");
@@ -1513,6 +1608,7 @@ const spectrumStatus = requireElement<HTMLOutputElement>("#spectrum-status");
 const spectrumSingleButton = requireElement<HTMLButtonElement>("#spectrum-single");
 const spectrumRunButton = requireElement<HTMLButtonElement>("#spectrum-run");
 const spectrumSaveCurveButton = requireElement<HTMLButtonElement>("#spectrum-save-curve");
+const spectrumCurveName = requireElement<HTMLInputElement>("#spectrum-curve-name");
 const spectrumZoomOutButton = requireElement<HTMLButtonElement>("#spectrum-zoom-out");
 const spectrumZoomInButton = requireElement<HTMLButtonElement>("#spectrum-zoom-in");
 const spectrumZoomYOutButton = requireElement<HTMLButtonElement>("#spectrum-zoom-y-out");
@@ -1532,6 +1628,19 @@ const networkAnalyzerPanel = new NetworkAnalyzerPanel(
   requireElement<HTMLButtonElement>("#network-stop"),
   requireElement<HTMLButtonElement>("#network-save"),
   requireElement<HTMLButtonElement>("#network-reset"),
+);
+const curveViewerPanel = new CurveViewerPanel(
+  curveViewerPanelElement,
+  requireElement<HTMLElement>(".curve-viewer-list-pane"),
+  requireElement<HTMLElement>(".curve-viewer-plot-pane"),
+  requireElement<HTMLElement>(".curve-viewer-params-pane"),
+  requireElement<HTMLSelectElement>("#curve-viewer-select"),
+  requireElement<HTMLInputElement>("#curve-viewer-name"),
+  requireElement<HTMLTextAreaElement>("#curve-viewer-params"),
+  requireElement<HTMLOutputElement>("#curve-viewer-status"),
+  requireElement<HTMLButtonElement>("#curve-viewer-save-params"),
+  requireElement<HTMLButtonElement>("#curve-viewer-delete"),
+  requireElement<HTMLButtonElement>("#curve-viewer-refresh"),
 );
 const lockboxPanel = new LockboxPanel({
   root: lockboxPanelElement,
@@ -1663,6 +1772,7 @@ const scopeParameterControls: Array<HTMLInputElement | HTMLSelectElement | HTMLB
   scopeStateSave,
   scopeStateLoad,
   scopeStateDelete,
+  scopeCurveName,
 ];
 
 let stream = new ScopeStream(plotHost, (message) => {
@@ -1806,6 +1916,9 @@ function applyWorkspaceState(): void {
   }
   if (visiblePanels.has("networkanalyzer")) {
     window.requestAnimationFrame(() => networkAnalyzerPanel.refreshLayout());
+  }
+  if (visiblePanels.has("curveviewer")) {
+    window.requestAnimationFrame(() => curveViewerPanel.refreshLayout());
   }
 }
 
@@ -1966,6 +2079,7 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
         spectrumPlot.refreshLayout();
         lockboxPanel.refreshLayout();
         networkAnalyzerPanel.refreshLayout();
+        curveViewerPanel.refreshLayout();
       },
       onDragEnd: (sizes) => {
         workspaceState = {
@@ -1977,6 +2091,7 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
         spectrumPlot.refreshLayout();
         lockboxPanel.refreshLayout();
         networkAnalyzerPanel.refreshLayout();
+        curveViewerPanel.refreshLayout();
       },
     },
   );
@@ -2048,6 +2163,9 @@ async function setActivePanel(panelId: PanelId): Promise<void> {
   if (panelId === "networkanalyzer") {
     window.requestAnimationFrame(() => networkAnalyzerPanel.refreshLayout());
   }
+  if (panelId === "curveviewer") {
+    window.requestAnimationFrame(() => curveViewerPanel.refreshLayout());
+  }
 }
 
 async function setWorkspaceLayoutMode(layoutMode: WorkspaceLayoutMode): Promise<void> {
@@ -2062,6 +2180,9 @@ async function setWorkspaceLayoutMode(layoutMode: WorkspaceLayoutMode): Promise<
   }
   if (workspaceState.panels.networkanalyzer.enabled && layoutMode !== "tabs") {
     window.requestAnimationFrame(() => networkAnalyzerPanel.refreshLayout());
+  }
+  if (workspaceState.panels.curveviewer.enabled && layoutMode !== "tabs") {
+    window.requestAnimationFrame(() => curveViewerPanel.refreshLayout());
   }
 }
 
@@ -2206,6 +2327,8 @@ function applyScopeControlValue(attribute: string, value: string | number | bool
     if (document.activeElement !== scopeThreshold) scopeThreshold.value = String(value);
   } else if (attribute === "hysteresis") {
     if (document.activeElement !== scopeHysteresis) scopeHysteresis.value = String(value);
+  } else if (attribute === "curve_name") {
+    if (document.activeElement !== scopeCurveName) scopeCurveName.value = String(value);
   }
 }
 
@@ -2299,6 +2422,7 @@ async function loadScopeControls(): Promise<void> {
   populateNumber(scopeTriggerDelay, attributes.get("trigger_delay")!);
   populateNumber(scopeThreshold, attributes.get("threshold")!);
   populateNumber(scopeHysteresis, attributes.get("hysteresis")!);
+  scopeCurveName.value = String(attributes.get("curve_name")?.value ?? "scope curve");
   stream.setTraceAverage(Number(scopeTraceAverage.value));
   updatePlotTimeSettings();
   moduleStatus.textContent = "Scope controls ready";
@@ -2709,6 +2833,9 @@ function applyGenericModuleState(moduleName: string, state: ModuleState): void {
   if (moduleName === "spectrumanalyzer") {
     spectrumPlot.setSettings(state);
     applySpectrumFieldVisibility(state);
+    if (document.activeElement !== spectrumCurveName && typeof state.curve_name === "string") {
+      spectrumCurveName.value = state.curve_name;
+    }
   }
   for (const [attribute, value] of Object.entries(state)) {
     if (attribute === "owner") {
@@ -2918,6 +3045,65 @@ async function callSpectrumAction(action: string): Promise<Record<string, unknow
   return payload;
 }
 
+async function createStoredCurve(
+  x: number[],
+  y: number[],
+  params: Record<string, unknown>,
+  yImag?: number[],
+): Promise<void> {
+  const response = await fetch("/api/curves", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ x, y, y_imag: yImag, params }),
+  });
+  if (!response.ok) throw new Error(`Save curve failed: ${response.status}`);
+}
+
+async function persistScopeCurves(): Promise<number> {
+  const data = stream.getCurveData();
+  if (!data) throw new Error("No scope curve to save");
+  const channels: Array<[number, boolean]> = [
+    [0, showCh1Toggle.checked],
+    [1, showCh2Toggle.checked],
+  ];
+  const active = channels.filter(([, enabled]) => enabled);
+  const setup = {
+    input1: scopeInput1.value,
+    input2: scopeInput2.value,
+    duration: Number(scopeDuration.value),
+    average: scopeAverage.checked,
+    trigger_source: scopeTrigger.value,
+    trigger_delay: Number(scopeTriggerDelay.value),
+    threshold: Number(scopeThreshold.value),
+    hysteresis: Number(scopeHysteresis.value),
+    ch1_active: showCh1Toggle.checked,
+    ch2_active: showCh2Toggle.checked,
+    trace_average: Number(scopeTraceAverage.value),
+    run_mode: scopeRunMode.value,
+  };
+  await Promise.all(active.map(([channel]) => createStoredCurve(data.x, data.channels[channel], {
+    ...setup,
+    name: `${scopeCurveName.value || "scope curve"} ch${channel + 1}`,
+    module: "scope",
+    ch: channel,
+    curve_unit: "V",
+  })));
+  return active.length;
+}
+
+async function persistSpectrumCurves(): Promise<number> {
+  const data = spectrumPlot.getCurveData();
+  if (!data) throw new Error("No spectrum curve to save");
+  await Promise.all(data.series.map((series, index) => createStoredCurve(data.x, series.values, {
+    ...spectrumPlot.getCurveParameters(),
+    name: `${spectrumCurveName.value || "pyrpl spectrum"} ${series.label.toLowerCase()}`,
+    module: "spectrumanalyzer",
+    ch: series.label === "Cross" ? "cross" : index,
+    curve_unit: data.unit,
+  })));
+  return data.series.length;
+}
+
 function startSpectrumStream(): void {
   if (spectrumRunButton.dataset.connected === "true") {
     return;
@@ -3025,10 +3211,10 @@ singleFrameButton.addEventListener("click", () => {
 });
 
 saveCurveButton.addEventListener("click", () => {
-  callScopeAction("save_curve")
-    .then(() => {
+  Promise.all([callScopeAction("save_curve"), persistScopeCurves()])
+    .then(([, curves]) => {
       stream.downloadCsv(`scope-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
-      moduleStatus.textContent = "saved browser curve";
+      moduleStatus.textContent = `saved ${curves} curve${curves === 1 ? "" : "s"}`;
     })
     .catch((error: Error) => {
       moduleStatus.textContent = error.message;
@@ -3081,8 +3267,23 @@ spectrumRunButton.addEventListener("click", () => {
 });
 
 spectrumSaveCurveButton.addEventListener("click", () => {
-  spectrumPlot.downloadCsv(`spectrum-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
-  spectrumStatus.textContent = "saved browser curve";
+  persistSpectrumCurves()
+    .then((curves) => {
+      spectrumPlot.downloadCsv(`spectrum-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
+      spectrumStatus.textContent = `saved ${curves} curve${curves === 1 ? "" : "s"}`;
+    })
+    .catch((error: Error) => { spectrumStatus.textContent = error.message; });
+});
+
+scopeCurveName.addEventListener("change", () => {
+  setScopeAttribute("curve_name", scopeCurveName.value).catch((error: Error) => {
+    moduleStatus.textContent = error.message;
+  });
+});
+
+spectrumCurveName.addEventListener("change", () => {
+  setGenericModuleAttribute("spectrumanalyzer", "curve_name", spectrumCurveName.value, spectrumStatus)
+    .catch((error: Error) => { spectrumStatus.textContent = error.message; });
 });
 
 spectrumZoomOutButton.addEventListener("click", () => spectrumPlot.zoom(1.8));
@@ -3275,6 +3476,7 @@ async function startup(): Promise<void> {
   await loadHkControls();
   await loadGenericPanels();
   await networkAnalyzerPanel.initialize();
+  await curveViewerPanel.load();
   await lockboxPanel.load();
   connectEvents();
   await loadWorkspaceStateFromConfig();

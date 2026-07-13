@@ -17,6 +17,7 @@ class ServerSettings:
     state_file: str | None = None
     config: str | None = None
     source: str | None = None
+    curve_dir: str | None = None
 
     @property
     def fake(self) -> bool:

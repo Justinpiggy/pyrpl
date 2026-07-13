@@ -14,6 +14,7 @@ import numpy as np
 
 from .asg_registers import disable_asg, sync_asg_setting, sync_asg_settings, trigger_asg
 from .config import WebConfig
+from .curve_store import CurveStore
 from .dsp_registers import (
     sync_iir_setting,
     sync_iir_settings,
@@ -122,6 +123,7 @@ class WebSession:
         self.spectrum_settings = SpectrumAnalyzerSettings()
         self.network_analyzer_settings = NetworkAnalyzerSettings()
         self.network_analyzer_run = NetworkAnalyzerRun()
+        self.curves = CurveStore(settings.curve_dir)
         self.lockbox = LockboxState()
         config_enabled = settings.config is not None or settings.source is not None
         self.config = None if settings.state_file or not config_enabled else WebConfig(settings.config, settings.source)
@@ -172,6 +174,27 @@ class WebSession:
 
     def lockbox_classes(self) -> list[dict]:
         return self.lockbox.class_list()
+
+    def curve_list(self, limit: int = 100) -> list[dict]:
+        return self.curves.list(limit)
+
+    def curve(self, pk: int) -> dict:
+        return self.curves.get(pk)
+
+    def create_curve(
+        self,
+        x: list[float],
+        y: list[float],
+        y_imag: list[float] | None,
+        params: dict,
+    ) -> dict:
+        return self.curves.create(x, y, y_imag, params)
+
+    def update_curve_params(self, pk: int, params_yaml: str) -> dict:
+        return self.curves.update_params(pk, params_yaml)
+
+    def delete_curve(self, pk: int) -> None:
+        self.curves.delete(pk)
 
     def lockbox_schema(self) -> dict:
         return self.lockbox.schema()
@@ -362,13 +385,13 @@ class WebSession:
                 return normalized
             if module_name == "spectrumanalyzer":
                 normalized = set_spectrum_attribute(self.spectrum_settings, attribute, value)
-                if attribute != "trace_average" and self.spectrum_settings.running_state == "running_continuous":
+                if attribute not in {"trace_average", "curve_name", "curve_unit"} and self.spectrum_settings.running_state == "running_continuous":
                     self._configure_spectrum_no_lock()
                 self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name == "networkanalyzer":
                 normalized = set_network_analyzer_attribute(self.network_analyzer_settings, attribute, value)
-                if self.network_analyzer_settings.running_state != "stopped":
+                if attribute not in {"trace_average", "curve_name"} and self.network_analyzer_settings.running_state != "stopped":
                     self._stop_network_analyzer_no_lock()
                 self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized

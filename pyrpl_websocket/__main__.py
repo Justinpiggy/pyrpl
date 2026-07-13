@@ -38,6 +38,11 @@ def main() -> None:
         default=None,
         help="Optional PyRPL-compatible source config copied when --config does not exist.",
     )
+    parser.add_argument(
+        "--curve-dir",
+        default=None,
+        help="PyRPL-compatible curve directory. Defaults to PYRPL_USER_DIR/curve.",
+    )
     args = parser.parse_args()
     settings = ServerSettings(
         hostname=args.hostname,
@@ -48,6 +53,7 @@ def main() -> None:
         state_file=args.state_file,
         config=args.config if args.config is not None else DEFAULT_CONFIG_NAME,
         source=args.source,
+        curve_dir=args.curve_dir,
     )
     uvicorn.run(
         create_app(settings),

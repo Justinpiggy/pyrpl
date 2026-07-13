@@ -720,9 +720,12 @@ included as package data.
 - Network analyzer now works in browser with the original IQ point-acquisition
   path, incremental WebSocket updates, magnitude/phase plots, resource
   ownership, trace averaging, zero-span support, auto-amplitude ramping, and
-  CSV export. Hardware validation and curve-viewer persistence remain.
+  CSV export. Hardware validation remains.
 - Spectrum analyzer works in browser.
-- Curve saving and curve viewer are usable.
+- Curve saving and Curve Viewer are now usable. Scope, Spectrum Analyzer, and
+  Network Analyzer write PyRPL-compatible `curve/<pk>.dat` records while still
+  offering CSV downloads. Curve Viewer supports the newest 100 records,
+  real/complex plots, YAML parameter editing, deletion, and refresh.
 
 ### Milestone 5: Lockbox Workflows
 

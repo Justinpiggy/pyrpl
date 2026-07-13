@@ -74,3 +74,17 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   gutters interfere with workspace selectors and are sized from zero geometry.
 - Do not overwrite a focused form input with an older asynchronous state event.
   Apply remote values after the user's edit has committed.
+
+## Curve Rules
+
+- Default curve storage is `PYRPL_USER_DIR/curve`, matching original PyRPL.
+- Preserve the standalone CurveDB pickle structure exactly as
+  `[pk, params, [x_values, y_values]]` in `<pk>.dat` files.
+- Save acquisition setup attributes with curve data. Spectrum curves are stored
+  in `curve_unit` (`Vpk^2`), independent of the selected display unit.
+- Spectrum trace averaging must happen on linear `Vpk^2` values before
+  converting to dB, RMS, or density units for display.
+- Curve Viewer selects the newest curve explicitly after refreshing a dynamic
+  multi-row selector; browsers do not reliably auto-select its first option.
+- Complex curves display magnitude in dB and phase in degrees; real curves
+  display their untransformed y-values and hide the phase plot.

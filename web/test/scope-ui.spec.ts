@@ -15,6 +15,7 @@ const defaultWorkspace = {
     pwm: { enabled: false },
     spectrumanalyzer: { enabled: false, splitSizes: [35, 65] },
     networkanalyzer: { enabled: false, splitSizes: [34, 66] },
+    curveviewer: { enabled: false },
     lockbox: { enabled: false },
     housekeeping: { enabled: false },
     registers: { enabled: false },
@@ -32,6 +33,13 @@ async function resetServerConfig(page: Page): Promise<void> {
   await page.request.post("/api/modules/networkanalyzer/actions/stop");
   await page.request.post("/api/lockbox/actions/unlock");
   await page.request.post("/api/workspace", { data: { workspace: defaultWorkspace } });
+  const curveListResponse = await page.request.get("/api/curves");
+  if (curveListResponse.ok()) {
+    const payload = await curveListResponse.json();
+    for (const curve of payload.curves ?? []) {
+      await page.request.delete(`/api/curves/${curve.pk}`);
+    }
+  }
 
   await setModuleAttribute(page, "scope", "input1", "in1");
   await setModuleAttribute(page, "scope", "input2", "in2");
@@ -720,6 +728,13 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   expect(csvPath).toBeTruthy();
   const csv = readFileSync(csvPath!, "utf8");
   expect(csv.split("\n")[0]).toContain("frequency");
+  const savedSpectrumList = await (await page.request.get("/api/curves")).json();
+  expect(savedSpectrumList.curves.length).toBeGreaterThan(0);
+  const savedSpectrum = await (
+    await page.request.get(`/api/curves/${savedSpectrumList.curves[0].pk}`)
+  ).json();
+  expect(savedSpectrum.curve.params.curve_unit).toBe("Vpk^2");
+  expect(Math.min(...savedSpectrum.curve.y)).toBeGreaterThanOrEqual(0);
 
   await page.getByRole("button", { name: "IQ" }).click();
   await expect(page.locator("#iq-panel")).toBeVisible();
@@ -781,6 +796,47 @@ test("network analyzer streams a complete sweep and releases its IQ", async ({ p
   await page.waitForTimeout(300);
   const frameAfter = await page.locator(".network-plot-frame").first().boundingBox();
   expect(Math.abs((frameAfter?.height ?? 0) - (frameBefore?.height ?? 0))).toBeLessThan(2);
+});
+
+test("curve viewer persists PyRPL curves and edits complex curve parameters", async ({ page }) => {
+  await resetServerConfig(page);
+  await page.goto("/");
+  await expect(page.locator("#status")).toContainText(/Frame \d+/);
+
+  const scopeDownload = page.waitForEvent("download");
+  await page.locator("#save-curve").click();
+  await scopeDownload;
+  await expect(page.locator("#module-status")).toContainText("saved 2 curves");
+
+  const complexResponse = await page.request.post("/api/curves", {
+    data: {
+      x: [1, 10, 100, 1000],
+      y: [1, 0.8, 0.4, 0.1],
+      y_imag: [0, -0.2, -0.3, -0.1],
+      params: { name: "complex test", module: "networkanalyzer" },
+    },
+  });
+  expect(complexResponse.ok()).toBe(true);
+
+  await page.locator(".menu-dropdown summary").click();
+  await page.locator("#panel-curveviewer-enabled").setChecked(true);
+  await page.getByRole("button", { name: "Curve Viewer", exact: true }).click();
+  await expect(page.locator("#curveviewer-panel")).toBeVisible();
+  await expect(page.locator("#curveviewer-panel > .curve-viewer-content > .gutter-horizontal")).toHaveCount(2);
+  await page.locator("#curve-viewer-refresh").click();
+  await expect(page.locator("#curve-viewer-select option")).toHaveCount(3);
+  await expect(page.locator("#curve-viewer-name")).toHaveValue("complex test");
+  await expect(page.locator("#curve-viewer-phase")).toBeVisible();
+  await expect.poll(() => page.locator("#curve-viewer-magnitude canvas").evaluate(countPaintedPixels)).toBeGreaterThan(1000);
+
+  await page.locator("#curve-viewer-params").fill("name: edited complex\nmodule: networkanalyzer\nnote: browser test\n");
+  await page.locator("#curve-viewer-save-params").click();
+  await expect(page.locator("#curve-viewer-name")).toHaveValue("edited complex");
+  await expect(page.locator("#curve-viewer-select option").first()).toContainText("edited complex");
+
+  await page.locator("#curve-viewer-delete").click();
+  await expect(page.locator("#curve-viewer-select option")).toHaveCount(2);
+  await expect(page.locator("#curve-viewer-status")).toContainText("deleted");
 });
 
 test("lockbox panel switches classes, edits stages, and renders static plots", async ({ page }) => {

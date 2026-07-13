@@ -20,6 +20,7 @@ interface Window {
         | "pwm"
         | "spectrumanalyzer"
         | "networkanalyzer"
+        | "curveviewer"
         | "lockbox"
         | "housekeeping"
         | "registers",
@@ -37,6 +38,7 @@ interface Window {
       | "pwm"
       | "spectrumanalyzer"
       | "networkanalyzer"
+      | "curveviewer"
       | "lockbox"
       | "housekeeping"
       | "registers"

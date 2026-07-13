@@ -8,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import yaml
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -46,6 +47,17 @@ class WorkspaceWriteRequest(BaseModel):
 
 class LockboxClassRequest(BaseModel):
     classname: str
+
+
+class CurveCreateRequest(BaseModel):
+    x: list[float]
+    y: list[float]
+    y_imag: list[float] | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class CurveParamsRequest(BaseModel):
+    params_yaml: str
 
 
 def _message_id(message: dict[str, Any]) -> Any:
@@ -650,6 +662,50 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             request.values,
         )
         return {"addr": request.addr, "count": len(request.values), "ok": ok}
+
+    @app.get("/api/curves")
+    async def curves(limit: int = 100):
+        return {"curves": await asyncio.to_thread(app.state.session.curve_list, max(0, min(limit, 100)))}
+
+    @app.post("/api/curves")
+    async def create_curve(request: CurveCreateRequest):
+        try:
+            curve = await asyncio.to_thread(
+                app.state.session.create_curve,
+                request.x,
+                request.y,
+                request.y_imag,
+                request.params,
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"curve": curve}
+
+    @app.get("/api/curves/{pk}")
+    async def curve(pk: int):
+        try:
+            result = await asyncio.to_thread(app.state.session.curve, pk)
+        except (OSError, EOFError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=f"Unknown curve {pk}") from exc
+        return {"curve": result}
+
+    @app.put("/api/curves/{pk}/params")
+    async def update_curve_params(pk: int, request: CurveParamsRequest):
+        try:
+            result = await asyncio.to_thread(app.state.session.update_curve_params, pk, request.params_yaml)
+        except (OSError, EOFError) as exc:
+            raise HTTPException(status_code=404, detail=f"Unknown curve {pk}") from exc
+        except (TypeError, ValueError, yaml.YAMLError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"curve": result}
+
+    @app.delete("/api/curves/{pk}")
+    async def delete_curve(pk: int):
+        try:
+            await asyncio.to_thread(app.state.session.delete_curve, pk)
+        except (OSError, EOFError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=f"Unknown curve {pk}") from exc
+        return {"pk": pk, "deleted": True}
 
     @app.get("/api/scope/frame")
     async def scope_frame(samples: int = SCOPE_DATA_LENGTH):

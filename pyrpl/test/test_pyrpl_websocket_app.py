@@ -1,4 +1,5 @@
 import asyncio
+import pickle
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ import yaml
 
 from pyrpl_websocket.app import create_app, handle_control_message
 from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
+from pyrpl_websocket.curve_store import CurveStore
 from pyrpl_websocket.assets import asset_info
 from pyrpl_websocket.dsp_registers import (
     dsp_addr_base,
@@ -122,6 +124,9 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("/api/modules/{module_name}/states/{state_name}/load", paths)
         self.assertIn("/api/modules/{module_name}/states/{state_name}", paths)
         self.assertIn("/api/modules/iir/plot", paths)
+        self.assertIn("/api/curves", paths)
+        self.assertIn("/api/curves/{pk}", paths)
+        self.assertIn("/api/curves/{pk}/params", paths)
         self.assertIn("/api/lockbox", paths)
         self.assertIn("/api/lockbox/classes", paths)
         self.assertIn("/api/lockbox/class", paths)
@@ -138,6 +143,40 @@ class WebAppTest(unittest.TestCase):
         self.assertTrue(assets["exists"]["fpga"])
         self.assertTrue(assets["exists"]["monitor_server"])
         self.assertTrue(assets["exists"]["monitor_server_c"])
+
+    def test_curve_store_writes_and_reads_pyrpl_curvedb_format(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CurveStore(directory)
+            curve = store.create(
+                [1.0, 2.0],
+                [3.0, 4.0],
+                [0.5, -0.5],
+                {"name": "complex response", "module": "networkanalyzer"},
+            )
+            self.assertEqual(curve["pk"], 1)
+            self.assertEqual(curve["y_imag"], [0.5, -0.5])
+            with (Path(directory) / "1.dat").open("rb") as handle:
+                pk, params, data = pickle.load(handle)
+            self.assertEqual(pk, 1)
+            self.assertEqual(params["name"], "complex response")
+            self.assertEqual(data[0], [1.0, 2.0])
+            self.assertEqual(data[1], [(3+0.5j), (4-0.5j)])
+
+            updated = store.update_params(1, "name: renamed\nmodule: networkanalyzer\n")
+            self.assertEqual(updated["name"], "renamed")
+            self.assertEqual(store.list()[0]["name"], "renamed")
+            store.delete(1)
+            self.assertEqual(store.list(), [])
+
+    def test_curve_store_loads_legacy_pyrpl_pickle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "7.dat"
+            with path.open("wb") as handle:
+                pickle.dump([7, {"name": "legacy", "childs": None}, [[0, 1], [2, 3]]], handle)
+            curve = CurveStore(directory).get(7)
+            self.assertEqual(curve["name"], "legacy")
+            self.assertEqual(curve["x"], [0.0, 1.0])
+            self.assertEqual(curve["y"], [2.0, 3.0])
 
     def test_session_register_write_then_read(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))

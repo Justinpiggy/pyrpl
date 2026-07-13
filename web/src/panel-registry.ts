@@ -8,6 +8,7 @@ export type PanelId =
   | "pwm"
   | "spectrumanalyzer"
   | "networkanalyzer"
+  | "curveviewer"
   | "lockbox"
   | "housekeeping"
   | "registers";
@@ -77,6 +78,12 @@ export const PANEL_DEFINITIONS: PanelDefinition[] = [
     description: "Coherent swept-frequency response measurement",
     defaultEnabled: false,
     defaultSplitSizes: [34, 66],
+  },
+  {
+    id: "curveviewer",
+    title: "Curve Viewer",
+    description: "Browse and manage saved PyRPL curves",
+    defaultEnabled: false,
   },
   {
     id: "lockbox",

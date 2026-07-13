@@ -252,6 +252,14 @@ export class ScopeStream {
     return hash >>> 0;
   }
 
+  getCurveData(): { x: number[]; channels: [number[], number[]] } | null {
+    if (!this.displayedData) return null;
+    return {
+      x: Array.from(this.displayedData.x),
+      channels: [Array.from(this.displayedData.ch1), Array.from(this.displayedData.ch2)],
+    };
+  }
+
   downloadCsv(filename: string): void {
     const blob = new Blob([this.exportCsv()], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);

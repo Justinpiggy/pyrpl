@@ -8,7 +8,7 @@ type StatusCallback = (message: string) => void;
 
 export interface SpectrumSeries {
   label: string;
-  values: Float32Array;
+  values: Float64Array;
 }
 
 export interface SpectrumFrame {
@@ -49,6 +49,7 @@ export class SpectrumPlot {
   private intentionalClose = false;
   private plot: uPlot;
   private latestFrame: SpectrumFrame | null = null;
+  private latestCurveFrame: SpectrumFrame | null = null;
   private pendingFrame: SpectrumFrame | null = null;
   private panState:
     | { startX: number; startY: number; xMin: number; xMax: number; yMin: number; yMax: number }
@@ -159,7 +160,9 @@ export class SpectrumPlot {
       this.setStatus(error instanceof Error ? error.message : "Invalid spectrum frame");
       return;
     }
-    this.pendingFrame = this.averageFrame(frame);
+    const averaged = this.averageFrame(frame);
+    this.latestCurveFrame = averaged;
+    this.pendingFrame = displaySpectrumFrame(averaged, this.settings.displayUnit);
     this.scheduleRender();
     this.setStatus(`Spectrum frame ${frame.sequence}, ${frame.x.length} bins, RBW ${formatCompactNumber(frame.rbw)} Hz`);
   }
@@ -202,6 +205,32 @@ export class SpectrumPlot {
       );
     }
     return `${lines.join("\n")}\n`;
+  }
+
+  getCurveData(): { x: number[]; series: Array<{ label: string; values: number[] }>; unit: string } | null {
+    if (!this.latestCurveFrame) return null;
+    return {
+      x: Array.from(this.latestCurveFrame.x),
+      series: this.latestCurveFrame.series.map((series) => ({
+        label: series.label,
+        values: Array.from(series.values),
+      })),
+      unit: "Vpk^2",
+    };
+  }
+
+  getCurveParameters(): Record<string, unknown> {
+    return {
+      baseband: this.settings.baseband,
+      span: this.settings.span,
+      center: this.settings.center,
+      window: this.settings.window,
+      display_unit: this.settings.displayUnit,
+      trace_average: this.settings.traceAverage,
+      display_input1_baseband: this.settings.displayInput1Baseband,
+      display_input2_baseband: this.settings.displayInput2Baseband,
+      display_cross_amplitude: this.settings.displayCrossAmplitude,
+    };
   }
 
   downloadCsv(filename: string): void {
@@ -358,7 +387,7 @@ export class SpectrumPlot {
     const priorWeight = nextAverage - 1;
     const averagedSeries = frame.series.map((series, seriesIndex) => {
       const previous = this.averagedFrame!.series[seriesIndex].values;
-      const values = new Float32Array(series.values.length);
+      const values = new Float64Array(series.values.length);
       for (let index = 0; index < values.length; index += 1) {
         values[index] = (previous[index] * priorWeight + series.values[index]) / nextAverage;
       }
@@ -540,13 +569,13 @@ function spectrumFromScopeBuffer(buffer: ArrayBuffer, settings: SpectrumSettings
     }
     const series: SpectrumSeries[] = [];
     if (settings.displayInput1Baseband) {
-      series.push({ label: "Input 1", values: convertPower(powerSpectrum(fft1), settings.displayUnit, rbw) });
+      series.push({ label: "Input 1", values: powerSpectrum(fft1) });
     }
     if (settings.displayInput2Baseband) {
-      series.push({ label: "Input 2", values: convertPower(powerSpectrum(fft2), settings.displayUnit, rbw) });
+      series.push({ label: "Input 2", values: powerSpectrum(fft2) });
     }
     if (settings.displayCrossAmplitude) {
-      series.push({ label: "Cross", values: convertPower(crossPower(fft1, fft2), settings.displayUnit, rbw) });
+      series.push({ label: "Cross", values: crossPower(fft1, fft2) });
     }
     return {
       sequence: frame.sequence,
@@ -569,7 +598,7 @@ function spectrumFromScopeBuffer(buffer: ArrayBuffer, settings: SpectrumSettings
   return {
     sequence: frame.sequence,
     x,
-    series: [{ label: "IQ", values: convertPower(shifted, settings.displayUnit, rbw) }],
+    series: [{ label: "IQ", values: shifted }],
     span: settings.span,
     center: settings.center,
     rbw,
@@ -664,8 +693,8 @@ function fftShiftPower(fft: { real: Float64Array; imag: Float64Array }): Float64
   return shifted;
 }
 
-function convertPower(power: Float64Array, unit: string, rbw: number): Float32Array {
-  const values = new Float32Array(power.length);
+function convertPower(power: Float64Array, unit: string, rbw: number): Float64Array {
+  const values = new Float64Array(power.length);
   for (let index = 0; index < power.length; index += 1) {
     const safe = Math.max(power[index], Number.EPSILON);
     if (unit === "dB(Vpk^2)") {
@@ -732,7 +761,18 @@ function cloneSpectrumFrame(frame: SpectrumFrame): SpectrumFrame {
     x: frame.x,
     series: frame.series.map((series) => ({
       label: series.label,
-      values: new Float32Array(series.values),
+      values: new Float64Array(series.values),
+    })),
+  };
+}
+
+function displaySpectrumFrame(frame: SpectrumFrame, unit: string): SpectrumFrame {
+  return {
+    ...frame,
+    unit,
+    series: frame.series.map((series) => ({
+      label: series.label,
+      values: convertPower(series.values, unit, frame.rbw),
     })),
   };
 }

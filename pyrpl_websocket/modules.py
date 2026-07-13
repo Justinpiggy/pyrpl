@@ -65,6 +65,7 @@ SCOPE_SETUP_ATTRIBUTES = [
     "rolling_mode",
     "trace_average",
     "run_mode",
+    "curve_name",
 ]
 SCOPE_ACTIONS = [
     {
@@ -100,7 +101,7 @@ SCOPE_ACTIONS = [
     {
         "name": "save_curve",
         "label": "Save Curve",
-        "description": "Placeholder for saving the currently displayed browser curve.",
+        "description": "Save the currently displayed curve to CurveDB.",
     },
 ]
 
@@ -233,6 +234,8 @@ SPECTRUM_SETUP_ATTRIBUTES = [
     "display_input2_baseband",
     "display_cross_amplitude",
     "trace_average",
+    "curve_name",
+    "curve_unit",
 ]
 SPECTRUM_ACTIONS = [
     {"name": "setup", "label": "Setup", "description": "Reserve resources and configure spectrum acquisition."},
@@ -294,6 +297,7 @@ class ScopeSettings:
     run_mode: str = "rolling"
     running_state: str = "stopped"
     last_action: str | None = None
+    curve_name: str = "scope curve"
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -468,6 +472,8 @@ class SpectrumAnalyzerSettings:
     display_input2_baseband: bool = True
     display_cross_amplitude: bool = True
     trace_average: int = 1
+    curve_name: str = "pyrpl spectrum"
+    curve_unit: str = "Vpk^2"
     running_state: str = "stopped"
     last_action: str | None = None
     iq_module: str = "iq2"
@@ -618,6 +624,7 @@ def scope_attribute_schema(settings: ScopeSettings) -> list[dict[str, Any]]:
         _number("trigger_delay", "Trigger Delay", settings.trigger_delay, -10.0, 8e-9 * 2**30),
         _number("threshold", "Threshold", settings.threshold, -1.0, 1.0),
         _number("hysteresis", "Hysteresis", settings.hysteresis, 0.0, 1.0),
+        _text("curve_name", "Curve Name", settings.curve_name),
     ]
 
 
@@ -815,6 +822,8 @@ def set_scope_attribute(settings: ScopeSettings, name: str, value: Any) -> Any:
     elif name == "trace_average":
         normalized = int(round(_clamp(float(value), 1, 1024)))
     elif name == "math_formula":
+        normalized = str(value)
+    elif name == "curve_name":
         normalized = str(value)
     elif name == "trigger_delay":
         normalized = _clamp(float(value), -10.0, 8e-9 * 2**30)
@@ -1019,6 +1028,10 @@ def set_spectrum_attribute(settings: SpectrumAnalyzerSettings, name: str, value:
         normalized = _clamp(float(value), 0.0, 62.5e6)
     elif name == "trace_average":
         normalized = int(round(_clamp(float(value), 1, 1024)))
+    elif name == "curve_name":
+        normalized = str(value)
+    elif name == "curve_unit":
+        normalized = _require_option(name, str(value), ["Vpk^2"])
     elif name in {"running_state", "last_action"}:
         normalized = str(value) if value is not None else None
     else:
