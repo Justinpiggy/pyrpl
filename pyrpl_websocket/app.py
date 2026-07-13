@@ -41,6 +41,11 @@ class ModuleAttributeWriteRequest(BaseModel):
     value: Any
 
 
+class SamplerStatsRequest(BaseModel):
+    signal: str = "in1"
+    duration: float = Field(default=1e-2, ge=0.0, le=10.0)
+
+
 class WorkspaceWriteRequest(BaseModel):
     workspace: dict[str, Any]
 
@@ -407,6 +412,18 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @app.get("/api/modules")
     async def modules():
         return {"modules": app.state.session.modules()}
+
+    @app.post("/api/sampler/stats")
+    async def sampler_stats_route(request: SamplerStatsRequest):
+        try:
+            result = await asyncio.to_thread(
+                app.state.session.sampler_stats,
+                request.signal,
+                request.duration,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return result
 
     @app.get("/api/lockbox/classes")
     async def lockbox_classes():

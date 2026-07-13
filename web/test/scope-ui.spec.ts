@@ -18,6 +18,7 @@ const defaultWorkspace = {
     curveviewer: { enabled: false },
     lockbox: { enabled: false },
     housekeeping: { enabled: false },
+    telemetry: { enabled: false },
     registers: { enabled: false },
   },
 };
@@ -465,6 +466,41 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   const secondHeight = await page.evaluate(() => document.documentElement.scrollHeight);
   expect(secondHeight).toBe(firstHeight);
   expect(browserMessages.filter((message) => message.includes("ResizeObserver loop"))).toEqual([]);
+});
+
+test("sampler and AMS panel refreshes, measures statistics, and writes DAC2", async ({ page }) => {
+  await resetServerConfig(page);
+  await page.goto("/");
+  await page.locator(".menu-dropdown summary").click();
+  await page.locator("#panel-telemetry-enabled").setChecked(true);
+  await page.getByRole("button", { name: "Sampler & AMS" }).click();
+
+  await expect(page.locator("#telemetry-panel")).toBeVisible();
+  await expect(page.locator(".sampler-reading")).toHaveCount(16);
+  await expect(page.locator("#sampler-status")).toContainText("refreshed");
+  await expect(page.locator("#ams-dac0")).toHaveAttribute("readonly", "");
+  await expect(page.locator("#ams-dac1")).toHaveAttribute("readonly", "");
+
+  await page.locator("#sampler-stats-signal").selectOption("asg0");
+  await page.locator("#sampler-stats-duration").fill("0");
+  await page.locator("#sampler-stats-run").click();
+  await expect(page.locator("#sampler-stats-output")).toContainText("mean");
+  await expect(page.locator("#sampler-stats-output")).toContainText("n 1");
+
+  await page.locator("#ams-dac2").fill("0.9");
+  await page.locator("#ams-dac2").press("Enter");
+  await expect(page.locator("#ams-status")).toContainText("DAC2 = 0.900000 V");
+  const amsResponse = await page.request.get("/api/modules/ams");
+  expect(amsResponse.ok()).toBe(true);
+  const ams = await amsResponse.json();
+  expect(ams.state.dac2).toBeCloseTo(0.9, 3);
+
+  const overflow = await page.locator("#telemetry-panel").evaluate((panel) => ({
+    horizontal: panel.scrollWidth - panel.clientWidth,
+    vertical: panel.scrollHeight - panel.clientHeight,
+  }));
+  expect(overflow.horizontal).toBeLessThanOrEqual(1);
+  expect(overflow.vertical).toBeLessThanOrEqual(1);
 });
 
 test("ASG and housekeeping panels expose migrated module controls", async ({ page }) => {

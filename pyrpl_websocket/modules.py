@@ -207,6 +207,12 @@ TRIG_ACTIONS = [
 PWM_SETUP_ATTRIBUTES = ["input"]
 PWM_ACTIONS = [{"name": "setup", "label": "Setup", "description": "Synchronize PWM input routing."}]
 
+SAMPLER_SIGNALS = [
+    "in1", "in2", "out1", "out2", "iq0", "iq1", "iq2", "iq2_2",
+    "pid0", "pid1", "pid2", "asg0", "asg1", "trig", "iir", "off",
+]
+AMS_DACS = ["dac0", "dac1", "dac2", "dac3"]
+
 SPECTRUM_WINDOWS = ["blackman", "flattop", "boxcar", "hamming", "gaussian"]
 SPECTRUM_DISPLAY_UNITS = [
     "Vpk^2",
@@ -456,6 +462,19 @@ class PwmSettings:
 
 
 @dataclass
+class AmsSettings:
+    """AMS DAC readback; only dac2 and dac3 are effective writable outputs."""
+
+    dac0: float = 0.0
+    dac1: float = 0.0
+    dac2: float = 0.0
+    dac3: float = 0.0
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class SpectrumAnalyzerSettings:
     """Spectrum analyzer settings following PyRPL's IQ-plus-scope composition."""
 
@@ -545,6 +564,18 @@ def module_list() -> list[dict[str, Any]]:
             "description": "LED and expansion connector digital I/O.",
         },
         {
+            "name": "sampler",
+            "kind": "hardware",
+            "label": "Sampler",
+            "description": "Momentary readback and statistics for every FPGA DSP signal.",
+        },
+        {
+            "name": "ams",
+            "kind": "hardware",
+            "label": "AMS",
+            "description": "AMS PWM DAC readback and DAC2/DAC3 voltage control.",
+        },
+        {
             "name": "trig",
             "kind": "hardware",
             "label": "Trigger",
@@ -626,6 +657,32 @@ def scope_attribute_schema(settings: ScopeSettings) -> list[dict[str, Any]]:
         _number("hysteresis", "Hysteresis", settings.hysteresis, 0.0, 1.0),
         _text("curve_name", "Curve Name", settings.curve_name),
     ]
+
+
+def sampler_attribute_schema(values: dict[str, float]) -> list[dict[str, Any]]:
+    attributes = []
+    for signal in SAMPLER_SIGNALS:
+        attribute = _number(signal, signal, values.get(signal, 0.0), -1.000122085, 1.0)
+        attribute["readonly"] = True
+        attributes.append(attribute)
+    return attributes
+
+
+def ams_attribute_schema(settings: AmsSettings) -> list[dict[str, Any]]:
+    attributes = []
+    for name in AMS_DACS:
+        attribute = _number(name, name.upper(), getattr(settings, name), 0.0, 1.8, step=1.8 / 2**13)
+        attribute["readonly"] = name in {"dac0", "dac1"}
+        attributes.append(attribute)
+    return attributes
+
+
+def set_ams_attribute(settings: AmsSettings, name: str, value: Any) -> float:
+    if name not in {"dac2", "dac3"}:
+        raise ValueError(f"{name} is read-only; PyRPL only writes AMS dac2 and dac3")
+    normalized = _clamp(float(value), 0.0, 1.8)
+    setattr(settings, name, normalized)
+    return normalized
 
 
 def scope_actions() -> list[dict[str, Any]]:

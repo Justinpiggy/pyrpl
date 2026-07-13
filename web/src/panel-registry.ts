@@ -11,6 +11,7 @@ export type PanelId =
   | "curveviewer"
   | "lockbox"
   | "housekeeping"
+  | "telemetry"
   | "registers";
 
 export interface PanelDefinition {
@@ -95,6 +96,12 @@ export const PANEL_DEFINITIONS: PanelDefinition[] = [
     id: "housekeeping",
     title: "Housekeeping",
     description: "LED and expansion connector I/O",
+    defaultEnabled: false,
+  },
+  {
+    id: "telemetry",
+    title: "Sampler & AMS",
+    description: "DSP signal readback, statistics, and AMS DAC controls",
     defaultEnabled: false,
   },
   {

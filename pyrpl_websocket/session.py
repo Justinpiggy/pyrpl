@@ -44,6 +44,7 @@ from .modules import (
     SPECTRUM_SETUP_ATTRIBUTES,
     TRIG_SETUP_ATTRIBUTES,
     AsgSettings,
+    AmsSettings,
     HkSettings,
     IirSettings,
     IqSettings,
@@ -55,6 +56,7 @@ from .modules import (
     TrigSettings,
     asg_actions,
     asg_attribute_schema,
+    ams_attribute_schema,
     hk_actions,
     hk_attribute_schema,
     iir_actions,
@@ -70,11 +72,13 @@ from .modules import (
     pwm_attribute_schema,
     scope_actions,
     scope_attribute_schema,
+    sampler_attribute_schema,
     set_iq_attribute,
     set_pid_attribute,
     set_pwm_attribute,
     set_spectrum_attribute,
     set_asg_attribute,
+    set_ams_attribute,
     set_hk_attribute,
     set_iir_attribute,
     set_network_analyzer_attribute,
@@ -97,6 +101,7 @@ from .scope_registers import (
     wait_scope_curve_ready,
 )
 from .settings import ServerSettings
+from .telemetry import read_ams, read_sampler, sampler_stats, write_ams_dac
 
 
 @dataclass
@@ -115,6 +120,7 @@ class WebSession:
         self.scope_settings = ScopeSettings()
         self.asg_settings = {"asg0": AsgSettings(), "asg1": AsgSettings()}
         self.hk_settings = HkSettings()
+        self.ams_settings = AmsSettings()
         self.pid_settings = {f"pid{index}": PidSettings() for index in range(3)}
         self.iq_settings = {f"iq{index}": IqSettings() for index in range(3)}
         self.iir_settings = IirSettings()
@@ -152,6 +158,8 @@ class WebSession:
             "asg0": self.asg_settings["asg0"].as_dict(),
             "asg1": self.asg_settings["asg1"].as_dict(),
             "hk": self.hk_settings.as_dict(),
+            "sampler": self._read_sampler_no_lock(),
+            "ams": self._read_ams_no_lock(),
             "pid0": self.pid_settings["pid0"].as_dict(),
             "pid1": self.pid_settings["pid1"].as_dict(),
             "pid2": self.pid_settings["pid2"].as_dict(),
@@ -256,6 +264,10 @@ class WebSession:
             return asg_attribute_schema(self.asg_settings[module_name])
         if module_name == "hk":
             return hk_attribute_schema(self.hk_settings)
+        if module_name == "sampler":
+            return sampler_attribute_schema(self._read_sampler_no_lock())
+        if module_name == "ams":
+            return ams_attribute_schema(self.ams_settings)
         if module_name in self.pid_settings:
             return pid_attribute_schema(self.pid_settings[module_name])
         if module_name in self.iq_settings:
@@ -280,6 +292,10 @@ class WebSession:
         if module_name == "hk":
             read_hk_expansion(self.client, self.hk_settings)
             return self.hk_settings.as_dict()
+        if module_name == "sampler":
+            return self._read_sampler_no_lock()
+        if module_name == "ams":
+            return self._read_ams_no_lock()
         if module_name in self.pid_settings:
             return self._with_owner(module_name, self.pid_settings[module_name].as_dict())
         if module_name in self.iq_settings:
@@ -311,6 +327,8 @@ class WebSession:
             return asg_actions()
         if module_name == "hk":
             return hk_actions()
+        if module_name in {"sampler", "ams"}:
+            return []
         if module_name in self.pid_settings:
             return pid_actions()
         if module_name in self.iq_settings:
@@ -354,6 +372,12 @@ class WebSession:
                 normalized = set_hk_attribute(self.hk_settings, attribute, value)
                 sync_hk_setting(self.client, self.hk_settings, attribute)
                 self._persist_module_setup_if_needed(module_name, attribute)
+                return normalized
+            if module_name == "sampler":
+                raise ValueError("Sampler signals are read-only")
+            if module_name == "ams":
+                normalized = set_ams_attribute(self.ams_settings, attribute, value)
+                write_ams_dac(self.client, attribute, normalized)
                 return normalized
             if module_name in self.pid_settings:
                 settings = self.pid_settings[module_name]
@@ -459,6 +483,10 @@ class WebSession:
                 if action:
                     raise KeyError(action)
                 return self.hk_settings.as_dict()
+            if module_name in {"sampler", "ams"}:
+                if action:
+                    raise KeyError(action)
+                return self.module_state(module_name)
             if module_name != "scope":
                 raise KeyError(module_name)
             if action == "setup":
@@ -584,6 +612,23 @@ class WebSession:
     def iir_plot(self, points: int = 1000) -> dict:
         with self._lock:
             return iir_plot(self.iir_settings, points)
+
+    def sampler_stats(self, signal: str = "in1", duration: float = 1e-2) -> dict:
+        with self._lock:
+            result = sampler_stats(self.client, signal, duration, self._fake_scope_clock)
+            self._fake_scope_clock += int(result["count"])
+            return result
+
+    def _read_sampler_no_lock(self) -> dict[str, float]:
+        values = read_sampler(self.client, self._fake_scope_clock)
+        self._fake_scope_clock += 1
+        return values
+
+    def _read_ams_no_lock(self) -> dict[str, float]:
+        values = read_ams(self.client)
+        for name, value in values.items():
+            setattr(self.ams_settings, name, value)
+        return self.ams_settings.as_dict()
 
     def acquire_spectrum_scope_frame(self, sequence: int, sample_count: int = 4096) -> ScopeFrame | None:
         with self._lock:

@@ -373,6 +373,44 @@ app.innerHTML = `
           </section>
         </div>
         </section>
+        <section class="workspace-panel" id="telemetry-panel" data-panel-id="telemetry" hidden>
+        <header class="panel-header">
+          <div>
+            <h2>Sampler &amp; AMS</h2>
+            <p>FPGA signal readback and auxiliary analog outputs</p>
+          </div>
+          <button id="telemetry-refresh" type="button">Refresh</button>
+        </header>
+        <div class="panel-content telemetry-layout">
+          <section class="module-panel telemetry-section">
+            <header class="instrument-card-header">
+              <h3>Sampler</h3>
+              <output id="sampler-status">Sampler ready</output>
+            </header>
+            <div class="sampler-grid" id="sampler-grid"></div>
+            <div class="control-row sampler-stats-controls">
+              <label><span>Signal</span><select id="sampler-stats-signal"></select></label>
+              <label><span>Duration</span><input id="sampler-stats-duration" type="number" min="0" max="10" step="0.001" value="0.01" /></label>
+              <button id="sampler-stats-run" type="button">Statistics</button>
+              <output id="sampler-stats-output">No statistics acquired</output>
+            </div>
+          </section>
+          <section class="module-panel telemetry-section">
+            <header class="instrument-card-header">
+              <h3>AMS</h3>
+              <output id="ams-status">AMS ready</output>
+            </header>
+            <div class="control-row ams-controls">
+              ${[0, 1, 2, 3].map((index) => `
+                <label>
+                  <span>DAC${index}</span>
+                  <input id="ams-dac${index}" type="number" min="0" max="1.8" step="0.0002197265625" ${index < 2 ? "readonly" : ""} />
+                </label>
+              `).join("")}
+            </div>
+          </section>
+        </div>
+        </section>
         <section class="workspace-panel" id="registers-panel" data-panel-id="registers" hidden>
         <header class="panel-header">
           <div>
@@ -1157,6 +1195,58 @@ style.textContent = `
     overflow: auto;
   }
 
+  .telemetry-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+    gap: 8px;
+    align-content: start;
+  }
+
+  .telemetry-section {
+    min-width: 0;
+  }
+
+  .sampler-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 4px 8px;
+    margin-bottom: 8px;
+  }
+
+  .sampler-reading {
+    display: grid;
+    grid-template-columns: minmax(38px, auto) minmax(0, 1fr);
+    gap: 5px;
+    align-items: baseline;
+    padding: 3px 5px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+
+  .sampler-reading span {
+    color: var(--muted);
+  }
+
+  .sampler-reading output {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sampler-stats-controls output {
+    min-width: min(100%, 360px);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ams-controls input[readonly] {
+    color: var(--muted);
+    cursor: default;
+  }
+
+  @media (max-width: 760px) {
+    .telemetry-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
   .lockbox-header-controls {
     display: grid;
     grid-template-columns: minmax(150px, 220px) auto;
@@ -1543,6 +1633,7 @@ const networkAnalyzerPanelElement = requireElement<HTMLElement>("#networkanalyze
 const curveViewerPanelElement = requireElement<HTMLElement>("#curveviewer-panel");
 const lockboxPanelElement = requireElement<HTMLElement>("#lockbox-panel");
 const housekeepingPanel = requireElement<HTMLElement>("#housekeeping-panel");
+const telemetryPanel = requireElement<HTMLElement>("#telemetry-panel");
 const registersPanel = requireElement<HTMLElement>("#registers-panel");
 const panelElements: Record<PanelId, HTMLElement> = {
   scope: scopePanel,
@@ -1557,6 +1648,7 @@ const panelElements: Record<PanelId, HTMLElement> = {
   curveviewer: curveViewerPanelElement,
   lockbox: lockboxPanelElement,
   housekeeping: housekeepingPanel,
+  telemetry: telemetryPanel,
   registers: registersPanel,
 };
 const emptyWorkspace = requireElement<HTMLElement>("#empty-workspace");
@@ -1594,6 +1686,18 @@ const scopeStateDelete = requireElement<HTMLButtonElement>("#scope-state-delete"
 const registerStatus = requireElement<HTMLOutputElement>("#register-status");
 const moduleStatus = requireElement<HTMLOutputElement>("#module-status");
 const hkStatus = requireElement<HTMLOutputElement>("#hk-status");
+const telemetryRefresh = requireElement<HTMLButtonElement>("#telemetry-refresh");
+const samplerGrid = requireElement<HTMLDivElement>("#sampler-grid");
+const samplerStatus = requireElement<HTMLOutputElement>("#sampler-status");
+const samplerStatsSignal = requireElement<HTMLSelectElement>("#sampler-stats-signal");
+const samplerStatsDuration = requireElement<HTMLInputElement>("#sampler-stats-duration");
+const samplerStatsRun = requireElement<HTMLButtonElement>("#sampler-stats-run");
+const samplerStatsOutput = requireElement<HTMLOutputElement>("#sampler-stats-output");
+const amsStatus = requireElement<HTMLOutputElement>("#ams-status");
+const amsInputs = [0, 1, 2, 3].map((index) =>
+  requireElement<HTMLInputElement>(`#ams-dac${index}`)
+);
+const samplerOutputs = new Map<string, HTMLOutputElement>();
 const hkLed = requireElement<HTMLInputElement>("#hk-led");
 const hkRefresh = requireElement<HTMLButtonElement>("#hk-refresh");
 const hkExpansionGrid = requireElement<HTMLDivElement>("#hk-expansion-grid");
@@ -2590,6 +2694,90 @@ async function setHkAttribute(attribute: string, value: string | number | boolea
   hkStatus.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
 }
 
+async function loadTelemetry(): Promise<void> {
+  const [samplerResponse, amsResponse] = await Promise.all([
+    fetch("/api/modules/sampler"),
+    fetch("/api/modules/ams"),
+  ]);
+  if (!samplerResponse.ok || !amsResponse.ok) {
+    throw new Error("Sampler or AMS readback unavailable");
+  }
+  const samplerPayload = await samplerResponse.json();
+  const amsPayload = await amsResponse.json();
+  applySamplerState(samplerPayload.state ?? {});
+  applyAmsState(amsPayload.state ?? {});
+  samplerStatus.textContent = "Sampler refreshed";
+  amsStatus.textContent = "AMS refreshed";
+}
+
+function applySamplerState(state: ModuleState): void {
+  if (samplerOutputs.size === 0) {
+    samplerGrid.textContent = "";
+    samplerStatsSignal.textContent = "";
+    for (const signal of Object.keys(state)) {
+      const reading = document.createElement("div");
+      reading.className = "sampler-reading";
+      const label = document.createElement("span");
+      label.textContent = signal;
+      const output = document.createElement("output");
+      output.dataset.signal = signal;
+      reading.append(label, output);
+      samplerGrid.appendChild(reading);
+      samplerOutputs.set(signal, output);
+      samplerStatsSignal.add(new Option(signal, signal));
+    }
+  }
+  for (const [signal, value] of Object.entries(state)) {
+    if (typeof value === "number") {
+      const output = samplerOutputs.get(signal);
+      if (output) output.value = formatTelemetryValue(value);
+    }
+  }
+}
+
+function applyAmsState(state: ModuleState): void {
+  amsInputs.forEach((input, index) => {
+    const value = state[`dac${index}`];
+    if (typeof value === "number") input.value = value.toFixed(6);
+  });
+}
+
+async function runSamplerStats(): Promise<void> {
+  samplerStatsRun.disabled = true;
+  samplerStatsOutput.value = "Acquiring...";
+  try {
+    const response = await fetch("/api/sampler/stats", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        signal: samplerStatsSignal.value,
+        duration: Number(samplerStatsDuration.value),
+      }),
+    });
+    if (!response.ok) throw new Error(`Sampler statistics failed: ${response.status}`);
+    const result = await response.json();
+    samplerStatsOutput.value =
+      `mean ${formatTelemetryValue(result.mean)} | std ${formatTelemetryValue(result.stddev)} | ` +
+      `min ${formatTelemetryValue(result.min)} | max ${formatTelemetryValue(result.max)} | n ${result.count}`;
+  } finally {
+    samplerStatsRun.disabled = false;
+  }
+}
+
+async function setAmsDac(index: 2 | 3): Promise<void> {
+  const result = await setModuleAttributeValue("ams", `dac${index}`, Number(amsInputs[index].value));
+  amsInputs[index].value = Number(result.value).toFixed(6);
+  amsStatus.textContent = `DAC${index} = ${amsInputs[index].value} V`;
+}
+
+function formatTelemetryValue(value: number): string {
+  if (!Number.isFinite(value)) return "--";
+  const magnitude = Math.abs(value);
+  return magnitude !== 0 && (magnitude < 1e-4 || magnitude >= 1e4)
+    ? value.toExponential(5)
+    : value.toFixed(6);
+}
+
 async function loadGenericPanels(): Promise<void> {
   for (const [panelId, moduleNames] of Object.entries(genericPanelModules) as Array<
     [keyof typeof genericPanelModules, string[]]
@@ -3467,6 +3655,26 @@ hkRefresh.addEventListener("click", () => {
   });
 });
 
+telemetryRefresh.addEventListener("click", () => {
+  loadTelemetry().catch((error: Error) => {
+    samplerStatus.textContent = error.message;
+  });
+});
+
+samplerStatsRun.addEventListener("click", () => {
+  runSamplerStats().catch((error: Error) => {
+    samplerStatsOutput.value = error.message;
+  });
+});
+
+amsInputs[2].addEventListener("change", () => {
+  setAmsDac(2).catch((error: Error) => { amsStatus.textContent = error.message; });
+});
+
+amsInputs[3].addEventListener("change", () => {
+  setAmsDac(3).catch((error: Error) => { amsStatus.textContent = error.message; });
+});
+
 async function startup(): Promise<void> {
   currentSession = await refreshSession();
   buildHkExpansionGrid();
@@ -3474,6 +3682,7 @@ async function startup(): Promise<void> {
   await loadScopeStates();
   await loadAsgControls();
   await loadHkControls();
+  await loadTelemetry();
   await loadGenericPanels();
   await networkAnalyzerPanel.initialize();
   await curveViewerPanel.load();

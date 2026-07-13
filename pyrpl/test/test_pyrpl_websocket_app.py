@@ -34,6 +34,14 @@ from pyrpl_websocket.monitor_client import MonitorStats
 from pyrpl_websocket.scope import SCOPE_ADDR_BASE, SCOPE_CH1_OFFSET, SCOPE_CH2_OFFSET, SCOPE_DATA_LENGTH
 from pyrpl_websocket.session import WebSession
 from pyrpl_websocket.settings import ServerSettings
+from pyrpl_websocket.telemetry import (
+    AMS_DAC_ADDRESSES,
+    DSP_INPUTS,
+    SAMPLER_ADDR_BASE,
+    pwm_to_voltage,
+    read_sampler_signal,
+    voltage_to_pwm,
+)
 
 
 class SimulatedHardwareScopeClient:
@@ -114,6 +122,7 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("/api/register/write", paths)
         self.assertIn("/api/scope/frame", paths)
         self.assertIn("/api/modules", paths)
+        self.assertIn("/api/sampler/stats", paths)
         self.assertIn("/api/modules/{module_name}", paths)
         self.assertIn("/api/modules/{module_name}/attributes", paths)
         self.assertIn("/api/modules/{module_name}/attributes/{attribute}", paths)
@@ -456,6 +465,52 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.module_actions("hk"), [])
         finally:
             session.close()
+
+    def test_session_sampler_and_ams_follow_original_register_behavior(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            module_names = [module["name"] for module in session.modules()]
+            self.assertIn("sampler", module_names)
+            self.assertIn("ams", module_names)
+            self.assertEqual(session.module_actions("sampler"), [])
+            self.assertEqual(session.module_actions("ams"), [])
+
+            sampler_state = session.module_state("sampler")
+            self.assertEqual(list(sampler_state), list(DSP_INPUTS))
+            self.assertTrue(all(np.isfinite(value) for value in sampler_state.values()))
+            stats = session.sampler_stats("asg0", 0.0)
+            self.assertEqual(stats["signal"], "asg0")
+            self.assertGreaterEqual(stats["count"], 1)
+            self.assertLessEqual(stats["min"], stats["mean"])
+            self.assertLessEqual(stats["mean"], stats["max"])
+
+            value = session.set_module_attribute("ams", "dac2", 0.9)
+            self.assertEqual(value, 0.9)
+            word = session.client.fpgamemory[AMS_DAC_ADDRESSES["dac2"]]
+            self.assertEqual(word, voltage_to_pwm(0.9))
+            self.assertAlmostEqual(session.module_state("ams")["dac2"], pwm_to_voltage(word), places=6)
+            with self.assertRaises(ValueError):
+                session.set_module_attribute("ams", "dac0", 0.5)
+            with self.assertRaises(ValueError):
+                session.set_module_attribute("sampler", "in1", 0.0)
+        finally:
+            session.close()
+
+    def test_sampler_hardware_address_and_signed_conversion(self):
+        class RawSamplerClient:
+            def __init__(self):
+                self.address = None
+
+            def reads(self, address, length):
+                self.address = address
+                return np.array([0x3FFF], dtype=np.uint32)
+
+        client = RawSamplerClient()
+        value = read_sampler_signal(client, "in1")
+        self.assertEqual(client.address, 0x403A0010)
+        self.assertAlmostEqual(value, -1.0 / (2**13 - 1))
+        self.assertEqual(voltage_to_pwm(-1.0), 0)
+        self.assertLessEqual(pwm_to_voltage(voltage_to_pwm(1.8)), 1.8)
 
     def test_session_asg_registers_follow_pyrpl_layout(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))

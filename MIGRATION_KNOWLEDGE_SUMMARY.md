@@ -40,6 +40,11 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Preserve PyRPL special cases such as spectrum analyzer directly owning `iq2`.
 - Lockbox should not unnecessarily stop scope or spectrum analyzer except when
   the original routine temporarily owns scope for calibration/acquisition.
+- Sampler and AMS are programmatic services with no original GUI/setup
+  attributes. Do not add setup actions, saved states, or ownership for them.
+- Sampler reads signed 14-bit DSP values normalized by 8191. AMS DAC2/DAC3 use
+  PyRPL's 24-bit PWM conversion; DAC0/DAC1 are read-only in the web UI because
+  original PyRPL says writes to them have no effect.
 
 ## Config Rules
 

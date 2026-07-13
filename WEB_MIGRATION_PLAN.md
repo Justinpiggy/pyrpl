@@ -146,14 +146,19 @@ Current implemented workspace behavior:
   - Stacked
 - Split.js handles both workspace-level panel resizing and the Scope panel's
   internal controls/plot split.
-- Implemented panels are now Scope, ASG, PID, IQ, Trigger, PWM,
-  Spectrum Analyzer, Housekeeping, and Register Debug. Register Debug is for raw
-  monitor-server-compatible register reads/writes and is disabled by default.
+- Implemented panels are now Scope, ASG, PID, IQ, IIR, Trigger, PWM, Spectrum
+  Analyzer, Network Analyzer, Curve Viewer, Lockbox, Housekeeping, Sampler &
+  AMS, and Register Debug. Register Debug is for raw monitor-server-compatible
+  register reads/writes and is disabled by default.
 - ASG is backed by compatible ASG0/ASG1 FPGA register writes for waveform RAM,
   amplitude, offset, frequency, trigger source, direct output, start phase, and
   cycles per burst.
 - Housekeeping is backed by compatible LED and expansion P/N direction/value
   registers.
+- Sampler & AMS provides explicit-refresh readback for all original DSP sampler
+  signals, the original duration-based statistics operation, AMS DAC readback,
+  and PyRPL-compatible DAC2/DAC3 PWM writes. It adds no setup state or ownership
+  because the original modules define neither GUI nor setup attributes.
 - PID, IQ, Trigger, and PWM panels are backed by compatible DSP module
   register writes for routing, output selection, fixed-point gains/thresholds,
   phases, trigger state, and PWM input routing.
@@ -186,24 +191,20 @@ in spirit to PyRPL's menu bar. Disabling a panel removes it from the visible
 workspace and should stop panel-local streams when appropriate. Re-enabling a
 panel restores its saved panel state.
 
-### Remaining Hardware Module Batches
+### Remaining Migration Batches
 
-Recommended migration order after Scope, ASG, Housekeeping, and the basic
-PID/IQ/Trigger/PWM controls:
+Sampler/AMS/status telemetry is complete. With Network Analyzer hardware
+validation deferred until the board is available, the next software-only work
+is:
 
-1. Add list-aware filter editors for PID `inputfilter`, IQ `bandwidth`, and
-   IQ `acbandwidth`, including valid-frequency presentation.
-2. IIR: migrate after PID/IQ because its coefficient/filter design surface is
-   larger and should likely get a dedicated browser editor.
-3. Sampler/AMS/status views: expose read-oriented telemetry and ADC/DAC status
-   once the main control modules are stable.
-4. Expand Spectrum Analyzer display-unit parity with PyRPL, including exact
-   transfer-function/window correction, PyRPL's padded FFT length, Web Worker
-   offload for large FFTs, and browser-side averaging/export.
-5. Software modules such as network analyzer and lockbox: build as panels on
-   top of the hardware module/event/acquisition APIs rather than as raw
-   register panels, with explicit resource ownership/release for any hardware
-   modules they occupy.
+1. Finish IIR parity: overflow, data/product visibility, measurement plot,
+   `measure_transfer_function`, and `tf_type`.
+2. Close Scope XY/math display behavior and align Scope/Spectrum acquisition
+   controls with the original PyRPL button state machines.
+3. Complete Lockbox calibration sweeps, assisted design, output transfer
+   functions, and dynamic custom actions.
+4. Add the PyRPL configuration editor and custom CurveDB backend support.
+5. Complete ARM packaging, dependency audit, security guidance, and CI.
 
 ## Red Pitaya ARM Deployment Constraints
 
@@ -693,17 +694,13 @@ included as package data.
   Filter-style attributes.
 - Module state load/save/erase works.
 - ASG, PID, IQ, and Scope are usable from browser.
-- Initial IIR panel is available as a workspace module. The first migrated
-  surface covers PyRPL-compatible routing, loops, on/bypass, input filter
-  registers, and unity/zero coefficient loading. The remaining parity work is
-  to migrate PyRPL's pole/zero coefficient-design routine without importing
-  Qt-bound legacy modules into the web server.
+- IIR is available as a workspace module with PyRPL-compatible routing, loops,
+  on/bypass, input filtering, pole/zero editing, original coefficient design,
+  and FPGA coefficient RAM writes without importing Qt-bound legacy modules.
 - The IIR panel now includes the graphical editor surface from PyRPL: a Bode
   plot with pole/zero markers, list-driven refresh, and mouse creation/dragging
-  of vertices. The current web plot uses a Qt-free continuous transfer-function
-  helper; the next IIR parity step is to port the original `IirFilter`
-  final/rounded coefficient math into a Qt-free module and write those
-  coefficients to hardware on pole/zero setup.
+  of vertices. Its Qt-free backend ports the original `IirFilter` final/rounded
+  coefficient math and writes the resulting coefficients on pole/zero setup.
 
 ### Current Filter/IIR Slice
 
@@ -714,6 +711,9 @@ included as package data.
 - Generic TypeScript panels now support text/list-valued attributes so cascaded
   filters and IIR pole/zero lists can round-trip through the UI.
 - IIR is now selectable from the Panels menu as a standard instrument panel.
+- Sampler and AMS are available through a compact telemetry panel. It preserves
+  original signed sampler conversion, `stats()` behavior, and AMS PWM encoding;
+  DAC0/DAC1 are read-only while DAC2/DAC3 are writable.
 
 ### Milestone 4: Acquisition Instruments
 

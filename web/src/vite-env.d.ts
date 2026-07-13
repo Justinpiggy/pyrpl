@@ -23,6 +23,7 @@ interface Window {
         | "curveviewer"
         | "lockbox"
         | "housekeeping"
+        | "telemetry"
         | "registers",
     ) => boolean;
     getScopeSplitSizes: () => [number, number];
@@ -41,6 +42,7 @@ interface Window {
       | "curveviewer"
       | "lockbox"
       | "housekeeping"
+      | "telemetry"
       | "registers"
       | null;
     getCsvLineCount: () => number;

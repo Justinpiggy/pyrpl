@@ -2946,3 +2946,24 @@ conda run -n pyrpl-env npm run test:e2e
 - Browser coverage now verifies persistent Scope saving, complex magnitude and
   phase rendering, raw CurveDB compatibility, YAML edits, deletion, and stable
   three-pane Split.js layout.
+
+## 2026-07-13 Sampler And AMS Migration
+
+- Original `Sampler` and `AMS` have no `_gui_attributes`, `_setup_attributes`,
+  or custom widgets. They are direct programmatic hardware services, so the web
+  panel must not invent setup actions, ownership, or saved states for them.
+- Sampler exposes one signed 14-bit read register for every `DSP_INPUTS` entry
+  at `0x40300000 + 0x10 + signal_number * 0x10000`, normalized by `8191`.
+  Preserve the original DSP input names and ordering.
+- `Sampler.stats(signal, t)` repeatedly samples for a wall-clock duration and
+  returns mean, standard deviation, maximum, and minimum. It is low-rate
+  telemetry and belongs on an explicit refresh/statistics path, not a new
+  continuous acquisition WebSocket.
+- AMS uses PyRPL's non-linear 24-bit PWM encoding. Copy both the fractional
+  bit-count conversion and saturation behavior exactly; a plain linear integer
+  conversion is not compatible.
+- Original PyRPL states that writes to AMS DAC0 and DAC1 have no effect. The web
+  UI therefore shows DAC0/DAC1 as read-only and permits writes only to DAC2 and
+  DAC3.
+- Browser coverage verifies all 16 sampler signals, statistics, DAC read-only
+  behavior, DAC2 write/readback, and bounded panel layout.
