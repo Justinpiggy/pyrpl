@@ -69,8 +69,19 @@ test("frameToData can use PyRPL scope time settings", () => {
     duration: 0.25,
     triggerDelay: 0.05,
     triggerSource: "ch1_positive_edge",
+    rollingMode: false,
   });
   assert.deepEqual(Array.from(data.x), [-0.075, 0.05]);
+});
+
+test("frameToData uses PyRPL's negative rolling time axis", () => {
+  const data = frameToData(parseScopeFrame(makeFrame()), {
+    duration: 0.25,
+    triggerDelay: 0,
+    triggerSource: "immediately",
+    rollingMode: true,
+  });
+  assert.deepEqual(Array.from(data.x), [-0.25, -0.125]);
 });
 
 test("averageFrameData performs browser-side trace averaging", () => {

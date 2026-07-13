@@ -362,6 +362,8 @@ class WebSession:
             self._ensure_manual_control_allowed(module_name)
             if module_name == "scope":
                 normalized = set_scope_attribute(self.scope_settings, attribute, value)
+                if attribute == "run_continuous":
+                    self.scope_settings.running_state = "running_continuous" if normalized else "stopped"
                 sync_scope_setting(self.client, self.scope_settings, attribute)
                 self._hardware_rolling_started = False
                 self._persist_module_setup_if_needed(module_name, attribute)
@@ -500,26 +502,48 @@ class WebSession:
             if action == "setup":
                 sync_scope_settings(self.client, self.scope_settings)
                 self._hardware_rolling_started = False
+                self.scope_settings.current_avg = 0
+                self.scope_settings.running_state = (
+                    "running_continuous" if self.scope_settings.run_continuous else "stopped"
+                )
             elif action == "single":
                 sync_scope_settings(self.client, self.scope_settings)
                 self._hardware_rolling_started = False
+                self.scope_settings.run_continuous = False
+                self.scope_settings.current_avg = 0
                 self.scope_settings.running_state = "running_single"
             elif action == "continuous":
                 sync_scope_settings(self.client, self.scope_settings)
                 self._hardware_rolling_started = False
+                self.scope_settings.run_continuous = True
+                self.scope_settings.current_avg = 0
                 self.scope_settings.running_state = "running_continuous"
             elif action == "pause":
                 if self.scope_settings.running_state == "running_single":
                     self.scope_settings.running_state = "paused_single"
                 elif self.scope_settings.running_state == "running_continuous":
                     self.scope_settings.running_state = "paused_continuous"
+                self.scope_settings.run_continuous = False
             elif action == "resume":
                 if self.scope_settings.running_state == "paused_single":
                     self.scope_settings.running_state = "running_single"
                 elif self.scope_settings.running_state == "paused_continuous":
                     self.scope_settings.running_state = "running_continuous"
+                    self.scope_settings.run_continuous = True
+            elif action == "resume_single":
+                if self.scope_settings.running_state not in {"paused_single", "paused_continuous"}:
+                    raise ValueError("resume_single can only be called in a paused state")
+                self.scope_settings.run_continuous = False
+                self.scope_settings.running_state = "running_single"
+            elif action == "resume_continuous":
+                if self.scope_settings.running_state not in {"paused_single", "paused_continuous"}:
+                    raise ValueError("resume_continuous can only be called in a paused state")
+                self.scope_settings.run_continuous = True
+                self.scope_settings.running_state = "running_continuous"
             elif action == "stop":
                 self._hardware_rolling_started = False
+                self.scope_settings.run_continuous = False
+                self.scope_settings.current_avg = 0
                 self.scope_settings.running_state = "stopped"
             elif action == "save_curve":
                 self.scope_settings.last_action = action
@@ -882,6 +906,8 @@ class WebSession:
     def _set_module_attribute_no_lock(self, module_name: str, attribute: str, value) -> None:
         if module_name == "scope":
             set_scope_attribute(self.scope_settings, attribute, value)
+            if attribute == "run_continuous":
+                self.scope_settings.running_state = "running_continuous" if self.scope_settings.run_continuous else "stopped"
             sync_scope_setting(self.client, self.scope_settings, attribute)
             self._hardware_rolling_started = False
         elif module_name in self.asg_settings:
@@ -1447,14 +1473,10 @@ class WebSession:
             return ScopeAcquisition(None)
         roll_offset = scope_trigger_roll_offset(self.client)
         frame = read_trigger_aligned_scope_frame(self.client, sequence, roll_offset, sample_count)
-        state_changed = False
-        if state == "running_single":
-            self.scope_settings.running_state = "paused_single"
-            state_changed = True
-        return ScopeAcquisition(frame, state_changed=state_changed)
+        return ScopeAcquisition(frame, state_changed=self._record_scope_average_no_lock(state))
 
     def _hardware_rolling_mode_active(self, state: str) -> bool:
-        return state == "running_continuous" and self.scope_settings.run_mode == "rolling" and self.scope_settings.duration > 0.1
+        return state == "running_continuous" and self.scope_settings.rolling_mode and self.scope_settings.duration > 0.1
 
     def _acquire_hardware_rolling_scope_frame(self, sequence: int, sample_count: int) -> ScopeAcquisition:
         if not self._hardware_rolling_started:
@@ -1479,13 +1501,13 @@ class WebSession:
             self._fake_scope_clock += max(1, sample_count)
             return ScopeAcquisition(None)
 
-        if source == "immediately" or (state == "running_continuous" and self.scope_settings.run_mode == "rolling"):
+        rolling = state == "running_continuous" and self.scope_settings.rolling_mode
+        if source == "immediately" or rolling:
             frame = self._fake_scope_frame(sequence, self._fake_scope_clock, sample_count)
             self._fake_scope_clock += max(1, sample_count)
-            if state == "running_single":
-                self.scope_settings.running_state = "paused_single"
-                return ScopeAcquisition(frame, state_changed=True)
-            return ScopeAcquisition(frame)
+            if rolling:
+                return ScopeAcquisition(frame)
+            return ScopeAcquisition(frame, state_changed=self._record_scope_average_no_lock(state))
 
         trigger_index = self._find_next_fake_trigger(sample_count)
         if trigger_index is None:
@@ -1495,10 +1517,21 @@ class WebSession:
         capture_start = trigger_index - trigger_slot
         frame = self._fake_scope_frame(sequence, capture_start, sample_count)
         self._fake_scope_clock = trigger_index + 1
+        return ScopeAcquisition(frame, state_changed=self._record_scope_average_no_lock(state))
+
+    def _record_scope_average_no_lock(self, state: str) -> bool:
         if state == "running_single":
-            self.scope_settings.running_state = "paused_single"
-            return ScopeAcquisition(frame, state_changed=True)
-        return ScopeAcquisition(frame)
+            self.scope_settings.current_avg += 1
+            if self.scope_settings.current_avg >= self.scope_settings.trace_average:
+                self.scope_settings.current_avg = self.scope_settings.trace_average
+                self.scope_settings.running_state = "paused_single"
+                return True
+        elif state == "running_continuous":
+            self.scope_settings.current_avg = min(
+                self.scope_settings.current_avg + 1,
+                self.scope_settings.trace_average,
+            )
+        return False
 
     def _find_next_fake_trigger(self, sample_count: int) -> int | None:
         search_count = max(4096, sample_count * 2)

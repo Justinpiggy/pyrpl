@@ -2,6 +2,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
 import { PLOT_COLORS, plotAxis } from "./plot-theme";
+import { evaluateScopeMath } from "./scope-math";
 import {
   averageFrameData,
   clampXRange,
@@ -17,12 +18,13 @@ const DEFAULT_Y_MIN = -1.1;
 const DEFAULT_Y_MAX = 1.1;
 
 type StatusCallback = (message: string) => void;
+type AverageCallback = (current: number) => void;
 
 export class ScopeStream {
   private socket: WebSocket | null = null;
-  private intentionalClose = false;
   private plot: uPlot;
   private latestFrame: ScopeFrame | null = null;
+  private receivedFrameCount = 0;
   private panState:
     | { startX: number; startY: number; xMin: number; xMax: number; yMin: number; yMax: number }
     | null = null;
@@ -38,11 +40,16 @@ export class ScopeStream {
   private currentAverage = 0;
   private traceAverage = 1;
   private timeSettings: ScopeTimeSettings | null = null;
+  private channelVisible: [boolean, boolean] = [true, true];
+  private xyMode = false;
+  private mathActive = false;
+  private mathFormula = "ch1 * ch2";
   private readonly resizeListener = () => this.scheduleResize();
 
   constructor(
     private plotHost: HTMLElement,
     private setStatus: StatusCallback,
+    private setCurrentAverage: AverageCallback = () => undefined,
     private sampleCount = DEFAULT_SAMPLES,
   ) {
     this.plot = new uPlot(this.options(), this.emptyData(), this.plotHost);
@@ -57,28 +64,45 @@ export class ScopeStream {
     }
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const host = window.location.host || "127.0.0.1:8000";
-    this.socket = new WebSocket(`${protocol}://${host}/ws/scope?samples=${this.sampleCount}`);
-    this.socket.binaryType = "arraybuffer";
-    this.socket.onopen = () => this.setStatus("Scope stream connected");
-    this.socket.onclose = () => {
-      this.socket = null;
-      if (!this.intentionalClose) {
+    const socket = new WebSocket(`${protocol}://${host}/ws/scope?samples=${this.sampleCount}`);
+    this.socket = socket;
+    socket.binaryType = "arraybuffer";
+    socket.onopen = () => {
+      if (this.socket === socket) {
+        this.setStatus("Scope stream connected");
+      }
+    };
+    socket.onclose = () => {
+      if (this.socket === socket) {
+        this.socket = null;
         this.setStatus("Scope stream closed");
       }
-      this.intentionalClose = false;
     };
-    this.socket.onerror = () => this.setStatus("Scope stream error");
-    this.socket.onmessage = (event) => {
-      if (event.data instanceof ArrayBuffer) {
+    socket.onerror = () => {
+      if (this.socket === socket) {
+        this.setStatus("Scope stream error");
+      }
+    };
+    socket.onmessage = (event) => {
+      if (this.socket === socket && event.data instanceof ArrayBuffer) {
         this.handleFrame(event.data);
       }
     };
   }
 
   close(): void {
-    this.intentionalClose = true;
-    this.socket?.close();
+    const socket = this.socket;
     this.socket = null;
+    socket?.close();
+  }
+
+  reconnect(): void {
+    if (!this.isConnected()) {
+      return;
+    }
+    this.close();
+    this.resetTraceAveraging();
+    this.connect();
   }
 
   isConnected(): boolean {
@@ -99,6 +123,11 @@ export class ScopeStream {
     this.resetAveraging();
   }
 
+  resetTraceAveraging(): void {
+    this.pendingFrame = null;
+    this.resetAveraging();
+  }
+
   getTraceAverage(): number {
     return this.traceAverage;
   }
@@ -106,9 +135,9 @@ export class ScopeStream {
   setTimeSettings(timeSettings: ScopeTimeSettings): void {
     this.timeSettings = timeSettings;
     this.resetAveraging();
-    if (this.latestFrame) {
+    if (this.latestFrame && this.displayedData) {
       const frame = this.latestFrame;
-      this.plot.setData(this.frameData(frame), false);
+      this.plot.setData(this.plotData(this.displayedData), false);
       this.plot.batch(() => {
         this.plot.setScale("x", this.defaultXScale(frame));
         this.resetYScale();
@@ -118,11 +147,31 @@ export class ScopeStream {
   }
 
   setChannelVisible(channel: 1 | 2, visible: boolean): void {
-    this.plot.setSeries(channel, { show: visible });
+    this.channelVisible[channel - 1] = visible;
+    this.applySeriesVisibility();
   }
 
   getChannelVisible(channel: 1 | 2): boolean {
-    return this.plot.series[channel]?.show !== false;
+    return this.channelVisible[channel - 1];
+  }
+
+  setDisplaySettings(settings: { xyMode: boolean; mathActive: boolean; mathFormula: string }): void {
+    const modeChanged = this.xyMode !== settings.xyMode;
+    this.xyMode = settings.xyMode;
+    this.mathActive = settings.mathActive;
+    this.mathFormula = settings.mathFormula;
+    this.applySeriesVisibility();
+    if (this.latestFrame && this.displayedData) {
+      const frame = this.latestFrame;
+      this.plot.setData(this.plotData(this.displayedData), false);
+      if (modeChanged) {
+        this.plot.batch(() => {
+          this.plot.setScale("x", this.defaultXScale(frame));
+          this.resetYScale();
+        });
+      }
+      this.plot.redraw(true, true);
+    }
   }
 
   refreshLayout(): void {
@@ -212,7 +261,7 @@ export class ScopeStream {
   }
 
   getFrameSequence(): number | null {
-    return this.latestFrame?.sequence ?? this.pendingFrame?.sequence ?? null;
+    return this.receivedFrameCount > 0 ? this.receivedFrameCount : null;
   }
 
   exportCsv(): string {
@@ -252,6 +301,31 @@ export class ScopeStream {
     return hash >>> 0;
   }
 
+  getMathStats(): { min: number; max: number } | null {
+    if (this.xyMode || !this.mathActive) return null;
+    return facetStats(this.plot.data, 3, 1);
+  }
+
+  getXyStats(): { xMin: number; xMax: number; yMin: number; yMax: number; maxDelta: number } | null {
+    if (!this.xyMode) return null;
+    const x = facetValues(this.plot.data, 1, 0);
+    const y = facetValues(this.plot.data, 1, 1);
+    if (!x || !y || x.length === 0 || x.length !== y.length) return null;
+    let xMin = Number.POSITIVE_INFINITY;
+    let xMax = Number.NEGATIVE_INFINITY;
+    let yMin = Number.POSITIVE_INFINITY;
+    let yMax = Number.NEGATIVE_INFINITY;
+    let maxDelta = 0;
+    for (let index = 0; index < x.length; index += 1) {
+      xMin = Math.min(xMin, x[index]);
+      xMax = Math.max(xMax, x[index]);
+      yMin = Math.min(yMin, y[index]);
+      yMax = Math.max(yMax, y[index]);
+      maxDelta = Math.max(maxDelta, Math.abs(x[index] - y[index]));
+    }
+    return { xMin, xMax, yMin, yMax, maxDelta };
+  }
+
   getCurveData(): { x: number[]; channels: [number[], number[]] } | null {
     if (!this.displayedData) return null;
     return {
@@ -274,6 +348,7 @@ export class ScopeStream {
 
   private options(): uPlot.Options {
     return {
+      mode: 2,
       width: 900,
       height: 420,
       padding: [8, 10, 0, 0],
@@ -289,17 +364,17 @@ export class ScopeStream {
       },
       axes: [
         plotAxis({
-          label: "Time",
+          label: "Time / CH1",
           values: (plot, ticks) => this.formatTimeTicks(plot, ticks as number[]),
         }),
         plotAxis({
-          label: "Amplitude",
+          label: "Amplitude / CH2",
         }),
       ],
       series: [
         {},
         {
-          label: "CH1",
+          label: "CH1 / XY",
           stroke: PLOT_COLORS.green,
           width: 1.5,
           points: { show: false },
@@ -310,12 +385,23 @@ export class ScopeStream {
           width: 1.5,
           points: { show: false },
         },
+        {
+          label: "Math",
+          stroke: PLOT_COLORS.blue,
+          width: 1.5,
+          points: { show: false },
+        },
       ],
     };
   }
 
   private emptyData(): uPlot.AlignedData {
-    return [new Float64Array(0), new Float32Array(0), new Float32Array(0)];
+    return [
+      [],
+      [new Float64Array(0), new Float32Array(0)],
+      [new Float64Array(0), new Float32Array(0)],
+      [new Float64Array(0), new Float32Array(0)],
+    ] as unknown as uPlot.AlignedData;
   }
 
   private handleFrame(buffer: ArrayBuffer): void {
@@ -327,6 +413,7 @@ export class ScopeStream {
       return;
     }
 
+    this.receivedFrameCount += 1;
     this.pendingFrame = frame;
     this.scheduleRender();
     this.setStatus(`Frame ${frame.sequence}, ${frame.sampleCount} samples, ${frame.channelCount} channels`);
@@ -334,11 +421,50 @@ export class ScopeStream {
 
   private frameData(frame: ScopeFrame): uPlot.AlignedData {
     const next = frameToData(frame, this.timeSettings ?? undefined);
+    if (this.timeSettings?.rollingMode) {
+      this.averagedData = null;
+      this.displayedData = next;
+      this.currentAverage = 0;
+      this.setCurrentAverage(0);
+      return this.plotData(next);
+    }
     const averaged = averageFrameData(next, this.averagedData, this.currentAverage, this.traceAverage);
     this.averagedData = averaged.data;
     this.displayedData = averaged.data;
     this.currentAverage = averaged.currentAverage;
-    return [averaged.data.x, averaged.data.ch1, averaged.data.ch2];
+    this.setCurrentAverage(this.currentAverage);
+    return this.plotData(averaged.data);
+  }
+
+  private plotData(data: ScopeFrameData): uPlot.AlignedData {
+    if (this.xyMode) {
+      const empty = new Float32Array(0);
+      return [
+        [],
+        [data.ch1, data.ch2],
+        [empty, empty],
+        [empty, empty],
+      ] as unknown as uPlot.AlignedData;
+    }
+    let math: Float32Array = new Float32Array(data.x.length).fill(Number.NaN);
+    if (this.mathActive) {
+      try {
+        math = evaluateScopeMath(
+          this.mathFormula,
+          data.ch1,
+          data.ch2,
+          data.x,
+        );
+      } catch (error) {
+        this.setStatus(`Math formula error: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return [
+      [],
+      [data.x, data.ch1],
+      [data.x, data.ch2],
+      [data.x, math],
+    ] as unknown as uPlot.AlignedData;
   }
 
   private scheduleRender(): void {
@@ -460,7 +586,7 @@ export class ScopeStream {
   }
 
   private setXScale(min: number, max: number): void {
-    if (this.timeSettings) {
+    if (this.timeSettings && !this.xyMode) {
       const defaultMin = this.defaultXMin();
       const defaultMax = defaultMin + this.timeSettings.duration;
       const minimumSpan = Math.max(Number.EPSILON, this.timeSettings.duration / 1024);
@@ -491,7 +617,7 @@ export class ScopeStream {
   }
 
   private minimumXSpan(): number {
-    if (this.timeSettings) {
+    if (this.timeSettings && !this.xyMode) {
       return Math.max(Number.EPSILON, this.timeSettings.duration / 1024);
     }
     return 4;
@@ -511,6 +637,9 @@ export class ScopeStream {
   }
 
   private currentMaxX(): number {
+    if (this.xyMode) {
+      return DEFAULT_Y_MAX;
+    }
     if (this.timeSettings) {
       const min = this.defaultXMin();
       return Math.max(min + Number.EPSILON, min + this.timeSettings.duration);
@@ -519,6 +648,9 @@ export class ScopeStream {
   }
 
   private defaultXScale(frame: ScopeFrame): { min: number; max: number } {
+    if (this.xyMode) {
+      return { min: DEFAULT_Y_MIN, max: DEFAULT_Y_MAX };
+    }
     if (this.timeSettings) {
       const min = this.defaultXMin();
       return { min, max: min + this.timeSettings.duration };
@@ -527,7 +659,13 @@ export class ScopeStream {
   }
 
   private defaultXMin(): number {
-    if (!this.timeSettings || this.timeSettings.triggerSource === "immediately") {
+    if (!this.timeSettings) {
+      return 0;
+    }
+    if (this.timeSettings.rollingMode) {
+      return -this.timeSettings.duration;
+    }
+    if (this.timeSettings.triggerSource === "immediately") {
       return 0;
     }
     return this.timeSettings.triggerDelay - this.timeSettings.duration / 2;
@@ -536,9 +674,13 @@ export class ScopeStream {
   private resetAveraging(): void {
     this.averagedData = null;
     this.currentAverage = 0;
+    this.setCurrentAverage(0);
   }
 
   private formatTimeTicks(plot: uPlot, ticks: number[]): string[] {
+    if (this.xyMode) {
+      return ticks.map((tick) => trimFixed(tick, 3));
+    }
     const min = Number(plot.scales.x.min ?? ticks[0] ?? 0);
     const max = Number(plot.scales.x.max ?? ticks[ticks.length - 1] ?? min);
     const span = Math.max(Number.EPSILON, Math.abs(max - min));
@@ -547,6 +689,33 @@ export class ScopeStream {
     const decimals = Math.max(0, Math.min(9, Math.ceil(-Math.log10(Math.max(step, Number.EPSILON))) + 1));
     return ticks.map((tick) => `${trimFixed(tick * unit.scale, decimals)} ${unit.suffix}`);
   }
+
+  private applySeriesVisibility(): void {
+    this.plot.setSeries(1, { show: this.xyMode || this.channelVisible[0] });
+    this.plot.setSeries(2, { show: !this.xyMode && this.channelVisible[1] });
+    this.plot.setSeries(3, { show: !this.xyMode && this.mathActive });
+  }
+
+}
+
+function facetValues(data: uPlot.AlignedData, series: number, facet: number): ArrayLike<number> | null {
+  const faceted = data as unknown as Array<Array<ArrayLike<number>>>;
+  return faceted[series]?.[facet] ?? null;
+}
+
+function facetStats(data: uPlot.AlignedData, series: number, facet: number): { min: number; max: number } | null {
+  const values = facetValues(data, series, facet);
+  if (!values || values.length === 0) return null;
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (Number.isFinite(value)) {
+      min = Math.min(min, value);
+      max = Math.max(max, value);
+    }
+  }
+  return min === Number.POSITIVE_INFINITY ? null : { min, max };
 }
 
 function timeDisplayUnit(spanSeconds: number): { scale: number; suffix: string } {

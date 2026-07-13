@@ -3001,3 +3001,50 @@ conda run -n pyrpl-env npm run test:e2e
 - Regression coverage now checks every transfer-stage option, CurveDB overlays,
   trace visibility, overflow decoding, finite measurement data, restored IIR
   routing, released IQ ownership, plot navigation, and bounded plot height.
+
+## 2026-07-13 Scope Display And Acquisition-Control Parity
+
+- Original Scope exposes `rolling_mode`, not a GUI `run_mode` selector. The
+  web-only selector was removed and the PyRPL acquisition-widget state machine
+  was restored: Run single/continuous, Pause, Resume single/continuous, Stop,
+  `current_avg`, and saved `run_continuous` behavior.
+- One intentional user-required difference is retained: after collecting
+  `trace_average` frames, single mode enters `paused_single` and requires an
+  explicit rearm. Original `AcquisitionModule._do_average_single_async()` ends
+  in `stopped`; do not silently change the web latch behavior without revisiting
+  that explicit oscilloscope requirement.
+- Scope GUI/setup parity now includes `ch_math_active`, `math_formula`, and
+  `xy_mode`. XY plots channel 2 against channel 1 and hides the normal time
+  traces. Math is evaluated in the browser from `ch1`, `ch2`, and `times` so
+  this PC-side PyRPL work does not move onto the Red Pitaya CPU.
+- `expr-eval-fork` is pinned to `3.0.1`. It is browser-only JavaScript and adds
+  no Python or native ARM runtime requirement. Member access, assignment,
+  function definitions, comparisons, logical operators, and unknown variables
+  are disabled. The compatibility layer accepts `np.` prefixes and Python
+  exponent syntax for common scalar formulas. Arbitrary NumPy array operations
+  remain an explicit parity gap.
+- Original rolling mode is active only above 0.1 seconds, uses a
+  `[-duration, 0]` x-axis, bypasses trace averaging, and disables trigger,
+  threshold, hysteresis, and Run single. FPGA high-resolution `average` stays
+  editable; it is a hardware decimation mode, not trace averaging.
+- A setup change must restart the acquisition generation. Merely clearing a
+  queued frame count allowed an in-flight frame from the old WebSocket to seed
+  the new average and produced a false phase difference for identical inputs.
+  Scope stream reconnects now use socket-identity checks so retired socket
+  handlers cannot deliver data.
+- Display-only XY/math changes initially called the averaging function again
+  on the last frame. They now redraw the already averaged `displayedData`.
+  Never let a visibility or presentation control mutate acquisition state.
+- Scope frame runtime events initially reapplied full setup snapshots, and
+  ownership release blindly enabled all inputs. Runtime events now update only
+  running state/current average/owner, and ownership release reapplies rolling
+  constraints. Keep setup events, runtime events, and temporary ownership
+  enablement as separate concerns.
+- Playwright's `toBeDisabled()` did not recognize a disabled `<fieldset>` even
+  though its DOM property and descendant radio behavior were correct. Assert
+  the fieldset's `disabled` attribute and use `toBeDisabled()` for its actual
+  form controls.
+- Regression coverage checks identical-input XY data, browser math formulas,
+  single trace averaging and latch behavior, continuous pause/resume, original
+  rolling restrictions/time axis, CSV data, plot interaction, and stable
+  layout.

@@ -193,14 +193,14 @@ panel restores its saved panel state.
 
 ### Remaining Migration Batches
 
-Sampler/AMS/status telemetry is complete. With Network Analyzer hardware
-validation deferred until the board is available, the next software-only work
-is:
+Sampler/AMS/status telemetry and the Scope XY/math/acquisition-control pass are
+complete. With Network Analyzer and final Scope hardware validation deferred
+until the board is available, the next software-only work is:
 
-1. Close Scope XY/math display behavior and align Scope/Spectrum acquisition
-   controls with the original PyRPL button state machines.
-2. Complete Lockbox calibration sweeps, assisted design, output transfer
+1. Complete Lockbox calibration sweeps, assisted design, output transfer
    functions, and dynamic custom actions.
+2. Align the remaining Spectrum Analyzer acquisition controls and RBW display
+   with the original PyRPL widget.
 3. Add the PyRPL configuration editor and custom CurveDB backend support.
 4. Complete ARM packaging, dependency audit, security guidance, and CI.
 

@@ -55,8 +55,10 @@ app.innerHTML = `
           </div>
           <div class="actions">
             <div class="action-row">
-              <button id="single-frame" type="button">Single</button>
-              <button id="connect-scope" type="button">Run</button>
+              <output id="scope-current-average">0 / 1</output>
+              <button id="single-frame" type="button">Run single</button>
+              <button id="connect-scope" type="button">Run continuous</button>
+              <button id="stop-scope" type="button" disabled>Stop</button>
               <input id="scope-curve-name" class="curve-name-input" type="text" value="scope curve" aria-label="Curve Name" />
             </div>
             <div class="action-row">
@@ -100,10 +102,11 @@ app.innerHTML = `
                 <span>Trigger</span>
                 <select id="scope-trigger"></select>
               </label>
-              <label>
-                <span>Run Mode</span>
-                <select id="scope-run-mode"></select>
-              </label>
+              <fieldset class="segmented-control" id="scope-trigger-mode">
+                <legend>Trigger mode</legend>
+                <label><input id="scope-trigger-normal" name="scope-trigger-mode" type="radio" value="normal" /><span>Normal</span></label>
+                <label><input id="scope-trigger-rolling" name="scope-trigger-mode" type="radio" value="rolling" checked /><span>Untriggered (rolling)</span></label>
+              </fieldset>
               <label>
                 <span>Duration</span>
                 <select id="scope-duration"></select>
@@ -112,8 +115,22 @@ app.innerHTML = `
                 <input id="scope-average" type="checkbox" />
                 <span>FPGA Avg</span>
               </label>
+              <label class="toggle-control">
+                <input id="scope-xy-mode" type="checkbox" />
+                <span>XY</span>
+              </label>
             </div>
             <div class="control-row tune-row">
+              <div class="channel-control math-control">
+                <label class="toggle-control">
+                  <input id="scope-math-active" type="checkbox" />
+                  <span>Math</span>
+                </label>
+                <label>
+                  <span>Formula</span>
+                  <input id="scope-math-formula" type="text" value="ch1 * ch2" />
+                </label>
+              </div>
               <label>
                 <span>Trace Avg</span>
                 <input id="scope-trace-average" type="number" min="1" max="1024" step="1" />
@@ -689,6 +706,68 @@ style.textContent = `
 
   .toggle-control input {
     accent-color: #4fd17f;
+  }
+
+  .segmented-control {
+    position: relative;
+    display: flex;
+    align-items: end;
+    height: 45px;
+    min-width: 230px;
+    margin: 0;
+    padding: 16px 0 0;
+    border: 0;
+  }
+
+  .segmented-control legend {
+    position: absolute;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .segmented-control label {
+    position: relative;
+    display: block;
+  }
+
+  .segmented-control input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .segmented-control span {
+    display: grid;
+    height: 28px;
+    padding: 0 8px;
+    place-items: center;
+    border: 1px solid #53616b;
+    color: var(--muted);
+    cursor: pointer;
+    pointer-events: none;
+  }
+
+  .segmented-control label:first-of-type span {
+    border-radius: 6px 0 0 6px;
+  }
+
+  .segmented-control label:last-of-type span {
+    border-left: 0;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .segmented-control input:checked + span {
+    background: #344550;
+    color: var(--text);
+  }
+
+  .segmented-control:disabled span {
+    cursor: not-allowed;
+    opacity: 0.45;
   }
 
   button:hover {
@@ -1462,7 +1541,7 @@ style.textContent = `
     }
 
     .signal-row {
-      grid-template-columns: minmax(180px, 1.4fr) minmax(180px, 1.4fr) repeat(3, minmax(120px, 1fr)) minmax(92px, auto);
+      grid-template-columns: minmax(170px, 1.3fr) minmax(170px, 1.3fr) minmax(110px, 0.8fr) minmax(150px, auto) minmax(110px, 0.8fr) repeat(2, minmax(58px, auto));
     }
 
     .tune-row {
@@ -1655,6 +1734,8 @@ const emptyWorkspace = requireElement<HTMLElement>("#empty-workspace");
 const status = requireElement<HTMLSpanElement>("#status");
 const connectButton = requireElement<HTMLButtonElement>("#connect-scope");
 const singleFrameButton = requireElement<HTMLButtonElement>("#single-frame");
+const stopScopeButton = requireElement<HTMLButtonElement>("#stop-scope");
+const scopeCurrentAverage = requireElement<HTMLOutputElement>("#scope-current-average");
 const saveCurveButton = requireElement<HTMLButtonElement>("#save-curve");
 const scopeCurveName = requireElement<HTMLInputElement>("#scope-curve-name");
 const zoomOutButton = requireElement<HTMLButtonElement>("#zoom-out");
@@ -1671,9 +1752,14 @@ const showCh2Toggle = requireElement<HTMLInputElement>("#show-ch2");
 const scopeInput1 = requireElement<HTMLSelectElement>("#scope-input1");
 const scopeInput2 = requireElement<HTMLSelectElement>("#scope-input2");
 const scopeTrigger = requireElement<HTMLSelectElement>("#scope-trigger");
-const scopeRunMode = requireElement<HTMLSelectElement>("#scope-run-mode");
+const scopeTriggerMode = requireElement<HTMLFieldSetElement>("#scope-trigger-mode");
+const scopeTriggerNormal = requireElement<HTMLInputElement>("#scope-trigger-normal");
+const scopeTriggerRolling = requireElement<HTMLInputElement>("#scope-trigger-rolling");
 const scopeDuration = requireElement<HTMLSelectElement>("#scope-duration");
 const scopeAverage = requireElement<HTMLInputElement>("#scope-average");
+const scopeXyMode = requireElement<HTMLInputElement>("#scope-xy-mode");
+const scopeMathActive = requireElement<HTMLInputElement>("#scope-math-active");
+const scopeMathFormula = requireElement<HTMLInputElement>("#scope-math-formula");
 const scopeTraceAverage = requireElement<HTMLInputElement>("#scope-trace-average");
 const scopeTriggerDelay = requireElement<HTMLInputElement>("#scope-trigger-delay");
 const scopeThreshold = requireElement<HTMLInputElement>("#scope-threshold");
@@ -1787,7 +1873,6 @@ interface ScopeState {
   input1?: string;
   input2?: string;
   trigger_source?: string;
-  run_mode?: string;
   duration?: number;
   average?: boolean;
   ch1_active?: boolean;
@@ -1796,6 +1881,8 @@ interface ScopeState {
   math_formula?: string;
   xy_mode?: boolean;
   rolling_mode?: boolean;
+  run_continuous?: boolean;
+  current_avg?: number;
   trace_average?: number;
   trigger_delay?: number;
   threshold?: number;
@@ -1866,9 +1953,13 @@ const scopeParameterControls: Array<HTMLInputElement | HTMLSelectElement | HTMLB
   scopeInput1,
   scopeInput2,
   scopeTrigger,
-  scopeRunMode,
+  scopeTriggerNormal,
+  scopeTriggerRolling,
   scopeDuration,
   scopeAverage,
+  scopeXyMode,
+  scopeMathActive,
+  scopeMathFormula,
   scopeTraceAverage,
   scopeTriggerDelay,
   scopeThreshold,
@@ -1881,9 +1972,15 @@ const scopeParameterControls: Array<HTMLInputElement | HTMLSelectElement | HTMLB
   scopeCurveName,
 ];
 
-let stream = new ScopeStream(plotHost, (message) => {
-  status.textContent = message;
-});
+let stream = new ScopeStream(
+  plotHost,
+  (message) => {
+    status.textContent = message;
+  },
+  (currentAverage) => {
+    scopeCurrentAverage.textContent = `${currentAverage} / ${scopeTraceAverage.value || "1"}`;
+  },
+);
 let spectrumPlot = new SpectrumPlot(spectrumPlotHost, (message) => {
   spectrumStatus.textContent = message;
 });
@@ -1943,6 +2040,8 @@ function exposeDebugState(): void {
     getCsvLineCount: () => stream.exportCsv().trimEnd().split("\n").length,
     getDisplayedStats: () => stream.getDisplayedStats(),
     getDisplayedDataFingerprint: () => stream.getDisplayedDataFingerprint(),
+    getScopeMathStats: () => stream.getMathStats(),
+    getScopeXyStats: () => stream.getXyStats(),
     moduleStatusText: () => moduleStatus.textContent ?? "",
     statusText: () => status.textContent ?? "",
     getSpectrumSeriesCount: () => spectrumPlot.getSeriesCount(),
@@ -2306,6 +2405,36 @@ async function activateScopePanel(): Promise<void> {
 
 function setRunningState(state: string): void {
   runningState = state;
+  updateScopeAcquisitionButtons(state);
+}
+
+function updateScopeAcquisitionButtons(state: string): void {
+  const rolling = rollingModeActive();
+  if (state === "running_continuous") {
+    connectButton.textContent = "Pause";
+    connectButton.disabled = false;
+    singleFrameButton.textContent = "Run single";
+    singleFrameButton.disabled = true;
+    stopScopeButton.disabled = false;
+  } else if (state === "running_single") {
+    connectButton.textContent = "Run continuous";
+    connectButton.disabled = true;
+    singleFrameButton.textContent = "Pause";
+    singleFrameButton.disabled = false;
+    stopScopeButton.disabled = false;
+  } else if (state === "paused_single" || state === "paused_continuous") {
+    connectButton.textContent = "Resume continuous";
+    connectButton.disabled = false;
+    singleFrameButton.textContent = "Resume single";
+    singleFrameButton.disabled = rolling;
+    stopScopeButton.disabled = false;
+  } else {
+    connectButton.textContent = "Run continuous";
+    connectButton.disabled = false;
+    singleFrameButton.textContent = "Run single";
+    singleFrameButton.disabled = rolling;
+    stopScopeButton.disabled = true;
+  }
 }
 
 function startStream(): void {
@@ -2314,13 +2443,11 @@ function startStream(): void {
   }
   stream.connect();
   connectButton.dataset.connected = "true";
-  connectButton.textContent = "Stop";
 }
 
 function stopStream(message = "Disconnected"): void {
   stream.close();
   connectButton.dataset.connected = "false";
-  connectButton.textContent = "Run";
   status.textContent = message;
 }
 
@@ -2410,11 +2537,10 @@ function applyScopeControlValue(attribute: string, value: string | number | bool
   } else if (attribute === "trigger_source") {
     scopeTrigger.value = String(value);
     updatePlotTimeSettings();
-  } else if (attribute === "run_mode") {
-    scopeRunMode.value = String(value);
   } else if (attribute === "duration") {
     scopeDuration.value = String(value);
     updatePlotTimeSettings();
+    updateRollingControls();
   } else if (attribute === "average") {
     scopeAverage.checked = Boolean(value);
   } else if (attribute === "ch1_active") {
@@ -2423,9 +2549,24 @@ function applyScopeControlValue(attribute: string, value: string | number | bool
   } else if (attribute === "ch2_active") {
     showCh2Toggle.checked = Boolean(value);
     stream.setChannelVisible(2, showCh2Toggle.checked);
+  } else if (attribute === "ch_math_active") {
+    scopeMathActive.checked = Boolean(value);
+    updateScopeDisplaySettings();
+  } else if (attribute === "math_formula") {
+    if (document.activeElement !== scopeMathFormula) scopeMathFormula.value = String(value);
+    updateScopeDisplaySettings();
+  } else if (attribute === "xy_mode") {
+    scopeXyMode.checked = Boolean(value);
+    updateScopeDisplaySettings();
+  } else if (attribute === "rolling_mode") {
+    scopeTriggerRolling.checked = Boolean(value);
+    scopeTriggerNormal.checked = !Boolean(value);
+    updatePlotTimeSettings();
+    updateRollingControls();
   } else if (attribute === "trace_average") {
     scopeTraceAverage.value = String(value);
     stream.setTraceAverage(Number(value));
+    scopeCurrentAverage.textContent = `0 / ${value}`;
   } else if (attribute === "trigger_delay") {
     if (document.activeElement !== scopeTriggerDelay) scopeTriggerDelay.value = String(value);
     updatePlotTimeSettings();
@@ -2438,11 +2579,34 @@ function applyScopeControlValue(attribute: string, value: string | number | bool
   }
 }
 
+function updateScopeDisplaySettings(): void {
+  stream.setDisplaySettings({
+    xyMode: scopeXyMode.checked,
+    mathActive: scopeMathActive.checked,
+    mathFormula: scopeMathFormula.value,
+  });
+}
+
+function rollingModeActive(): boolean {
+  return scopeTriggerRolling.checked && Number(scopeDuration.value) > 0.1;
+}
+
+function updateRollingControls(): void {
+  const allowed = Number(scopeDuration.value) > 0.1;
+  scopeTriggerMode.disabled = !allowed;
+  const active = rollingModeActive();
+  scopeTrigger.disabled = active;
+  scopeThreshold.disabled = active;
+  scopeHysteresis.disabled = active;
+  updateScopeAcquisitionButtons(runningState);
+}
+
 function updatePlotTimeSettings(): void {
   stream.setTimeSettings({
     duration: Number(scopeDuration.value),
     triggerDelay: Number(scopeTriggerDelay.value || 0),
     triggerSource: scopeTrigger.value,
+    rollingMode: rollingModeActive(),
   });
 }
 
@@ -2465,8 +2629,15 @@ function applyScopeState(state: ScopeState): void {
       applyScopeControlValue(attribute, value as string | number | boolean);
     }
   }
+  applyScopeRuntimeState(state);
+}
+
+function applyScopeRuntimeState(state: ScopeState): void {
   if (state.running_state) {
     setRunningState(state.running_state);
+  }
+  if (state.current_avg !== undefined) {
+    scopeCurrentAverage.textContent = `${state.current_avg} / ${scopeTraceAverage.value || "1"}`;
   }
   if ("owner" in state) {
     setScopeOwner(typeof state.owner === "string" ? state.owner : null);
@@ -2478,6 +2649,9 @@ function setScopeOwner(owner: string | null): void {
   for (const control of scopeParameterControls) {
     control.disabled = owner !== null;
   }
+  if (owner === null) {
+    updateRollingControls();
+  }
   if (owner) {
     moduleStatus.textContent = `scope occupied by ${owner}`;
   }
@@ -2485,6 +2659,21 @@ function setScopeOwner(owner: string | null): void {
 
 async function setScopeAttribute(attribute: string, value: string | number | boolean): Promise<void> {
   const result = await setModuleAttributeValue("scope", attribute, value);
+  if (
+    [
+      "input1",
+      "input2",
+      "duration",
+      "average",
+      "trigger_source",
+      "trigger_delay",
+      "threshold",
+      "hysteresis",
+      "rolling_mode",
+    ].includes(attribute)
+  ) {
+    stream.reconnect();
+  }
   applyScopeControlValue(attribute, result.value as string | number | boolean);
   moduleStatus.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
 }
@@ -2517,20 +2706,26 @@ async function loadScopeControls(): Promise<void> {
   populateSelect(scopeInput1, attributes.get("input1")!);
   populateSelect(scopeInput2, attributes.get("input2")!);
   populateSelect(scopeTrigger, attributes.get("trigger_source")!);
-  populateSelect(scopeRunMode, attributes.get("run_mode")!);
   populateSelect(scopeDuration, attributes.get("duration")!);
   scopeAverage.checked = Boolean(attributes.get("average")?.value);
   showCh1Toggle.checked = Boolean(attributes.get("ch1_active")?.value ?? true);
   stream.setChannelVisible(1, showCh1Toggle.checked);
   showCh2Toggle.checked = Boolean(attributes.get("ch2_active")?.value ?? true);
   stream.setChannelVisible(2, showCh2Toggle.checked);
+  scopeMathActive.checked = Boolean(attributes.get("ch_math_active")?.value ?? false);
+  scopeMathFormula.value = String(attributes.get("math_formula")?.value ?? "ch1 * ch2");
+  scopeXyMode.checked = Boolean(attributes.get("xy_mode")?.value ?? false);
+  scopeTriggerRolling.checked = Boolean(attributes.get("rolling_mode")?.value ?? true);
+  scopeTriggerNormal.checked = !scopeTriggerRolling.checked;
   populateNumber(scopeTraceAverage, attributes.get("trace_average")!);
   populateNumber(scopeTriggerDelay, attributes.get("trigger_delay")!);
   populateNumber(scopeThreshold, attributes.get("threshold")!);
   populateNumber(scopeHysteresis, attributes.get("hysteresis")!);
   scopeCurveName.value = String(attributes.get("curve_name")?.value ?? "scope curve");
   stream.setTraceAverage(Number(scopeTraceAverage.value));
+  updateScopeDisplaySettings();
   updatePlotTimeSettings();
+  updateRollingControls();
   moduleStatus.textContent = "Scope controls ready";
 }
 
@@ -3185,8 +3380,7 @@ function connectEvents(): void {
     }
     if (message.type !== "module.attribute.changed" || message.module !== "scope") {
       if (message.type === "module.state.changed" && message.module === "scope") {
-        applyScopeState(message.state);
-        setRunningState(message.state.running_state);
+        applyScopeRuntimeState(message.state);
         if (message.state.trigger_test) {
           moduleStatus.textContent = formatTriggerResult(message.state.trigger_test);
         } else {
@@ -3237,7 +3431,6 @@ async function fetchSingleFrame(): Promise<void> {
   stream.close();
   stream.showFrame(buffer);
   connectButton.dataset.connected = "false";
-  connectButton.textContent = "Run";
 }
 
 async function callSpectrumAction(action: string): Promise<Record<string, unknown>> {
@@ -3285,8 +3478,11 @@ async function persistScopeCurves(): Promise<number> {
     hysteresis: Number(scopeHysteresis.value),
     ch1_active: showCh1Toggle.checked,
     ch2_active: showCh2Toggle.checked,
+    ch_math_active: scopeMathActive.checked,
+    math_formula: scopeMathFormula.value,
+    xy_mode: scopeXyMode.checked,
+    rolling_mode: scopeTriggerRolling.checked,
     trace_average: Number(scopeTraceAverage.value),
-    run_mode: scopeRunMode.value,
   };
   await Promise.all(active.map(([channel]) => createStoredCurve(data.x, data.channels[channel], {
     ...setup,
@@ -3337,7 +3533,8 @@ async function stopSpectrumForScope(): Promise<void> {
 async function runSingleFrame(): Promise<void> {
   await stopSpectrumForScope();
   await callScopeAction("single");
-  await fetchSingleFrame();
+  stream.resetTraceAveraging();
+  startStream();
 }
 
 function normalizedStateName(): string {
@@ -3397,14 +3594,17 @@ async function deleteScopeState(): Promise<void> {
 connectButton.addEventListener("click", () => {
   void (async () => {
     try {
-      if (connectButton.dataset.connected === "true") {
-        await callScopeAction("stop");
-        stopStream();
-        return;
+      if (runningState === "running_continuous") {
+        await callScopeAction("pause");
+      } else if (runningState === "paused_single" || runningState === "paused_continuous") {
+        await callScopeAction("resume_continuous");
+        startStream();
+      } else {
+        await stopSpectrumForScope();
+        await callScopeAction("continuous");
+        stream.resetTraceAveraging();
+        startStream();
       }
-      await stopSpectrumForScope();
-      await callScopeAction("continuous");
-      startStream();
     } catch (error) {
       moduleStatus.textContent = error instanceof Error ? error.message : String(error);
     }
@@ -3412,9 +3612,25 @@ connectButton.addEventListener("click", () => {
 });
 
 singleFrameButton.addEventListener("click", () => {
-  runSingleFrame().catch((error: Error) => {
+  const action = runningState === "running_single"
+    ? callScopeAction("pause")
+    : runningState === "paused_single" || runningState === "paused_continuous"
+      ? callScopeAction("resume_single").then(() => startStream())
+      : runSingleFrame();
+  action.catch((error: Error) => {
     status.textContent = error.message;
   });
+});
+
+stopScopeButton.addEventListener("click", () => {
+  callScopeAction("stop")
+    .then(() => {
+      stream.resetTraceAveraging();
+      stopStream();
+    })
+    .catch((error: Error) => {
+      status.textContent = error.message;
+    });
 });
 
 saveCurveButton.addEventListener("click", () => {
@@ -3537,8 +3753,16 @@ scopeTrigger.addEventListener("change", () => {
   });
 });
 
-scopeRunMode.addEventListener("change", () => {
-  setScopeAttribute("run_mode", scopeRunMode.value).catch((error: Error) => {
+scopeTriggerNormal.addEventListener("change", () => {
+  if (!scopeTriggerNormal.checked) return;
+  setScopeAttribute("rolling_mode", false).catch((error: Error) => {
+    moduleStatus.textContent = error.message;
+  });
+});
+
+scopeTriggerRolling.addEventListener("change", () => {
+  if (!scopeTriggerRolling.checked) return;
+  setScopeAttribute("rolling_mode", true).catch((error: Error) => {
     moduleStatus.textContent = error.message;
   });
 });
@@ -3551,6 +3775,27 @@ scopeDuration.addEventListener("change", () => {
 
 scopeAverage.addEventListener("change", () => {
   setScopeAttribute("average", scopeAverage.checked).catch((error: Error) => {
+    moduleStatus.textContent = error.message;
+  });
+});
+
+scopeXyMode.addEventListener("change", () => {
+  updateScopeDisplaySettings();
+  setScopeAttribute("xy_mode", scopeXyMode.checked).catch((error: Error) => {
+    moduleStatus.textContent = error.message;
+  });
+});
+
+scopeMathActive.addEventListener("change", () => {
+  updateScopeDisplaySettings();
+  setScopeAttribute("ch_math_active", scopeMathActive.checked).catch((error: Error) => {
+    moduleStatus.textContent = error.message;
+  });
+});
+
+scopeMathFormula.addEventListener("change", () => {
+  updateScopeDisplaySettings();
+  setScopeAttribute("math_formula", scopeMathFormula.value).catch((error: Error) => {
     moduleStatus.textContent = error.message;
   });
 });

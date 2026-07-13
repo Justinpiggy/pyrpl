@@ -18,6 +18,7 @@ export interface ScopeTimeSettings {
   duration: number;
   triggerDelay: number;
   triggerSource: string;
+  rollingMode: boolean;
 }
 
 export function parseScopeFrame(buffer: ArrayBuffer): ScopeFrame {
@@ -51,8 +52,9 @@ export function frameToData(frame: ScopeFrame, timeSettings?: ScopeTimeSettings)
   const x = new Float64Array(frame.sampleCount);
   const ch1 = new Float32Array(frame.sampleCount);
   const ch2 = new Float32Array(frame.sampleCount);
-  const xMin =
-    timeSettings && timeSettings.triggerSource !== "immediately"
+  const xMin = timeSettings?.rollingMode
+    ? -timeSettings.duration
+    : timeSettings && timeSettings.triggerSource !== "immediately"
       ? timeSettings.triggerDelay - timeSettings.duration / 2
       : 0;
   const xSpan = timeSettings ? timeSettings.duration : Math.max(0, frame.sampleCount - 1);

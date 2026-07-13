@@ -40,7 +40,6 @@ SCOPE_TRIGGER_SOURCES = [
 ]
 
 SCOPE_DURATIONS = [8e-9 * (2**14) * (2**n) for n in range(17)]
-SCOPE_RUN_MODES = ["single", "continuous", "rolling"]
 SCOPE_RUNNING_STATES = [
     "stopped",
     "running_single",
@@ -64,8 +63,8 @@ SCOPE_SETUP_ATTRIBUTES = [
     "xy_mode",
     "rolling_mode",
     "trace_average",
-    "run_mode",
     "curve_name",
+    "run_continuous",
 ]
 SCOPE_ACTIONS = [
     {
@@ -92,6 +91,16 @@ SCOPE_ACTIONS = [
         "name": "resume",
         "label": "Resume",
         "description": "Resume a paused acquisition.",
+    },
+    {
+        "name": "resume_single",
+        "label": "Resume Single",
+        "description": "Resume the existing average in single mode.",
+    },
+    {
+        "name": "resume_continuous",
+        "label": "Resume Continuous",
+        "description": "Resume the existing average in continuous mode.",
     },
     {
         "name": "stop",
@@ -309,6 +318,9 @@ class ScopeSettings:
     xy_mode: bool = False
     rolling_mode: bool = True
     trace_average: int = 1
+    run_continuous: bool = False
+    current_avg: int = 0
+    # Kept as a compatibility mirror for configs made by early web builds.
     run_mode: str = "rolling"
     running_state: str = "stopped"
     last_action: str | None = None
@@ -658,7 +670,6 @@ def scope_attribute_schema(settings: ScopeSettings) -> list[dict[str, Any]]:
         _select("input1", "Input 1", settings.input1, SCOPE_INPUTS),
         _select("input2", "Input 2", settings.input2, SCOPE_INPUTS),
         _select("trigger_source", "Trigger", settings.trigger_source, SCOPE_TRIGGER_SOURCES),
-        _select("run_mode", "Run Mode", settings.run_mode, SCOPE_RUN_MODES),
         _select("duration", "Duration", settings.duration, SCOPE_DURATIONS),
         _boolean("average", "FPGA Average", settings.average),
         _boolean("ch1_active", "CH1", settings.ch1_active),
@@ -903,12 +914,21 @@ def set_scope_attribute(settings: ScopeSettings, name: str, value: Any) -> Any:
     elif name == "trigger_source":
         normalized = _require_option(name, str(value), SCOPE_TRIGGER_SOURCES)
     elif name == "run_mode":
-        normalized = _require_option(name, str(value), SCOPE_RUN_MODES)
+        normalized = _require_option(name, str(value), ["single", "continuous", "rolling"])
+        settings.rolling_mode = normalized == "rolling"
     elif name == "running_state":
         normalized = _require_option(name, str(value), SCOPE_RUNNING_STATES)
     elif name == "duration":
         normalized = _nearest_duration(float(value))
-    elif name in {"average", "ch1_active", "ch2_active", "ch_math_active", "xy_mode", "rolling_mode"}:
+    elif name in {
+        "average",
+        "ch1_active",
+        "ch2_active",
+        "ch_math_active",
+        "xy_mode",
+        "rolling_mode",
+        "run_continuous",
+    }:
         normalized = bool(value)
         if name == "rolling_mode":
             settings.run_mode = "rolling" if normalized else "continuous"

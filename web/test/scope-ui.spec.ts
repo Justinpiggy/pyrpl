@@ -45,7 +45,7 @@ async function resetServerConfig(page: Page): Promise<void> {
   await setModuleAttribute(page, "scope", "input1", "in1");
   await setModuleAttribute(page, "scope", "input2", "in2");
   await setModuleAttribute(page, "scope", "trigger_source", "immediately");
-  await setModuleAttribute(page, "scope", "run_mode", "rolling");
+  await setModuleAttribute(page, "scope", "rolling_mode", true);
   await setModuleAttribute(page, "scope", "duration", 1.073741824);
   await setModuleAttribute(page, "scope", "trigger_delay", 0);
   await setModuleAttribute(page, "scope", "threshold", 0);
@@ -54,6 +54,9 @@ async function resetServerConfig(page: Page): Promise<void> {
   await setModuleAttribute(page, "scope", "trace_average", 1);
   await setModuleAttribute(page, "scope", "ch1_active", true);
   await setModuleAttribute(page, "scope", "ch2_active", true);
+  await setModuleAttribute(page, "scope", "ch_math_active", false);
+  await setModuleAttribute(page, "scope", "math_formula", "ch1 * ch2");
+  await setModuleAttribute(page, "scope", "xy_mode", false);
 
   for (const module of ["asg0", "asg1"]) {
     await setModuleAttribute(page, module, "waveform", "sin");
@@ -127,7 +130,7 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   await expect(page.locator("#scope-panel")).toBeHidden();
   await expect(page.locator("#empty-workspace")).toBeVisible();
   expect(await page.evaluate(() => window.pyrplScope?.isPanelEnabled("scope"))).toBe(false);
-  await expect(page.locator("#connect-scope")).toHaveText("Run");
+  await expect(page.locator("#connect-scope")).toHaveText("Run continuous");
 
   await page.locator(".menu-dropdown summary").click();
   await page.locator("#panel-scope-enabled").setChecked(true);
@@ -212,11 +215,14 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   expect(draggedSplitSizes![1]).toBeLessThan(initialSplitSizes![1]);
 
   await expect(page.locator("#sample-count")).toHaveCount(0);
-  await expect(page.locator("#connect-scope")).toHaveText("Stop");
+  await expect(page.locator("#connect-scope")).toHaveText("Pause");
   await expect(page.locator("#status")).toContainText(/Frame [1-9]/);
   await expect(page.locator("#module-status")).toContainText("running_continuous");
   expect(await page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("running_continuous");
   await expect(page.locator("#scope-plot .uplot")).toBeVisible();
+  await expect(page.locator("#scope-trigger")).toBeDisabled();
+  await expect(page.locator("#scope-average")).toBeEnabled();
+  await expect(page.locator("#single-frame")).toBeDisabled();
 
   const paintedPixels = await page.locator("#scope-plot canvas").first().evaluate(countPaintedPixels);
   expect(paintedPixels).toBeGreaterThan(1000);
@@ -236,7 +242,8 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
 
   const initialRange = await page.evaluate(() => window.pyrplScope?.getXRange());
   expect(initialRange).toBeTruthy();
-  expect(initialRange!.min).toBe(0);
+  expect(initialRange!.min).toBeCloseTo(-1.073741824, 6);
+  expect(initialRange!.max).toBeCloseTo(0, 6);
   expect(initialRange!.max - initialRange!.min).toBeCloseTo(1.073741824, 6);
   const initialYRange = await page.evaluate(() => window.pyrplScope?.getYRange());
   expect(initialYRange).toEqual({ min: -1.1, max: 1.1 });
@@ -279,13 +286,20 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   expect(streamedRange).toEqual(initialRange);
   expect(streamedYRange).toEqual(initialYRange);
 
-  await page.locator("#connect-scope").click();
+  await page.locator("#stop-scope").click();
   await expect(page.locator("#status")).toContainText("Disconnected");
   expect(await page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("stopped");
-  await expect(page.locator("#connect-scope")).toHaveText("Run");
+  await expect(page.locator("#connect-scope")).toHaveText("Run continuous");
 
   await page.locator("#connect-scope").click();
-  await expect(page.locator("#connect-scope")).toHaveText("Stop");
+  await expect(page.locator("#connect-scope")).toHaveText("Pause");
+  expect(await page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("running_continuous");
+  await page.locator("#connect-scope").click();
+  await expect(page.locator("#connect-scope")).toHaveText("Resume continuous");
+  await expect(page.locator("#single-frame")).toHaveText("Resume single");
+  expect(await page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("paused_continuous");
+  await page.locator("#connect-scope").click();
+  await expect(page.locator("#connect-scope")).toHaveText("Pause");
   expect(await page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("running_continuous");
 
   const plot = page.locator("#scope-plot .u-over");
@@ -402,8 +416,8 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   expect(input1).toBe("asg0");
   await page.locator("#show-ch2").setChecked(true);
 
-  await page.locator("#scope-run-mode").selectOption("single");
-  await expect(page.locator("#module-status")).toContainText("run_mode = single");
+  await page.locator("#scope-trigger-normal").check();
+  await expect(page.locator("#module-status")).toContainText("rolling_mode = false");
 
   await page.locator("#scope-duration").selectOption("0.134217728");
   await expect(page.locator("#module-status")).toContainText("duration = 134.2 ms");
@@ -425,6 +439,28 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
 
   await page.locator("#scope-input2").selectOption("asg0");
   await expect(page.locator("#module-status")).toContainText("input2 = asg0");
+  await page.locator("#scope-xy-mode").setChecked(true);
+  await expect(page.locator("#module-status")).toContainText("xy_mode = true");
+  await expect.poll(async () => (await page.evaluate(() => window.pyrplScope?.getScopeXyStats()))?.maxDelta ?? 2)
+    .toBeLessThan(1e-6);
+  const xyStats = await page.evaluate(() => window.pyrplScope?.getScopeXyStats());
+  expect(xyStats!.xMax - xyStats!.xMin).toBeGreaterThan(0.75);
+  expect(xyStats!.yMax - xyStats!.yMin).toBeGreaterThan(0.75);
+  expect(xyStats!.maxDelta).toBeLessThan(1e-6);
+  await page.locator("#scope-xy-mode").setChecked(false);
+  await page.locator("#scope-math-formula").fill("ch1 - ch2");
+  await page.locator("#scope-math-formula").blur();
+  await page.locator("#scope-math-active").setChecked(true);
+  await expect(page.locator("#module-status")).toContainText("ch_math_active = true");
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getScopeMathStats())).not.toBeNull();
+  const differenceStats = await page.evaluate(() => window.pyrplScope?.getScopeMathStats());
+  expect(Math.abs(differenceStats!.min)).toBeLessThan(1e-6);
+  expect(Math.abs(differenceStats!.max)).toBeLessThan(1e-6);
+  await page.locator("#scope-math-formula").fill("np.sin(ch1) + ch2 ** 2");
+  await page.locator("#scope-math-formula").blur();
+  await expect.poll(async () => (await page.evaluate(() => window.pyrplScope?.getScopeMathStats()))?.max ?? 0)
+    .toBeGreaterThan(0.5);
+  await page.locator("#scope-math-active").setChecked(false);
   await page.locator("#scope-trigger").selectOption("ch1_positive_edge");
   await expect(page.locator("#module-status")).toContainText("trigger_source = ch1_positive_edge");
   await page.locator("#scope-threshold").fill("0");
@@ -465,6 +501,24 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
     return payload.states.length;
   });
   expect(savedStateCount).toBe(0);
+
+  await page.locator("#stop-scope").click();
+  await page.locator("#scope-trigger").selectOption("immediately");
+  await page.locator("#scope-trace-average").fill("3");
+  await page.locator("#scope-trace-average").blur();
+  await page.locator("#single-frame").click();
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("paused_single");
+  await expect(page.locator("#scope-current-average")).toHaveText("3 / 3");
+  await expect(page.locator("#single-frame")).toHaveText("Resume single");
+  await expect(page.locator("#connect-scope")).toHaveText("Resume continuous");
+  await page.locator("#stop-scope").click();
+
+  await page.locator("#scope-trigger-rolling").check();
+  await page.locator("#scope-duration").selectOption("0.067108864");
+  await expect(page.locator("#scope-trigger-mode")).toHaveAttribute("disabled", "");
+  await expect(page.locator("#scope-trigger")).toBeEnabled();
+  await expect(page.locator("#scope-average")).toBeEnabled();
+  await expect(page.locator("#single-frame")).toBeEnabled();
 
   const firstHeight = await page.evaluate(() => document.documentElement.scrollHeight);
   await page.waitForTimeout(1200);
@@ -763,10 +817,10 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   await page.locator("#spectrumanalyzer-trace-average").fill("4");
   await page.locator("#spectrumanalyzer-trace-average").blur();
   await expect(page.locator("#spectrumanalyzer-status")).toContainText("trace_average = 4");
-  await expect(page.locator("#connect-scope")).toHaveText("Stop");
+  await expect(page.locator("#connect-scope")).toHaveText("Pause");
   await page.locator("#spectrum-run").click();
   await expect(page.locator("#spectrum-run")).toHaveText("Stop");
-  await expect(page.locator("#connect-scope")).toHaveText("Run");
+  await expect(page.locator("#connect-scope")).toHaveText("Run continuous");
   await expect(page.locator("#status")).toContainText("Spectrum owns the scope resource");
   await expect(page.locator("#spectrum-status")).toContainText(/Spectrum frame|Spectrum stream connected/);
   await expect.poll(() => page.evaluate(() => window.pyrplScope?.getSpectrumSeriesCount())).toBeGreaterThan(0);
@@ -821,7 +875,7 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
 
   await page.getByRole("button", { name: "Scope" }).click();
   await page.locator("#connect-scope").click();
-  await expect(page.locator("#connect-scope")).toHaveText("Stop");
+  await expect(page.locator("#connect-scope")).toHaveText("Pause");
   expect(await page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("running_continuous");
 
   await page.getByRole("button", { name: "IQ" }).click();
@@ -831,7 +885,7 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   await expect(page.locator("#spectrumanalyzer-panel")).toBeVisible();
   await page.locator("#spectrum-run").click();
   await expect(page.locator("#spectrum-run")).toHaveText("Stop");
-  await expect(page.locator("#connect-scope")).toHaveText("Run");
+  await expect(page.locator("#connect-scope")).toHaveText("Run continuous");
   await page.locator("#spectrum-run").click();
   await expect(page.locator("#spectrum-run")).toHaveText("Run");
   await page.getByRole("button", { name: "IQ" }).click();

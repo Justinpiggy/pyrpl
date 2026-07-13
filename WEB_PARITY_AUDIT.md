@@ -27,7 +27,7 @@ gap.
 
 | Web panel | Original PyRPL source | Current parity status |
 | --- | --- | --- |
-| Scope | `pyrpl/hardware_modules/scope.py`, `pyrpl/widgets/module_widgets/scope_widget.py`, `acquisition_module_widget.py` | Core inputs, duration/decimation, trigger, averaging, rolling capture, run/single/stop, PyRPL-compatible per-channel curve persistence, CSV export, zoom/pan are migrated. `ch1_active` and `ch2_active` are backend attributes instead of browser-only toggles. Remaining gaps: full PyRPL `xy_mode`, `ch_math_active`, `math_formula` display behavior, and replacing the web-only `run_mode` selector with PyRPL's acquisition buttons plus `rolling_mode` trigger-mode control. |
+| Scope | `pyrpl/hardware_modules/scope.py`, `pyrpl/widgets/module_widgets/scope_widget.py`, `acquisition_module_widget.py` | Inputs, duration/decimation, trigger, FPGA and trace averaging, rolling capture, original acquisition button states, channel/math visibility, XY display, per-channel CurveDB persistence, CSV export, and plot navigation are migrated. Rolling uses the original negative time axis and bypasses trace averaging. Per the user's required oscilloscope workflow, a completed single capture remains `paused_single` for explicit rearm instead of changing to PyRPL's final `stopped` state. Browser math safely supports scalar numeric expressions and common functions over `ch1`, `ch2`, and `times`; arbitrary NumPy array APIs accepted by the original Python `eval` remain a documented compatibility gap. Hardware validation of this final control pass is deferred until the board is available. |
 | ASG | `pyrpl/hardware_modules/asg.py`, `asg_widget.py` | GUI/setup attributes are migrated: waveform, amplitude, offset, frequency, trigger source, output direct, start phase, cycles per burst, setup/trigger/off. |
 | Housekeeping | `pyrpl/hardware_modules/hk.py`, `hk_widget.py` | LED and expansion P/N value/direction attributes are migrated. |
 | Sampler / AMS | `pyrpl/hardware_modules/sampler.py`, `ams.py`, `attributes.py::PWMRegister` | Both original modules have empty GUI/setup attribute lists. The web telemetry panel deliberately adds no setup actions, ownership, or saved state. It exposes all DSP signal readbacks and `Sampler.stats()`, all four AMS readbacks, and effective writes to DAC2/DAC3 using the original PWM conversion; DAC0/DAC1 are read-only because original PyRPL documents their writes as ineffective. |
@@ -57,5 +57,11 @@ gap.
   attributes.
 - Added scope `ch1_active` and `ch2_active` as backend state so the existing
   channel checkboxes behave like PyRPL scope channel controls.
+- Removed the web-only Scope `run_mode` control. The web panel now uses the
+  original Run single/Run continuous/Pause/Resume/Stop state machine and the
+  separate Normal/Untriggered (rolling) trigger-mode control.
+- Added Scope XY and math traces, original rolling restrictions and negative
+  rolling time axis, and setup-change stream restarts so stale frames cannot
+  contaminate a new browser average.
 - Removed Trigger's separate web Arm action; PyRPL's trigger module arms during
   `_setup()`, so the web panel now uses Setup for that path.

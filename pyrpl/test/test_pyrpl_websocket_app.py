@@ -992,17 +992,48 @@ class WebAppTest(unittest.TestCase):
             actions = {action["name"] for action in session.module_actions("scope")}
             self.assertIn("single", actions)
             self.assertIn("continuous", actions)
+            self.assertIn("resume_single", actions)
+            self.assertIn("resume_continuous", actions)
             self.assertIn("stop", actions)
             self.assertNotIn("trigger_test", actions)
 
             continuous = session.call_module_action("scope", "continuous")
             self.assertEqual(continuous["running_state"], "running_continuous")
+            self.assertTrue(continuous["run_continuous"])
 
             paused = session.call_module_action("scope", "pause")
             self.assertEqual(paused["running_state"], "paused_continuous")
+            self.assertFalse(paused["run_continuous"])
+
+            resumed = session.call_module_action("scope", "resume_single")
+            self.assertEqual(resumed["running_state"], "running_single")
+            self.assertFalse(resumed["run_continuous"])
 
             stopped = session.call_module_action("scope", "stop")
             self.assertEqual(stopped["running_state"], "stopped")
+            self.assertEqual(stopped["current_avg"], 0)
+        finally:
+            session.close()
+
+    def test_scope_schema_matches_pyrpl_gui_and_setup_attributes(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            attributes = {attribute["name"] for attribute in session.module_attributes("scope")}
+            self.assertNotIn("run_mode", attributes)
+            self.assertTrue(
+                {
+                    "ch1_active",
+                    "ch2_active",
+                    "ch_math_active",
+                    "math_formula",
+                    "xy_mode",
+                    "rolling_mode",
+                }.issubset(attributes)
+            )
+            saved = session.save_module_state("scope", "parity")["state"]
+            self.assertIn("run_continuous", saved)
+            self.assertNotIn("run_mode", saved)
+            self.assertNotIn("current_avg", saved)
         finally:
             session.close()
 
@@ -1080,6 +1111,42 @@ class WebAppTest(unittest.TestCase):
             rearmed = session.acquire_scope_frame(sequence=3, sample_count=512)
             self.assertIsNotNone(rearmed.frame)
             self.assertEqual(session.get_module_attribute("scope", "running_state"), "paused_single")
+        finally:
+            session.close()
+
+    def test_session_single_trigger_collects_trace_average_before_pausing(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_module_attribute("scope", "trace_average", 3)
+            session.set_module_attribute("scope", "trigger_source", "immediately")
+            session.call_module_action("scope", "single")
+            for sequence in range(2):
+                acquisition = session.acquire_scope_frame(sequence=sequence, sample_count=128)
+                self.assertIsNotNone(acquisition.frame)
+                self.assertFalse(acquisition.state_changed)
+                self.assertEqual(session.scope_settings.current_avg, sequence + 1)
+                self.assertEqual(session.scope_settings.running_state, "running_single")
+            final = session.acquire_scope_frame(sequence=2, sample_count=128)
+            self.assertIsNotNone(final.frame)
+            self.assertTrue(final.state_changed)
+            self.assertEqual(session.scope_settings.current_avg, 3)
+            self.assertEqual(session.scope_settings.running_state, "paused_single")
+        finally:
+            session.close()
+
+    def test_session_rolling_scope_bypasses_trace_averaging(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_module_attribute("scope", "trace_average", 4)
+            session.call_module_action("scope", "continuous")
+            rolling = session.acquire_scope_frame(sequence=0, sample_count=128)
+            self.assertIsNotNone(rolling.frame)
+            self.assertEqual(session.scope_settings.current_avg, 0)
+
+            session.set_module_attribute("scope", "rolling_mode", False)
+            normal = session.acquire_scope_frame(sequence=1, sample_count=128)
+            self.assertIsNotNone(normal.frame)
+            self.assertEqual(session.scope_settings.current_avg, 1)
         finally:
             session.close()
 

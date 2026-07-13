@@ -80,6 +80,23 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 
 ## Acquisition/UI Event Rules
 
+- Scope has no original `run_mode` GUI attribute. Use `rolling_mode` for the
+  Normal/Untriggered (rolling) choice and preserve the acquisition widget's
+  Run single, Run continuous, Pause, Resume, and Stop button states.
+- Scope setup changes restart acquisition and browser trace averaging. Reopen
+  the Scope WebSocket and ignore handlers from retired sockets so an in-flight
+  old frame cannot seed the new average.
+- Display-only Scope changes such as XY mode, math visibility, or formula edits
+  redraw `displayedData`; they must not run the last frame through averaging
+  again.
+- Original rolling Scope data uses `[-duration, 0]`, bypasses trace averaging,
+  disables trigger/threshold/hysteresis and Run single, but leaves the FPGA
+  high-resolution `average` control editable.
+- Scope runtime events may update running state, current average, and ownership.
+  Do not apply their full setup snapshot over controls; explicit attribute
+  events and state-load responses own setup values.
+- Releasing temporary Scope ownership must restore intrinsic disabled states
+  such as rolling-mode restrictions instead of blindly enabling every input.
 - Network analyzer is an IQ accumulator sweep, not a scope capture or CPU FFT.
   It owns one IQ selected in reverse manager order and does not own Scope.
 - Incremental uPlot data must contain a finite, monotonic x-array. Do not pad

@@ -48,6 +48,8 @@ interface Window {
     getCsvLineCount: () => number;
     getDisplayedStats: () => { ch1Min: number; ch1Max: number; ch2Min: number; ch2Max: number } | null;
     getDisplayedDataFingerprint: () => number | null;
+    getScopeMathStats: () => { min: number; max: number } | null;
+    getScopeXyStats: () => { xMin: number; xMax: number; yMin: number; yMax: number; maxDelta: number } | null;
     moduleStatusText: () => string;
     statusText: () => string;
     getSpectrumSeriesCount: () => number;
