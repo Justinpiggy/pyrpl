@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import struct
 import time
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock, Thread, current_thread
+from typing import Callable
 
 import numpy as np
 
@@ -16,6 +18,7 @@ from .asg_registers import disable_asg, sync_asg_setting, sync_asg_settings, tri
 from .config import WebConfig
 from .curve_store import configured_curve_store
 from .dsp_registers import (
+    dsp_addr_base,
     make_hardware_iir_filter,
     read_iir_overflow,
     sync_iir_setting,
@@ -104,7 +107,10 @@ from .scope_registers import (
     wait_scope_curve_ready,
 )
 from .settings import ServerSettings
-from .telemetry import read_ams, read_sampler, sampler_stats, write_ams_dac
+from .telemetry import read_ams, read_sampler, read_sampler_signal, sampler_stats, write_ams_dac
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -116,7 +122,11 @@ class ScopeAcquisition:
 class WebSession:
     """Owns the active monitor-server client."""
 
-    def __init__(self, settings: ServerSettings):
+    def __init__(
+        self,
+        settings: ServerSettings,
+        lockbox_state_callback: Callable[[dict], None] | None = None,
+    ):
         self.settings = settings
         self._lock = Lock()
         self._scope_calibration_lock = Lock()
@@ -155,6 +165,15 @@ class WebSession:
         self._module_states: dict[str, dict[str, dict]] = self._load_saved_states()
         self._fake_scope_clock = 0
         self._hardware_rolling_started = False
+        self._lockbox_state_callback = lockbox_state_callback
+        self._lockbox_monitor_stop = Event()
+        self._lockbox_monitor_wakeup = Event()
+        self._lockbox_monitor_thread = Thread(
+            target=self._lockbox_monitor_loop,
+            name="pyrpl-lockbox-monitor",
+            daemon=True,
+        )
+        self._lockbox_monitor_thread.start()
 
     def info(self) -> dict:
         return {
@@ -214,22 +233,28 @@ class WebSession:
         self.curves.delete(pk)
 
     def lockbox_schema(self) -> dict:
-        return self.lockbox.schema()
+        with self._lock:
+            return self.lockbox.schema()
 
     def set_lockbox_class(self, classname: str) -> dict:
         with self._lock:
             self._release_lockbox_iq_inputs_no_lock()
-            return self.lockbox.set_class(classname)
+            schema = self.lockbox.set_class(classname)
+        self._wake_lockbox_monitor()
+        return schema
 
     def set_lockbox_attribute(self, attribute: str, value) -> dict:
         with self._lock:
-            return self.lockbox.set_attribute(attribute, value)
+            schema = self.lockbox.set_attribute(attribute, value)
+        self._wake_lockbox_monitor()
+        return schema
 
     def set_lockbox_input_attribute(self, input_name: str, attribute: str, value) -> dict:
         with self._lock:
             schema = self.lockbox.set_input_attribute(input_name, attribute, value)
             self._configure_lockbox_input_no_lock(input_name)
-            return schema
+        self._wake_lockbox_monitor()
+        return schema
 
     def call_lockbox_input_action(self, input_name: str, action: str) -> dict:
         with self._lock:
@@ -244,23 +269,32 @@ class WebSession:
         with self._lock:
             schema = self.lockbox.set_output_attribute(output_name, attribute, value)
             self._reapply_lockbox_output_no_lock(output_name)
-            return schema
+        self._wake_lockbox_monitor()
+        return schema
 
     def append_lockbox_stage(self) -> dict:
         with self._lock:
-            return self.lockbox.append_stage()
+            schema = self.lockbox.append_stage()
+        self._wake_lockbox_monitor()
+        return schema
 
     def delete_lockbox_stage(self, index: int) -> dict:
         with self._lock:
-            return self.lockbox.delete_stage(index)
+            schema = self.lockbox.delete_stage(index)
+        self._wake_lockbox_monitor()
+        return schema
 
     def set_lockbox_stage_attribute(self, index: int, attribute: str, value) -> dict:
         with self._lock:
-            return self.lockbox.set_stage_attribute(index, attribute, value)
+            schema = self.lockbox.set_stage_attribute(index, attribute, value)
+        self._wake_lockbox_monitor()
+        return schema
 
     def set_lockbox_stage_output_attribute(self, index: int, output_name: str, attribute: str, value) -> dict:
         with self._lock:
-            return self.lockbox.set_stage_output_attribute(index, output_name, attribute, value)
+            schema = self.lockbox.set_stage_output_attribute(index, output_name, attribute, value)
+        self._wake_lockbox_monitor()
+        return schema
 
     def call_lockbox_stage_action(self, index: int, action: str) -> dict:
         with self._lock:
@@ -269,11 +303,16 @@ class WebSession:
             if action != "execute":
                 raise KeyError(action)
             self._execute_lockbox_stage_no_lock(self.lockbox.sequence[index])
-            return self.lockbox.schema()
+            self.lockbox.lock_status = self._lockbox_is_locked_no_lock()
+            schema = self.lockbox.schema()
+        self._wake_lockbox_monitor()
+        return schema
 
     def call_lockbox_action(self, action: str) -> dict:
         with self._lock:
-            return self._call_lockbox_action_no_lock(action)
+            schema = self._call_lockbox_action_no_lock(action)
+        self._wake_lockbox_monitor()
+        return schema
 
     def lockbox_actions(self) -> list[dict]:
         return lockbox_actions()
@@ -485,7 +524,9 @@ class WebSession:
         with self._lock:
             self._ensure_manual_control_allowed(module_name)
             if module_name == "lockbox":
-                return self._call_lockbox_action_no_lock(action)
+                state = self._call_lockbox_action_no_lock(action)
+                self._wake_lockbox_monitor()
+                return state
             if module_name == "spectrumanalyzer":
                 return self._call_spectrum_action_no_lock(action)
             if module_name == "networkanalyzer":
@@ -931,7 +972,124 @@ class WebSession:
         return _trigger_result(index is not None, index, source, threshold, hysteresis, condition)
 
     def close(self) -> None:
+        self._lockbox_monitor_stop.set()
+        self._lockbox_monitor_wakeup.set()
+        if self._lockbox_monitor_thread is not current_thread():
+            self._lockbox_monitor_thread.join(timeout=2.0)
         self.client.close()
+
+    def _wake_lockbox_monitor(self) -> None:
+        self._lockbox_monitor_wakeup.set()
+
+    def _lockbox_monitor_loop(self) -> None:
+        """Run PyRPL's lock-status monitor independently of browser sessions."""
+
+        while not self._lockbox_monitor_stop.is_set():
+            schema = None
+            active = False
+            interval = 1.0
+            try:
+                with self._lock:
+                    active = self.lockbox.current_stage() is not None
+                    interval = max(0.001, float(self.lockbox.lockstatus_interval))
+                    if active and self._monitor_lockbox_once_no_lock():
+                        schema = self.lockbox.schema()
+            except Exception:
+                LOGGER.exception("Lockbox status monitor failed; retrying at the configured interval")
+
+            if schema is not None and self._lockbox_state_callback is not None:
+                try:
+                    self._lockbox_state_callback(schema)
+                except Exception:
+                    LOGGER.exception("Lockbox status callback failed")
+
+            self._lockbox_monitor_wakeup.wait(interval if active else None)
+            self._lockbox_monitor_wakeup.clear()
+
+    def _monitor_lockbox_once_no_lock(self) -> bool:
+        previous_status = self.lockbox.lock_status
+        new_status = self._lockbox_is_locked_no_lock()
+        should_relock = (
+            self.lockbox.current_state == "lock_on"
+            and not new_status
+            and bool(self.lockbox.auto_lock)
+        )
+        self.lockbox.lock_status = new_status
+        if should_relock:
+            self._configure_lockbox_lock_no_lock()
+        return previous_status != new_status
+
+    def _lockbox_is_locked_no_lock(self) -> bool:
+        stage = self.lockbox.current_stage()
+        if stage is None:
+            return False
+        if any(self._lockbox_output_is_saturated_no_lock(output) for output in self.lockbox.outputs.values()):
+            return False
+
+        input_name = self.lockbox.spec.default_is_locked_input
+        if input_name not in self.lockbox.inputs:
+            input_name = stage.input
+        input_model = self.lockbox.inputs[input_name]
+        return self._lockbox_input_is_locked_no_lock(input_model, stage)
+
+    def _lockbox_output_is_saturated_no_lock(self, output) -> bool:
+        pid = self.pid_settings[output.pid]
+        raw_ival = int(self.client.reads(dsp_addr_base(output.pid) + 0x100, 1)[0]) & 0xFFFF
+        if raw_ival & 0x8000:
+            raw_ival -= 0x10000
+        pid.ival = raw_ival / float(2**13)
+        sample = read_sampler_signal(self.client, output.pid, self._fake_scope_clock)
+        self._fake_scope_clock += 1
+        return (
+            (pid.ival > output.max_voltage or pid.ival < output.min_voltage)
+            and (sample > output.max_voltage or sample < output.min_voltage)
+        )
+
+    def _lockbox_input_is_locked_no_lock(self, input_model, stage) -> bool:
+        if "InputFromOutput" in self.lockbox.library.resolve_mro(input_model.class_name):
+            forwarded = self._forwarded_lockbox_input_no_lock(input_model)
+            if forwarded is None:
+                return True
+            input_model = forwarded
+
+        signal = self._lockbox_monitor_input_signal_no_lock(input_model)
+        stats = sampler_stats(self.client, signal, 0.01, self._fake_scope_clock)
+        self._fake_scope_clock += int(stats["count"])
+        actual_mean = float(stats["mean"]) - float(input_model.calibration.analog_offset)
+        threshold = float(self.lockbox.is_locked_threshold)
+        lower_setpoint = float(stage.setpoint) - threshold
+        upper_setpoint = float(stage.setpoint) + threshold
+        minimum = self.lockbox.expected_signal(input_model.name, lower_setpoint)
+        maximum = self.lockbox.expected_signal(input_model.name, upper_setpoint)
+        start_slope = self.lockbox.expected_slope(input_model.name, lower_setpoint)
+        stop_slope = self.lockbox.expected_slope(input_model.name, upper_setpoint)
+        if maximum < minimum:
+            minimum, maximum = maximum, minimum
+        if start_slope * stop_slope <= 0:
+            if start_slope > stop_slope:
+                maximum = float("inf")
+            elif start_slope < stop_slope:
+                minimum = -float("inf")
+        return minimum <= actual_mean <= maximum
+
+    def _forwarded_lockbox_input_no_lock(self, input_model):
+        output_name = str(input_model.input_signal).split(".")[-1]
+        output = self.lockbox.outputs.get(output_name)
+        if output is None:
+            return None
+        pid_input = self.pid_settings[output.pid].input
+        for candidate in self.lockbox.inputs.values():
+            if candidate is input_model:
+                continue
+            if self._lockbox_monitor_input_signal_no_lock(candidate) == pid_input:
+                return candidate
+        return None
+
+    def _lockbox_monitor_input_signal_no_lock(self, input_model) -> str:
+        if getattr(input_model, "is_iq", False):
+            iq_module = getattr(input_model, "iq_module", None)
+            return iq_module if iq_module in self.iq_settings else "off"
+        return self._resolve_lockbox_dsp_signal_no_lock(input_model.input_signal)
 
     def _load_config_setup_attributes(self) -> None:
         if self.config is None:
@@ -1096,19 +1254,23 @@ class WebSession:
 
     def _call_lockbox_action_no_lock(self, action: str) -> dict:
         if action == "is_locked":
-            self.lockbox.is_locked()
+            self.lockbox.lock_status = self._lockbox_is_locked_no_lock()
         elif action == "unlock":
             self._unlock_lockbox_outputs_no_lock(reset_offset=True)
             self.lockbox.current_state = "unlock"
+            self.lockbox.lock_status = False
             self._release_lockbox_resources_no_lock()
         elif action == "sweep":
             self._configure_lockbox_sweep_no_lock()
             self.lockbox.current_state = "sweep"
+            self.lockbox.lock_status = False
         elif action == "lock":
             self._configure_lockbox_lock_no_lock()
             self.lockbox.current_state = "lock_on"
+            self.lockbox.lock_status = self._lockbox_is_locked_no_lock()
         elif action == "calibrate_all":
             self._calibrate_lockbox_inputs_no_lock()
+            self.lockbox.lock_status = False
         elif action == "get_analog_offsets":
             self._measure_lockbox_offsets_no_lock()
         else:
@@ -1190,7 +1352,8 @@ class WebSession:
         self._call_lockbox_stage_function_no_lock(stage.function_call)
         self.lockbox.current_state = stage.name
         if stage.duration > 0:
-            time.sleep(stage.duration)
+            if self._lockbox_monitor_stop.wait(stage.duration):
+                return
         if self.lockbox.sequence[-1] is stage:
             self.lockbox.current_state = "lock_on"
 
@@ -1201,8 +1364,8 @@ class WebSession:
             self._calibrate_lockbox_inputs_no_lock()
             self._unlock_lockbox_outputs_no_lock(reset_offset=True)
         elif function_call == "increment":
-            current = float(self.lockbox.attributes.get("first_stage_counter", 0.0))
-            self.lockbox.attributes["first_stage_counter"] = current + 1.0
+            current = float(self.lockbox.values.get("first_stage_counter", 0.0))
+            self.lockbox.values["first_stage_counter"] = current + 1.0
 
     def _unlock_lockbox_outputs_no_lock(self, reset_offset: bool = False) -> None:
         for output_name in self.lockbox.outputs:

@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from threading import Event
 from unittest import mock
 
 import numpy as np
@@ -526,6 +527,61 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual([item["name"] for item in schema["outputs"]], ["actuator"])
             self.assertIn("user_offset", {attribute["name"] for attribute in schema["attributes"]})
             self.assertIn("user_gain", {attribute["name"] for attribute in schema["inputs"][0]["attributes"]})
+
+    def test_lockbox_schema_inherits_default_lock_status_input(self):
+        state = LockboxState("HighFinesseFabryPerot")
+        self.assertEqual(state.spec.default_is_locked_input, "reflection")
+
+    def test_session_lockbox_status_uses_sampler_and_pid_saturation(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_lockbox_class("Interferometer")
+            session.set_lockbox_stage_attribute(0, "input", "port1")
+            session.set_lockbox_stage_output_attribute(0, "piezo", "lock_on", True)
+            with mock.patch(
+                "pyrpl_websocket.session.sampler_stats",
+                return_value={"count": 1, "mean": 0.0, "stddev": 0.0, "max": 0.0, "min": 0.0},
+            ):
+                locked = session.call_lockbox_action("lock")
+            self.assertTrue(locked["state"]["lock_status"])
+
+            with mock.patch(
+                "pyrpl_websocket.session.sampler_stats",
+                return_value={"count": 1, "mean": 2.0, "stddev": 0.0, "max": 2.0, "min": 2.0},
+            ):
+                with session._lock:
+                    self.assertFalse(session._lockbox_is_locked_no_lock())
+
+            pid_addr = dsp_addr_base("pid0")
+            session.client.fpgamemory[pid_addr + 0x100] = float_to_register(1.25, bits=16)
+            with mock.patch("pyrpl_websocket.session.read_sampler_signal", return_value=1.25):
+                with session._lock:
+                    self.assertFalse(session._lockbox_is_locked_no_lock())
+        finally:
+            session.close()
+
+    def test_session_auto_relock_runs_without_a_browser_connection(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        relocked = Event()
+        try:
+            def run_lock_sequence():
+                relocked.set()
+                session.lockbox.current_state = "unlock"
+
+            with (
+                mock.patch.object(session, "_lockbox_is_locked_no_lock", return_value=False),
+                mock.patch.object(session, "_configure_lockbox_lock_no_lock", side_effect=run_lock_sequence),
+            ):
+                with session._lock:
+                    session.lockbox.auto_lock = True
+                    session.lockbox.lockstatus_interval = 0.001
+                    session.lockbox.current_state = "lock_on"
+                    session.lockbox.lock_status = True
+                session._wake_lockbox_monitor()
+                self.assertTrue(relocked.wait(1.0))
+                self.assertFalse(session.lockbox.lock_status)
+        finally:
+            session.close()
 
     def test_session_lockbox_actions_configure_resources_and_pid(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))

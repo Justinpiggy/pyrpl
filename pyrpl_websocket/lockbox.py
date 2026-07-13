@@ -113,6 +113,7 @@ class LockboxClassSpec:
     setpoint_units: list[str]
     output_units: list[str]
     function_calls: list[str]
+    default_is_locked_input: str | None = None
     description: str = ""
 
 
@@ -197,6 +198,11 @@ class LockboxSchemaLibrary:
             elif target in {"_output_units", "_units"}:
                 resolved = self._eval_expr(value, info.name, local_values)
                 if isinstance(resolved, list):
+                    info.class_values[target] = resolved
+                    local_values[target] = resolved
+            elif target == "_default_is_locked_input":
+                resolved = self._eval_expr(value, info.name, local_values)
+                if resolved is None or isinstance(resolved, str):
                     info.class_values[target] = resolved
                     local_values[target] = resolved
             elif isinstance(value, ast.Call):
@@ -302,6 +308,10 @@ class LockboxSchemaLibrary:
                     setpoint_units=setpoint_units,
                     output_units=output_units,
                     function_calls=functions,
+                    default_is_locked_input=self.resolve_class_value(
+                        name,
+                        "_default_is_locked_input",
+                    ),
                     description=description,
                 )
         preferred = ["Lockbox", "Linear", "Interferometer", "PdhInterferometer", "FabryPerot", "HighFinesseFabryPerot", "Pll"]
@@ -378,6 +388,13 @@ class LockboxSchemaLibrary:
             if info is not None and attr in info.class_values:
                 return [str(item) for item in info.class_values[attr]]
         return []
+
+    def resolve_class_value(self, class_name: str, attr: str) -> Any:
+        for candidate in self.resolve_mro(class_name):
+            info = self.classes.get(candidate)
+            if info is not None and attr in info.class_values:
+                return info.class_values[attr]
+        return None
 
     def resolve_functions(self, class_name: str) -> list[str]:
         functions: list[str] = []
@@ -594,6 +611,7 @@ class LockboxState:
         self.inputs = self._new_inputs(spec)
         self.outputs = self._new_outputs(spec)
         self.current_state = "unlock"
+        self.lock_status = False
         self.sequence = [self._new_stage("stage0")]
         return self.schema()
 
@@ -657,7 +675,7 @@ class LockboxState:
             "classes": self.class_list(),
             "state": {
                 "current_state": self.current_state,
-                "lock_status": self.is_locked(),
+                "lock_status": self.lock_status,
             },
             "attributes": self._lockbox_attribute_controls(),
             "inputs": [input_model.as_dict(self) for input_model in self.inputs.values()],
@@ -688,7 +706,19 @@ class LockboxState:
         raise AttributeError(name)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"library", "classname", "values", "spec", "output_units", "function_calls", "inputs", "outputs", "current_state", "sequence"}:
+        if name in {
+            "library",
+            "classname",
+            "values",
+            "spec",
+            "output_units",
+            "function_calls",
+            "inputs",
+            "outputs",
+            "current_state",
+            "lock_status",
+            "sequence",
+        }:
             object.__setattr__(self, name, value)
         elif "values" in self.__dict__ and name in self.values:
             self.values[name] = value
@@ -887,10 +917,20 @@ class LockboxState:
         for output in self.outputs.values():
             output.current_state = state
 
+    def current_stage(self):
+        if not self.sequence:
+            return None
+        if self.current_state == "lock_on":
+            return self.sequence[-1]
+        return next(
+            (stage for stage in self.sequence if stage.name == self.current_state),
+            None,
+        )
+
     def is_locked(self) -> bool:
-        if self.current_state != "lock_on" or not self.sequence:
-            return False
-        return all(abs(stage.setpoint) <= self.is_locked_threshold for stage in self.sequence[-1:])
+        """Return the latest status measured by the server-side monitor."""
+
+        return bool(self.lock_status)
 
     def _new_stage(self, name: str) -> LockboxStage:
         input_name = next(iter(self.inputs))

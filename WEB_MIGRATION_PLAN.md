@@ -760,6 +760,8 @@ included as package data.
 
 - Lockbox inputs, outputs, stages, calibration, sweep, lock, relock, and status
   workflows are available in the browser.
+- Auto relock and lock-status sampling run continuously in the Red Pitaya
+  Python server session, independent of browser and WebSocket lifetime.
 - Ownership and reserved hardware modules are clearly shown.
 
 ### Milestone 6: Web Interface Becomes Primary

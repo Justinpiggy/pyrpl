@@ -3291,3 +3291,34 @@ control.
 - The focused IIR Playwright workflow passes after synchronizing on status.
 - A wheel built without build isolation contains the compiled frontend and
   both `pyrpl-web` and `pyrpl-web-audit` entry points.
+
+## 2026-07-13 Server-Owned Lockbox Auto Relock
+
+- Original PyRPL starts `_monitor_lock_status_async()` when a sequence stage
+  becomes active and keeps it alive in final `lock_on`. It is control logic,
+  not GUI presentation logic. In the web migration it must live in the
+  persistent Python `WebSession` on Red Pitaya; browser timers and WebSocket
+  connection lifetime must never gate auto relock.
+- The original lock predicate first requires a current sequence stage, then
+  rejects an output only when both its live PID integrator value and sampled
+  PID output exceed the configured voltage limits. Checking either value alone
+  changes behavior.
+- Input health uses a 10 ms sampler statistic. Subtract the calibration analog
+  offset from the mean, evaluate expected signals at setpoint plus/minus
+  `is_locked_threshold`, normalize reversed limits, and preserve the slope-sign
+  rule that ignores one bound around a local maximum or minimum. RMS is
+  diagnostic only and does not decide lock state.
+- Model metadata matters to control behavior. Fabry-Perot and inherited models
+  declare `_default_is_locked_input = "reflection"`; this overrides the active
+  stage input. `InputFromOutput` forwards to a direct input when its PID input
+  matches one and otherwise follows PyRPL by returning locked.
+- On a final-state loss with `auto_lock=True`, rerun the complete configured
+  stage sequence exactly as manual lock does. The monitor serializes access to
+  `monitor_server` with the session lock, wakes after relevant setup/state
+  changes, and stops before the monitor client closes. Connected browsers
+  receive status events, but only observe the server-owned loop.
+- Regression coverage must include relocking from a bare `WebSession` with no
+  browser connection. This directly protects the disconnected-user use case.
+- Verification after this change: all 67 backend migration tests pass,
+  including inherited lock-input metadata, sampler/saturation lock status, and
+  browser-independent auto relock.

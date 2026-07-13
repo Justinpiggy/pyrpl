@@ -44,6 +44,15 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   sweep output, subtracts the stored analog offset, and computes standard
   deviation plus midpoint/amplitude from the extrema. Forward that capture to
   the Scope stream while its controls are owned, then restore the prior setup.
+- Lockbox auto relock is a persistent server responsibility, not a browser
+  timer. While a configured stage is active, sample the selected error signal
+  for 10 ms at `lockstatus_interval`, apply PyRPL's expected-signal/slope
+  interval test, and check PID saturation from both live `ival` and sampler
+  output. A loss in final `lock_on` reruns the complete stage sequence when
+  `auto_lock` is enabled, even with no WebSocket clients connected.
+- Preserve model lock-check overrides such as Fabry-Perot's inherited
+  `_default_is_locked_input = "reflection"`; the current stage input is not
+  always the lock-health signal.
 - Output assisted design uses `i = desired_unity_gain_frequency` and
   `p = i / analog_filter_cutoff` (or zero at zero cutoff); manual mode derives
   the two assisted values from `p` and `i`. Reapply edits according to the

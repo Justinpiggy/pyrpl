@@ -376,8 +376,19 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.session = WebSession(settings)
         app.state.events = EventBroker()
+        loop = asyncio.get_running_loop()
+
+        def publish_lockbox_state(schema: dict) -> None:
+            loop.call_soon_threadsafe(
+                asyncio.create_task,
+                app.state.events.publish(module_state_event("lockbox", schema)),
+            )
+
+        app.state.session = WebSession(
+            settings,
+            lockbox_state_callback=publish_lockbox_state,
+        )
         app.state.scope_stream_generation = 0
         app.state.spectrum_stream_generation = 0
         try:
