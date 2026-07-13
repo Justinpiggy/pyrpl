@@ -4,6 +4,7 @@ import { IirPlot } from "./iir-plot";
 import { LockboxPanel, type LockboxSchema } from "./lockbox-panel";
 import { NetworkAnalyzerPanel } from "./network-analyzer-panel";
 import { CurveViewerPanel } from "./curve-viewer-panel";
+import { ConfigPanel } from "./config-panel";
 import Split from "split.js";
 import { PANEL_DEFINITIONS, type PanelId } from "./panel-registry";
 import { createRegisterPanel } from "./register-panel";
@@ -325,6 +326,23 @@ app.innerHTML = `
               <label><span>Parameters</span><textarea id="curve-viewer-params" spellcheck="false"></textarea></label>
               <output id="curve-viewer-status">Curve viewer ready</output>
             </section>
+          </div>
+        </section>
+        <section class="workspace-panel" id="pyrplconfig-panel" data-panel-id="pyrplconfig" hidden>
+          <header class="panel-header">
+            <div><h2>Configuration</h2></div>
+            <div class="action-row">
+              <button id="config-refresh" type="button">Refresh</button>
+              <button id="config-save" type="button">Save</button>
+            </div>
+          </header>
+          <div class="panel-content config-content">
+            <div class="config-toolbar">
+              <label><span>Config file</span><output id="config-file"></output></label>
+              <label><span>Module</span><select id="config-module"></select></label>
+              <output id="config-status">Configuration loading...</output>
+            </div>
+            <textarea id="config-text" class="config-editor" spellcheck="false" aria-label="Configuration YAML"></textarea>
           </div>
         </section>
         <section class="workspace-panel" id="lockbox-panel" data-panel-id="lockbox" hidden>
@@ -1337,6 +1355,49 @@ style.textContent = `
     gap: 8px;
   }
 
+  .config-content {
+    display: grid;
+    grid-template-rows: auto minmax(360px, 1fr);
+    gap: 8px;
+    padding: 8px;
+    min-height: 0;
+  }
+
+  .config-toolbar {
+    display: flex;
+    align-items: end;
+    gap: 10px;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .config-toolbar label {
+    display: grid;
+    gap: 3px;
+    min-width: 160px;
+  }
+
+  .config-toolbar label:first-child {
+    flex: 1 1 360px;
+  }
+
+  #config-file {
+    overflow-wrap: anywhere;
+  }
+
+  .config-editor {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 360px;
+    resize: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: #11161c;
+    color: var(--text);
+    padding: 10px;
+    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
   #lockbox-actions {
     display: flex;
     flex-flow: row nowrap;
@@ -1761,6 +1822,7 @@ const pwmPanel = requireElement<HTMLElement>("#pwm-panel");
 const spectrumPanel = requireElement<HTMLElement>("#spectrumanalyzer-panel");
 const networkAnalyzerPanelElement = requireElement<HTMLElement>("#networkanalyzer-panel");
 const curveViewerPanelElement = requireElement<HTMLElement>("#curveviewer-panel");
+const configPanelElement = requireElement<HTMLElement>("#pyrplconfig-panel");
 const lockboxPanelElement = requireElement<HTMLElement>("#lockbox-panel");
 const housekeepingPanel = requireElement<HTMLElement>("#housekeeping-panel");
 const telemetryPanel = requireElement<HTMLElement>("#telemetry-panel");
@@ -1776,6 +1838,7 @@ const panelElements: Record<PanelId, HTMLElement> = {
   spectrumanalyzer: spectrumPanel,
   networkanalyzer: networkAnalyzerPanelElement,
   curveviewer: curveViewerPanelElement,
+  pyrplconfig: configPanelElement,
   lockbox: lockboxPanelElement,
   housekeeping: housekeepingPanel,
   telemetry: telemetryPanel,
@@ -1898,6 +1961,14 @@ const lockboxPanel = new LockboxPanel({
   outputPlot: requireElement<HTMLElement>("#lockbox-output-plot"),
   inputPlotSelect: requireElement<HTMLSelectElement>("#lockbox-input-plot-select"),
   outputPlotSelect: requireElement<HTMLSelectElement>("#lockbox-output-plot-select"),
+});
+const configPanel = new ConfigPanel({
+  file: requireElement<HTMLOutputElement>("#config-file"),
+  module: requireElement<HTMLSelectElement>("#config-module"),
+  text: requireElement<HTMLTextAreaElement>("#config-text"),
+  refresh: requireElement<HTMLButtonElement>("#config-refresh"),
+  save: requireElement<HTMLButtonElement>("#config-save"),
+  status: requireElement<HTMLOutputElement>("#config-status"),
 });
 const sessionLine = requireElement<HTMLParagraphElement>("#session-line");
 createRegisterPanel({
@@ -4066,6 +4137,9 @@ async function startup(): Promise<void> {
   await loadGenericPanels();
   await networkAnalyzerPanel.initialize();
   await curveViewerPanel.load();
+  await configPanel.load().catch((error: Error) => {
+    requireElement<HTMLOutputElement>("#config-status").textContent = error.message;
+  });
   await lockboxPanel.load();
   connectEvents();
   await loadWorkspaceStateFromConfig();

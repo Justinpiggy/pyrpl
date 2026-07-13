@@ -153,3 +153,24 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   multi-row selector; browsers do not reliably auto-select its first option.
 - Complex curves display magnitude in dB and phase in degrees; real curves
   display their untransformed y-values and hide the phase plot.
+- Match PyRPL's custom backend selection at startup: read
+  `PYRPL_USER_DIR/config/global_config.yml`, treat `general.curvedb: pyrpl` as
+  the standalone backend, and otherwise import the trusted local module's
+  `CurveDB` class. Adapt `create`, `get`, `all_pks`, `save`, and `delete` while
+  preserving the web curve JSON shape. An explicit `--curve-dir` always selects
+  standalone file storage.
+
+## Configuration Rules
+
+- `PyrplConfig` edits one top-level YAML branch at a time: active config path,
+  module selector, Refresh, Save, and text. Save must require a YAML mapping,
+  use the existing atomic temporary-file replacement, and reload recognized
+  setup attributes immediately.
+- Keep browser writes scoped to the config selected when the server starts.
+  Original desktop `configfile` can create another `MemoryTree`, but accepting
+  arbitrary browser paths would expose server filesystem writes; alternate
+  files remain a CLI/startup choice.
+- Custom Lockbox methods are unrestricted trusted Python, not metadata. Do not
+  claim arbitrary-method parity by inventing an AST subset; a future solution
+  needs an explicit headless plugin API that provides the real hardware/session
+  object graph.

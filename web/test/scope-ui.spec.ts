@@ -1065,3 +1065,33 @@ test("lockbox panel switches classes, edits stages, and renders static plots", a
   await page.locator("#lockbox-stages button", { hasText: "Go to this stage" }).first().click();
   await expect(page.locator("#lockbox-status")).toContainText(/stage|lock_on/);
 });
+
+test("configuration panel edits PyRPL YAML branches and validates input", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("summary", { hasText: "Panels" }).click();
+  await page.locator("#panel-pyrplconfig-enabled").check();
+  await page.getByRole("button", { name: "Configuration", exact: true }).click();
+
+  await expect(page.locator("#config-file")).toContainText("pyrpl-websocket.yml");
+  await page.locator("#config-module").selectOption("scope");
+  await expect(page.locator("#config-status")).toHaveText("Loaded scope");
+  const original = await page.locator("#config-text").inputValue();
+
+  await page.locator("#config-text").fill("threshold: 0.3125\ntrace_average: 4\ncustom_note: web editor\n");
+  await page.locator("#config-save").click();
+  await expect(page.locator("#config-status")).toHaveText("Saved scope");
+  const scopeState = await page.evaluate(async () => {
+    const response = await fetch("/api/modules/scope");
+    return response.json();
+  });
+  expect(scopeState.state.threshold).toBe(0.3125);
+  expect(scopeState.state.trace_average).toBe(4);
+
+  await page.locator("#config-text").fill("threshold: [");
+  await page.locator("#config-save").click();
+  await expect(page.locator("#config-status")).toContainText("invalid YAML");
+
+  await page.locator("#config-text").fill(original);
+  await page.locator("#config-save").click();
+  await expect(page.locator("#config-status")).toHaveText("Saved scope");
+});

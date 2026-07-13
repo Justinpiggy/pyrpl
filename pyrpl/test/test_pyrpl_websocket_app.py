@@ -1,15 +1,19 @@
 import asyncio
+import importlib
+import os
 import pickle
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import yaml
 
 from pyrpl_websocket.app import create_app, handle_control_message
 from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
-from pyrpl_websocket.curve_store import CurveStore
+from pyrpl_websocket.curve_store import CurveStore, configured_curve_store
 from pyrpl_websocket.assets import asset_info
 from pyrpl_websocket.dsp_registers import (
     dsp_addr_base,
@@ -117,6 +121,7 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("/api/health", paths)
         self.assertIn("/api/session", paths)
         self.assertIn("/api/config", paths)
+        self.assertIn("/api/config/branches/{module_name}", paths)
         self.assertIn("/api/workspace", paths)
         self.assertIn("/api/assets", paths)
         self.assertIn("/api/register/read", paths)
@@ -189,6 +194,61 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(curve["name"], "legacy")
             self.assertEqual(curve["x"], [0.0, 1.0])
             self.assertEqual(curve["y"], [2.0, 3.0])
+
+    def test_curve_store_honors_global_config_backend_override(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            config_dir = root / "config"
+            config_dir.mkdir()
+            (config_dir / "global_config.yml").write_text(
+                "general:\n  curvedb: test_curve_backend\n",
+                encoding="utf-8",
+            )
+            (root / "test_curve_backend.py").write_text(
+                "\n".join(
+                    [
+                        "class CurveDB:",
+                        "    records = {}",
+                        "    next_pk = 1",
+                        "    def __init__(self, x, y, params, pk):",
+                        "        self.data = (x, y)",
+                        "        self.params = params",
+                        "        self._pk = pk",
+                        "    @property",
+                        "    def pk(self): return self._pk",
+                        "    @classmethod",
+                        "    def create(cls, x, y, **params):",
+                        "        obj = cls(x, y, params, cls.next_pk)",
+                        "        cls.next_pk += 1",
+                        "        cls.records[obj.pk] = obj",
+                        "        return obj",
+                        "    @classmethod",
+                        "    def get(cls, pk): return cls.records[int(pk)]",
+                        "    @classmethod",
+                        "    def all_pks(cls): return sorted(cls.records, reverse=True)",
+                        "    def save(self): self.records[self.pk] = self",
+                        "    def delete(self): del self.records[self.pk]",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            sys.path.insert(0, str(root))
+            importlib.invalidate_caches()
+            try:
+                with mock.patch.dict(os.environ, {"PYRPL_USER_DIR": str(root)}):
+                    store = configured_curve_store()
+                    self.assertEqual(store.backend_name, "test_curve_backend")
+                    curve = store.create([1.0, 2.0], [3.0, 4.0], [0.5, -0.5], {"name": "custom"})
+                    self.assertEqual(curve["pk"], 1)
+                    self.assertTrue(curve["complex"])
+                    self.assertEqual(store.list()[0]["name"], "custom")
+                    updated = store.update_params(1, "name: renamed\nchilds: null\n")
+                    self.assertEqual(updated["name"], "renamed")
+                    store.delete(1)
+                    self.assertEqual(store.list(), [])
+            finally:
+                sys.path.remove(str(root))
+                sys.modules.pop("test_curve_backend", None)
 
     def test_session_register_write_then_read(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))
@@ -1392,6 +1452,34 @@ class WebAppTest(unittest.TestCase):
                 self.assertEqual(second.workspace_state()["workspaceSplitSizes"], [60, 40])
             finally:
                 second.close()
+
+    def test_config_editor_round_trips_yaml_and_reloads_module_setup(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_file = str(Path(tmpdir) / "editor.yml")
+            session = WebSession(ServerSettings(hostname="_FAKE_", config=config_file))
+            try:
+                editor = session.config_editor("scope")
+                self.assertEqual(editor["module"], "scope")
+                self.assertIn("pyrpl", editor["modules"])
+                self.assertIn("redpitaya", editor["modules"])
+                self.assertIn("scope", editor["modules"])
+
+                saved = session.save_config_branch(
+                    "scope",
+                    "threshold: 0.3125\ntrace_average: 4\ncustom_note: preserved\n",
+                )
+                self.assertEqual(saved["module"], "scope")
+                self.assertEqual(session.scope_settings.threshold, 0.3125)
+                self.assertEqual(session.scope_settings.trace_average, 4)
+                payload = yaml.safe_load(Path(config_file).read_text(encoding="utf-8"))
+                self.assertEqual(payload["scope"]["custom_note"], "preserved")
+
+                with self.assertRaisesRegex(ValueError, "invalid YAML"):
+                    session.save_config_branch("scope", "threshold: [")
+                with self.assertRaisesRegex(ValueError, "YAML mapping"):
+                    session.save_config_branch("scope", "- threshold\n")
+            finally:
+                session.close()
 
     def test_control_message_register_round_trip(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))

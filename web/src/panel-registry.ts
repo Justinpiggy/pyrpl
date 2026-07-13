@@ -9,6 +9,7 @@ export type PanelId =
   | "spectrumanalyzer"
   | "networkanalyzer"
   | "curveviewer"
+  | "pyrplconfig"
   | "lockbox"
   | "housekeeping"
   | "telemetry"
@@ -84,6 +85,12 @@ export const PANEL_DEFINITIONS: PanelDefinition[] = [
     id: "curveviewer",
     title: "Curve Viewer",
     description: "Browse and manage saved PyRPL curves",
+    defaultEnabled: false,
+  },
+  {
+    id: "pyrplconfig",
+    title: "Configuration",
+    description: "Edit PyRPL YAML configuration branches",
     defaultEnabled: false,
   },
   {

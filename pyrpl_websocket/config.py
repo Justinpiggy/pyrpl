@@ -73,6 +73,36 @@ class WebConfig:
         branch = self.data.get(module_name, {})
         return dict(branch) if isinstance(branch, dict) else {}
 
+    def branch_names(self, additional: list[str] | None = None) -> list[str]:
+        names = ["pyrpl", "redpitaya"]
+        names.extend(additional or [])
+        names.extend(
+            str(name)
+            for name in self.data
+            if not str(name).endswith("_states") and name != "pyrpl_websocket"
+        )
+        return _unique(names)
+
+    def branch_yaml(self, branch_name: str) -> str:
+        branch = self.data.get(str(branch_name), {})
+        return yaml.safe_dump(branch, sort_keys=False, default_flow_style=False)
+
+    def set_branch_yaml(self, branch_name: str, text: str) -> dict[str, Any]:
+        name = str(branch_name).strip()
+        if not name:
+            raise ValueError("configuration branch name cannot be empty")
+        try:
+            loaded = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"invalid YAML: {exc}") from exc
+        if loaded is None:
+            loaded = {}
+        if not isinstance(loaded, dict):
+            raise ValueError("configuration branch must be a YAML mapping")
+        self.data[name] = _jsonable(loaded)
+        self.save()
+        return dict(self.data[name])
+
     def set_module_setup(self, module_name: str, state: dict[str, Any]) -> None:
         self.data[module_name] = _jsonable(state)
         self.save()
@@ -162,3 +192,11 @@ def _jsonable(value: Any) -> Any:
     if hasattr(value, "item"):
         return value.item()
     return value
+
+
+def _unique(values: list[str]) -> list[str]:
+    result = []
+    for value in values:
+        if value not in result:
+            result.append(value)
+    return result

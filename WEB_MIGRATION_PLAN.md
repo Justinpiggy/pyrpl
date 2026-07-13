@@ -203,8 +203,13 @@ until the board is available, the next software-only work is:
 2. Move Spectrum Analyzer's original 16x FFT zero-padding into a browser Web
    Worker and validate the final normalization on hardware. Acquisition controls,
    linked RBW/span behavior, and browser-side averaging are migrated.
-3. Add the PyRPL configuration editor and custom CurveDB backend support.
-4. Complete ARM packaging, dependency audit, security guidance, and CI.
+3. Complete ARM packaging, dependency audit, security guidance, and CI.
+
+The PyRPL configuration editor and custom CurveDB backend support are now
+complete. The editor exposes the active local file and top-level module branches
+with refresh/save behavior matching `PyrplConfig`; saved known-module branches
+reload setup attributes immediately. `global_config.general.curvedb` can select
+a trusted local module implementing PyRPL's `CurveDB` API.
 
 ## Red Pitaya ARM Deployment Constraints
 

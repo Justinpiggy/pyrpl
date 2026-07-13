@@ -65,6 +65,10 @@ class CurveParamsRequest(BaseModel):
     params_yaml: str
 
 
+class ConfigBranchWriteRequest(BaseModel):
+    text: str
+
+
 def _message_id(message: dict[str, Any]) -> Any:
     return message.get("id")
 
@@ -414,9 +418,23 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         return app.state.session.info()
 
     @app.get("/api/config")
-    async def config_info():
-        info = app.state.session.info()
-        return {"config_file": info.get("config_file")}
+    async def config_info(module: str | None = None):
+        try:
+            return app.state.session.config_editor(module)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/config/branches/{module_name}")
+    async def save_config_branch(module_name: str, request: ConfigBranchWriteRequest):
+        try:
+            schema = app.state.session.save_config_branch(module_name, request.text)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if module_name in {item["name"] for item in app.state.session.modules()}:
+            await app.state.events.publish(
+                module_state_event(module_name, app.state.session.module_state(module_name))
+            )
+        return schema
 
     @app.get("/api/workspace")
     async def get_workspace():

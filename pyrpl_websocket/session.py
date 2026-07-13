@@ -14,7 +14,7 @@ import numpy as np
 
 from .asg_registers import disable_asg, sync_asg_setting, sync_asg_settings, trigger_asg
 from .config import WebConfig
-from .curve_store import CurveStore
+from .curve_store import configured_curve_store
 from .dsp_registers import (
     make_hardware_iir_filter,
     read_iir_overflow,
@@ -137,7 +137,7 @@ class WebSession:
         self.spectrum_settings = SpectrumAnalyzerSettings()
         self.network_analyzer_settings = NetworkAnalyzerSettings()
         self.network_analyzer_run = NetworkAnalyzerRun()
-        self.curves = CurveStore(settings.curve_dir)
+        self.curves = configured_curve_store(settings.curve_dir)
         self.lockbox = LockboxState()
         config_enabled = settings.config is not None or settings.source is not None
         self.config = None if settings.state_file or not config_enabled else WebConfig(settings.config, settings.source)
@@ -183,6 +183,7 @@ class WebSession:
             "lockbox": self.lockbox.schema(),
             "owners": dict(self.module_owners),
             "config_file": str(self.config.path) if self.config and self.config.path else self.settings.state_file,
+            "curve_backend": self.curves.backend_name,
         }
 
     def modules(self) -> list[dict]:
@@ -663,6 +664,43 @@ class WebSession:
     def workspace_state(self) -> dict | None:
         with self._lock:
             return self.config.workspace() if self.config else None
+
+    def config_editor(self, module_name: str | None = None) -> dict:
+        with self._lock:
+            if self.config is None or self.config.path is None:
+                raise ValueError("PyRPL YAML configuration is disabled for this session")
+            modules = self.config.branch_names(list(_empty_saved_states()))
+            selected = str(module_name or "pyrpl")
+            if selected not in modules:
+                modules.append(selected)
+            return {
+                "configfile": str(self.config.path),
+                "config_file": str(self.config.path),
+                "module": selected,
+                "modules": modules,
+                "text": self.config.branch_yaml(selected),
+            }
+
+    def save_config_branch(self, module_name: str, text: str) -> dict:
+        with self._lock:
+            if self.config is None or self.config.path is None:
+                raise ValueError("PyRPL YAML configuration is disabled for this session")
+            branch = self.config.set_branch_yaml(module_name, text)
+            if module_name in _empty_saved_states():
+                for attribute, value in branch.items():
+                    if attribute not in _setup_attributes(module_name):
+                        continue
+                    self._set_module_attribute_no_lock(module_name, attribute, value)
+            modules = self.config.branch_names(list(_empty_saved_states()))
+            if module_name not in modules:
+                modules.append(module_name)
+            return {
+                "configfile": str(self.config.path),
+                "config_file": str(self.config.path),
+                "module": module_name,
+                "modules": modules,
+                "text": self.config.branch_yaml(module_name),
+            }
 
     def save_workspace_state(self, workspace: dict) -> dict:
         with self._lock:

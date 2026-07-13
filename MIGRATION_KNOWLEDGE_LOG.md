@@ -3174,3 +3174,33 @@ conda run -n pyrpl-env npm run test:e2e
   browser close is advisory, while server-side generation or cancellation is
   the ownership boundary. Strategic multi-step browser tests must verify the
   active plot receives every frame in a finite averaged acquisition.
+
+## 2026-07-13 Configuration Editor And CurveDB Backend Parity
+
+- Original `PyrplConfig` is a branch-oriented YAML editor, not a generic JSON
+  settings form. Its visible contract is `configfile`, module selection,
+  Refresh, Save, and text. The web panel now follows that contract for the
+  server-selected local file; known module branches reload setup attributes
+  immediately after a validated save.
+- Configuration branch input must parse to a YAML mapping. Invalid YAML and
+  lists/scalars are rejected before touching memory or disk. Existing
+  `WebConfig.save()` retains atomic temporary-file replacement.
+- Desktop PyRPL allows editing `configfile` to instantiate a different
+  `MemoryTree`. A remote browser must not choose arbitrary server paths, so the
+  web panel displays the active path read-only; alternate config selection is
+  done with `--config` when starting the server.
+- Original CurveDB customization reads
+  `global_config.general.curvedb`, imports that trusted local module, and uses
+  its `CurveDB` class. The web server now adapts the same create/get/all-pks,
+  save, and delete contract and keeps its existing JSON representation for real
+  and complex curves. Missing or invalid custom modules fall back to the
+  standalone PyRPL `.dat` backend, matching original behavior.
+- CurveDB backend selection happens once when the session starts. Editing
+  `global_config.yml` requires a server restart, just as original import-time
+  selection does. Third-party backend ARM support remains the backend author's
+  responsibility; the adapter itself adds only standard-library imports.
+- The custom Lockbox audit found that arbitrary methods are not equivalent to
+  descriptor metadata: examples access loops, samplers, `self.pyrpl.rp`, and a
+  second Red Pitaya. A partial AST interpreter would invent semantics and hide
+  failures. Keep this as an explicit trusted headless-plugin gap until a real
+  runtime object contract is designed.
