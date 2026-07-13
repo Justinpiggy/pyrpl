@@ -128,6 +128,13 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Spectrum RBW is `span * sum(window^2) / sum(window)^2` for the 16,384-point
   Scope buffer. Span and RBW select the same decimation; changing the window
   refreshes RBW. Baseband uses Scope only, while IQ mode also owns IQ2.
+- Spectrum uses PyRPL's `PADDING_FACTOR = 16`: transform 16,384 windowed samples
+  into 262,144 FFT points in a browser Web Worker. Baseband returns 131,073
+  bins; IQ returns the full shifted 262,144 bins. Transfer `ArrayBuffer`s to
+  and from the worker and discard results from superseded setup generations.
+- Average baseband cross spectra as separate real and imaginary arrays, then
+  take magnitude only for display. Save both components to CurveDB. Display
+  unit and show/hide changes must not reset the linear `Vpk^2` average.
 - A browser WebSocket close may leave an idle server loop alive until its next
   send. Give every shared acquisition stream, including Scope and Spectrum, a
   server-side generation and check it before and after hardware acquisition so
@@ -186,6 +193,10 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Build Vite assets into `pyrpl_websocket/frontend` and include that directory
   as wheel package data. A production wheel must never silently serve the old
   prototype in `pyrpl_websocket/static`.
+- Clean setuptools' generated `build/` directory before a release wheel build.
+  Vite removes stale source assets, but setuptools can reuse stale files from
+  `build/lib` and package multiple obsolete hashed bundles. Wheel verification
+  must require exactly one main script and one Spectrum worker chunk.
 - Run `pyrpl-web-audit --strict-armv7` after installation. The audit checks
   Python, package versions, forbidden accelerators, and packaged frontend
   presence.
@@ -195,3 +206,6 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - UI tests must wait for the observable completion of asynchronous control
   writes before directly querying backend state. Browser input helpers complete
   DOM interaction, not the application's subsequent fetch and plot refresh.
+- Never spread acquisition-sized arrays into `Math.min`, `Math.max`, or another
+  variadic function; a 131,073-bin spectrum exceeds the JavaScript argument
+  stack. Iterate, reduce, or use `every` instead.

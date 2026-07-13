@@ -836,7 +836,13 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   await expect(page.locator("#status")).toContainText("Spectrum owns the scope resource");
   await expect(page.locator("#spectrum-status")).toContainText(/Spectrum frame|Spectrum stream connected/);
   await expect.poll(() => page.evaluate(() => window.pyrplScope?.getSpectrumSeriesCount())).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getSpectrumBinCount())).toBe(131_073);
   await expect.poll(() => page.evaluate(() => window.pyrplScope?.getSpectrumAverageCount())).toBe(4);
+  await page.locator("#spectrumanalyzer-display-input2-baseband").setChecked(false);
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getSpectrumSeriesCount())).toBe(2);
+  expect(await page.evaluate(() => window.pyrplScope?.getSpectrumAverageCount())).toBe(4);
+  await page.locator("#spectrumanalyzer-display-input2-baseband").setChecked(true);
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getSpectrumSeriesCount())).toBe(3);
   const paintedPixels = await page.locator("#spectrum-plot canvas").first().evaluate(countPaintedPixels);
   expect(paintedPixels).toBeGreaterThan(1000);
 
@@ -874,11 +880,15 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   expect(csv.split("\n")[0]).toContain("frequency");
   const savedSpectrumList = await (await page.request.get("/api/curves")).json();
   expect(savedSpectrumList.curves.length).toBeGreaterThan(0);
-  const savedSpectrum = await (
-    await page.request.get(`/api/curves/${savedSpectrumList.curves[0].pk}`)
-  ).json();
-  expect(savedSpectrum.curve.params.curve_unit).toBe("Vpk^2");
-  expect(Math.min(...savedSpectrum.curve.y)).toBeGreaterThanOrEqual(0);
+  const savedSpectra = await Promise.all(savedSpectrumList.curves.map(async (summary: { pk: number }) => (
+    await (await page.request.get(`/api/curves/${summary.pk}`)).json()
+  ).curve));
+  const savedPower = savedSpectra.find((curve) => curve.params.ch !== "cross");
+  const savedCross = savedSpectra.find((curve) => curve.params.ch === "cross");
+  if (!savedPower || !savedCross) throw new Error("Spectrum curves are incomplete");
+  expect(savedPower.params.curve_unit).toBe("Vpk^2");
+  expect(savedPower.y.every((value: number) => value >= 0)).toBe(true);
+  expect(savedCross.y_imag).toHaveLength(savedCross.y.length);
 
   await page.getByRole("button", { name: "IQ" }).click();
   await expect(page.locator("#iq-panel")).toBeVisible();

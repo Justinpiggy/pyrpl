@@ -55,6 +55,7 @@ interface Window {
     moduleStatusText: () => string;
     statusText: () => string;
     getSpectrumSeriesCount: () => number;
+    getSpectrumBinCount: () => number;
     getSpectrumAverageCount: () => number;
     getSpectrumXRange: () => { min: number; max: number };
     getSpectrumYRange: () => { min: number; max: number };

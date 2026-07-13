@@ -529,9 +529,12 @@ class SpectrumAnalyzerSettings:
     current_avg: int = 0
     last_action: str | None = None
     iq_module: str = "iq2"
+    iq_bandwidth: list[float] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.rbw = spectrum_rbw(self.window, self.span)
+        if not self.iq_bandwidth:
+            self.iq_bandwidth = [self.span] * 4
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1174,6 +1177,8 @@ def set_spectrum_attribute(settings: SpectrumAnalyzerSettings, name: str, value:
     setattr(settings, name, normalized)
     if name in {"span", "window"}:
         settings.rbw = spectrum_rbw(settings.window, settings.span)
+    if name == "span":
+        settings.iq_bandwidth = [settings.span] * 4
     return normalized
 
 

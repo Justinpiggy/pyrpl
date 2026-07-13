@@ -194,15 +194,18 @@ panel restores its saved panel state.
 ### Remaining Migration Batches
 
 Sampler/AMS/status telemetry and the Scope XY/math/acquisition-control pass are
-complete. With Network Analyzer and final Scope hardware validation deferred
-until the board is available, the next software-only work is:
+complete. The remaining software-only migration batch is:
 
 1. Complete dynamic execution of arbitrary custom Lockbox model methods. The
    original fixed actions, per-input calibration sweeps, stage execution,
    assisted design, and output transfer-function plots are migrated.
-2. Move Spectrum Analyzer's original 16x FFT zero-padding into a browser Web
-   Worker and validate the final normalization on hardware. Acquisition controls,
-   linked RBW/span behavior, and browser-side averaging are migrated.
+
+Hardware validation remains deferred until the board is available: final Scope
+behavior, Network Analyzer normalization/transfer correction, and Spectrum
+Analyzer normalization/transfer correction. Spectrum's original 16x FFT
+zero-padding now runs in a browser Web Worker, including normalized windows,
+baseband complex cross spectra, scope/IQ transfer correction, and linear
+browser-side averaging.
 
 ARM packaging, dependency audit, security guidance, and CI are complete. The
 headless wheel now contains the compiled frontend, the Red Pitaya extra pins a

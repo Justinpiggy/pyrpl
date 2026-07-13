@@ -1647,6 +1647,7 @@ class WebSession:
             iq_settings.output_signal = "quadrature"
             iq_settings.frequency = settings.center
             iq_settings.acbandwidth = settings.acbandwidth
+            iq_settings.bandwidth = list(settings.iq_bandwidth)
             iq_settings.phase = 0.0
             iq_settings.gain = 0.0
             iq_settings.amplitude = 0.0

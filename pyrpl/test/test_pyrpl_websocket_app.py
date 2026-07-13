@@ -874,6 +874,7 @@ class WebAppTest(unittest.TestCase):
 
             state = session.call_module_action("spectrumanalyzer", "continuous")
             self.assertEqual(state["resources"], ["iq2", "scope"])
+            self.assertEqual(session.iq_settings["iq2"].bandwidth, [session.spectrum_settings.span] * 4)
             self.assertEqual(session.module_state("iq2")["owner"], "spectrumanalyzer")
             self.assertEqual(session.module_state("scope")["owner"], "spectrumanalyzer")
             with self.assertRaises(ValueError):

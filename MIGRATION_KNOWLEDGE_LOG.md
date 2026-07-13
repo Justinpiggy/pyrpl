@@ -49,13 +49,48 @@ is discovered.
   terminal state event must not reset or close a data stream before queued
   final frames have been processed.
 
+### Worker Completion
+
+- Original PyRPL zero-pads Spectrum FFTs by `PADDING_FACTOR = 16`. The browser
+  now sends each 16,384-sample frame to a dedicated Vite Web Worker and receives
+  131,073 baseband bins or 262,144 shifted IQ bins through transferable typed
+  arrays. FFT work no longer blocks controls or uPlot interaction.
+- Worker jobs carry setup generations. Results computed for an old span,
+  window, mode, or IQ bandwidth are ignored after a setup reset, while jobs
+  already received for the terminal single acquisition can still complete.
+- The normalized window still sums to 2, RBW still uses the unpadded 16,384
+  samples, and scope sinc plus four IQ low-pass transfer factors are corrected
+  the same way as `SpectrumAnalyzer.transfer_function()`.
+- IQ setup now writes the original four span-width `bandwidth` stages; this was
+  missing even though IQ2 ownership/routing had already been migrated.
+- Baseband cross data is kept as `real(conj(fft1) * fft2)` and its imaginary
+  component through averaging and CurveDB persistence. Magnitude conversion is
+  display-only, matching `SpecAnWidget.display_curve()`.
+- Input/cross visibility and display-unit changes no longer reset acquisition
+  averaging. Original PyRPL always averages all four baseband components and
+  applies those choices in the widget.
+
+### Large-Array Test Mistake
+
+The first padded browser run reached CurveDB correctly, then its test used
+`Math.min(...curve.y)`. Spreading 131,073 values exceeded the JavaScript
+argument stack. Acquisition tests and application code must iterate/reduce
+large typed arrays instead of passing their elements as variadic arguments.
+
+### Stale Wheel Build Mistake
+
+The first final wheel inspection showed that setuptools had retained every old
+hashed Vite asset in `build/lib`, even though Vite's source output directory was
+clean. Incremental `bdist_wheel` copies new package data over the build tree but
+does not remove obsolete files. Release builds must clean the generated
+`build/` directory first, and wheel verification now rejects anything other
+than exactly one main JavaScript bundle and one Spectrum worker bundle.
+
 ### Remaining Gap
 
-Original PyRPL zero-pads Spectrum FFTs by `PADDING_FACTOR = 16`. Applying that
-to every 16,384-point browser frame would transform and plot 262,144 points on
-the UI thread. Preserve responsiveness first: migrate the padding into a
-browser Web Worker and validate its normalization on hardware rather than
-silently adding a large synchronous workload.
+The pure calculations and fake-hardware browser behavior are verified. Final
+Spectrum normalization and transfer correction still require comparison with
+known signals on the physical Red Pitaya when hardware becomes available.
 
 ## 2026-07-13 Lockbox Calibration And Output-Design Parity
 

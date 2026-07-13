@@ -2,37 +2,17 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
 import { PLOT_COLORS, plotAxis } from "./plot-theme";
-import { parseScopeFrame } from "./scope-frame";
+import type { SpectrumFrame, SpectrumSeries, SpectrumSettings } from "./spectrum-fft";
 
 type StatusCallback = (message: string) => void;
 
-export interface SpectrumSeries {
-  label: string;
-  values: Float64Array;
-}
+export type { SpectrumFrame, SpectrumSeries, SpectrumSettings } from "./spectrum-fft";
 
-export interface SpectrumFrame {
-  sequence: number;
-  x: Float64Array;
-  series: SpectrumSeries[];
-  span: number;
-  center: number;
-  rbw: number;
-  unit: string;
-  running_state: string;
-}
-
-export interface SpectrumSettings {
-  baseband: boolean;
-  span: number;
-  center: number;
-  window: string;
-  displayUnit: string;
-  displayInput1Baseband: boolean;
-  displayInput2Baseband: boolean;
-  displayCrossAmplitude: boolean;
-  traceAverage: number;
-  runningState: string;
+interface SpectrumWorkerResponse {
+  id: number;
+  generation: number;
+  frame?: SpectrumFrame;
+  error?: string;
 }
 
 const EMPTY_DATA: uPlot.AlignedData = [new Float64Array(0), new Float32Array(0)];
@@ -56,6 +36,9 @@ export class SpectrumPlot {
   private unit = "";
   private averagedFrame: SpectrumFrame | null = null;
   private currentAverage = 0;
+  private readonly fftWorker = new Worker(new URL("./spectrum-worker.ts", import.meta.url), { type: "module" });
+  private workerRequestId = 0;
+  private workerGeneration = 0;
   private settings: SpectrumSettings = {
     baseband: true,
     span: 976562.5,
@@ -67,6 +50,7 @@ export class SpectrumPlot {
     displayCrossAmplitude: true,
     traceAverage: 1,
     runningState: "stopped",
+    iqBandwidth: [],
   };
   private readonly resizeListener = () => this.scheduleResize();
 
@@ -77,6 +61,8 @@ export class SpectrumPlot {
     private sampleCount = 16_384,
   ) {
     this.plot = new uPlot(this.options("", this.labels), EMPTY_DATA, this.host);
+    this.fftWorker.onmessage = (event: MessageEvent<SpectrumWorkerResponse>) => this.handleWorkerResponse(event.data);
+    this.fftWorker.onerror = () => this.setStatus("Spectrum FFT worker error");
     window.addEventListener("resize", this.resizeListener);
     this.bindInteractions();
     this.scheduleResize();
@@ -95,15 +81,28 @@ export class SpectrumPlot {
       displayCrossAmplitude: Boolean(state.display_cross_amplitude ?? this.settings.displayCrossAmplitude),
       traceAverage: Math.max(1, Math.floor(Number(state.trace_average ?? this.settings.traceAverage))),
       runningState: String(state.running_state ?? this.settings.runningState),
+      iqBandwidth: Array.isArray(state.iq_bandwidth)
+        ? state.iq_bandwidth.map(Number).filter(Number.isFinite)
+        : this.settings.iqBandwidth,
     };
+    const displayUnitChanged = nextSettings.displayUnit !== this.settings.displayUnit;
+    const visibilityChanged =
+      nextSettings.displayInput1Baseband !== this.settings.displayInput1Baseband ||
+      nextSettings.displayInput2Baseband !== this.settings.displayInput2Baseband ||
+      nextSettings.displayCrossAmplitude !== this.settings.displayCrossAmplitude;
     const completingSingle = this.settings.runningState === "running_single" && nextSettings.runningState === "stopped";
     if (!completingSingle && spectrumAveragingKey(nextSettings) !== spectrumAveragingKey(this.settings)) {
       this.resetAveraging();
     }
     this.settings = nextSettings;
+    if ((displayUnitChanged || visibilityChanged) && this.averagedFrame) {
+      this.pendingFrame = displaySpectrumFrame(this.averagedFrame, this.settings);
+      this.scheduleRender();
+    }
   }
 
   resetAveraging(): void {
+    this.workerGeneration += 1;
     this.averagedFrame = null;
     this.pendingFrame = null;
     this.currentAverage = 0;
@@ -157,17 +156,29 @@ export class SpectrumPlot {
   }
 
   showScopeBuffer(buffer: ArrayBuffer): void {
-    let frame: SpectrumFrame;
-    try {
-      frame = spectrumFromScopeBuffer(buffer, this.settings);
-    } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : "Invalid spectrum frame");
+    this.workerRequestId += 1;
+    this.fftWorker.postMessage(
+      {
+        id: this.workerRequestId,
+        generation: this.workerGeneration,
+        buffer,
+        settings: { ...this.settings, iqBandwidth: [...this.settings.iqBandwidth] },
+      },
+      [buffer],
+    );
+  }
+
+  private handleWorkerResponse(response: SpectrumWorkerResponse): void {
+    if (response.generation !== this.workerGeneration) return;
+    if (response.error || !response.frame) {
+      this.setStatus(response.error ?? "Invalid spectrum frame");
       return;
     }
+    const frame = response.frame;
     const averaged = this.averageFrame(frame);
     this.setCurrentAverage(this.currentAverage);
     this.latestCurveFrame = averaged;
-    this.pendingFrame = displaySpectrumFrame(averaged, this.settings.displayUnit);
+    this.pendingFrame = displaySpectrumFrame(averaged, this.settings);
     this.scheduleRender();
     this.setStatus(`Spectrum frame ${frame.sequence}, ${frame.x.length} bins, RBW ${formatCompactNumber(frame.rbw)} Hz`);
   }
@@ -188,11 +199,17 @@ export class SpectrumPlot {
       cancelAnimationFrame(this.renderFrame);
       this.renderFrame = null;
     }
+    this.workerGeneration += 1;
+    this.fftWorker.terminate();
     this.plot.destroy();
   }
 
   getSeriesCount(): number {
     return this.latestFrame?.series.length ?? 0;
+  }
+
+  getBinCount(): number {
+    return this.latestFrame?.x.length ?? 0;
   }
 
   exportCsv(): string {
@@ -212,13 +229,19 @@ export class SpectrumPlot {
     return `${lines.join("\n")}\n`;
   }
 
-  getCurveData(): { x: number[]; series: Array<{ label: string; values: number[] }>; unit: string } | null {
+  getCurveData(): {
+    x: number[];
+    series: Array<{ label: string; values: number[]; imaginary?: number[] }>;
+    unit: string;
+  } | null {
     if (!this.latestCurveFrame) return null;
+    const selectedSeries = displayedBasebandSeries(this.latestCurveFrame.series, this.settings);
     return {
       x: Array.from(this.latestCurveFrame.x),
-      series: this.latestCurveFrame.series.map((series) => ({
+      series: selectedSeries.map((series) => ({
         label: series.label,
         values: Array.from(series.values),
+        ...(series.imaginary ? { imaginary: Array.from(series.imaginary) } : {}),
       })),
       unit: "Vpk^2",
     };
@@ -382,7 +405,11 @@ export class SpectrumPlot {
       this.averagedFrame &&
       this.averagedFrame.x.length === frame.x.length &&
       this.averagedFrame.series.length === frame.series.length &&
-      this.averagedFrame.series.every((series, index) => series.values.length === frame.series[index].values.length);
+      this.averagedFrame.series.every((series, index) =>
+        series.values.length === frame.series[index].values.length &&
+        Boolean(series.imaginary) === Boolean(frame.series[index].imaginary) &&
+        (!series.imaginary || series.imaginary.length === frame.series[index].imaginary!.length),
+      );
     if (targetAverage <= 1 || !canReuse) {
       this.averagedFrame = cloneSpectrumFrame(frame);
       this.currentAverage = 1;
@@ -396,7 +423,15 @@ export class SpectrumPlot {
       for (let index = 0; index < values.length; index += 1) {
         values[index] = (previous[index] * priorWeight + series.values[index]) / nextAverage;
       }
-      return { label: series.label, values };
+      let imaginary: Float64Array | undefined;
+      if (series.imaginary) {
+        const previousImaginary = this.averagedFrame!.series[seriesIndex].imaginary!;
+        imaginary = new Float64Array(series.imaginary.length);
+        for (let index = 0; index < imaginary.length; index += 1) {
+          imaginary[index] = (previousImaginary[index] * priorWeight + series.imaginary[index]) / nextAverage;
+        }
+      }
+      return { label: series.label, values, ...(imaginary ? { imaginary } : {}) };
     });
     this.averagedFrame = {
       ...frame,
@@ -554,152 +589,6 @@ export class SpectrumPlot {
   }
 }
 
-function spectrumFromScopeBuffer(buffer: ArrayBuffer, settings: SpectrumSettings): SpectrumFrame {
-  const frame = parseScopeFrame(buffer);
-  const count = largestPowerOfTwo(frame.sampleCount);
-  const window = spectrumWindow(settings.window, count);
-  const ch1 = new Float64Array(count);
-  const ch2 = new Float64Array(count);
-  for (let index = 0; index < count; index += 1) {
-    ch1[index] = (frame.samples[index * frame.channelCount] ?? 0) * window[index];
-    ch2[index] = (frame.samples[index * frame.channelCount + 1] ?? 0) * window[index];
-  }
-  const windowSum = window.reduce((total, value) => total + value, 0);
-  const windowSquareSum = window.reduce((total, value) => total + value * value, 0);
-  const rbw = windowSum === 0 ? 0 : settings.span * windowSquareSum / (windowSum * windowSum);
-  if (settings.baseband) {
-    const fft1 = realFft(ch1);
-    const fft2 = realFft(ch2);
-    const x = new Float64Array(fft1.real.length);
-    for (let index = 0; index < x.length; index += 1) {
-      x[index] = index * settings.span / count;
-    }
-    const series: SpectrumSeries[] = [];
-    if (settings.displayInput1Baseband) {
-      series.push({ label: "Input 1", values: powerSpectrum(fft1) });
-    }
-    if (settings.displayInput2Baseband) {
-      series.push({ label: "Input 2", values: powerSpectrum(fft2) });
-    }
-    if (settings.displayCrossAmplitude) {
-      series.push({ label: "Cross", values: crossPower(fft1, fft2) });
-    }
-    return {
-      sequence: frame.sequence,
-      x,
-      series,
-      span: settings.span,
-      center: settings.center,
-      rbw,
-      unit: settings.displayUnit,
-      running_state: settings.runningState,
-    };
-  }
-
-  const fft = complexFft(ch1, ch2);
-  const shifted = fftShiftPower(fft);
-  const x = new Float64Array(shifted.length);
-  for (let index = 0; index < x.length; index += 1) {
-    x[index] = settings.center + (index - shifted.length / 2) * settings.span / count;
-  }
-  return {
-    sequence: frame.sequence,
-    x,
-    series: [{ label: "IQ", values: shifted }],
-    span: settings.span,
-    center: settings.center,
-    rbw,
-    unit: settings.displayUnit,
-    running_state: settings.runningState,
-  };
-}
-
-function realFft(realInput: Float64Array): { real: Float64Array; imag: Float64Array } {
-  const imagInput = new Float64Array(realInput.length);
-  const fft = complexFft(realInput, imagInput);
-  const half = realInput.length / 2 + 1;
-  return {
-    real: fft.real.slice(0, half),
-    imag: fft.imag.slice(0, half),
-  };
-}
-
-function complexFft(realInput: Float64Array, imagInput: Float64Array): { real: Float64Array; imag: Float64Array } {
-  const n = realInput.length;
-  const real = new Float64Array(realInput);
-  const imag = new Float64Array(imagInput);
-  for (let i = 1, j = 0; i < n; i += 1) {
-    let bit = n >> 1;
-    for (; j & bit; bit >>= 1) {
-      j ^= bit;
-    }
-    j ^= bit;
-    if (i < j) {
-      const tr = real[i];
-      real[i] = real[j];
-      real[j] = tr;
-      const ti = imag[i];
-      imag[i] = imag[j];
-      imag[j] = ti;
-    }
-  }
-  for (let len = 2; len <= n; len <<= 1) {
-    const angle = -2 * Math.PI / len;
-    const wLenR = Math.cos(angle);
-    const wLenI = Math.sin(angle);
-    for (let i = 0; i < n; i += len) {
-      let wr = 1;
-      let wi = 0;
-      for (let j = 0; j < len / 2; j += 1) {
-        const even = i + j;
-        const odd = even + len / 2;
-        const ur = real[even];
-        const ui = imag[even];
-        const vr = real[odd] * wr - imag[odd] * wi;
-        const vi = real[odd] * wi + imag[odd] * wr;
-        real[even] = ur + vr;
-        imag[even] = ui + vi;
-        real[odd] = ur - vr;
-        imag[odd] = ui - vi;
-        const nextWr = wr * wLenR - wi * wLenI;
-        wi = wr * wLenI + wi * wLenR;
-        wr = nextWr;
-      }
-    }
-  }
-  return { real, imag };
-}
-
-function powerSpectrum(fft: { real: Float64Array; imag: Float64Array }): Float64Array {
-  const power = new Float64Array(fft.real.length);
-  for (let index = 0; index < power.length; index += 1) {
-    power[index] = fft.real[index] * fft.real[index] + fft.imag[index] * fft.imag[index];
-  }
-  return power;
-}
-
-function crossPower(
-  left: { real: Float64Array; imag: Float64Array },
-  right: { real: Float64Array; imag: Float64Array },
-): Float64Array {
-  const power = new Float64Array(left.real.length);
-  for (let index = 0; index < power.length; index += 1) {
-    const real = left.real[index] * right.real[index] + left.imag[index] * right.imag[index];
-    const imag = left.real[index] * right.imag[index] - left.imag[index] * right.real[index];
-    power[index] = Math.hypot(real, imag);
-  }
-  return power;
-}
-
-function fftShiftPower(fft: { real: Float64Array; imag: Float64Array }): Float64Array {
-  const power = powerSpectrum(fft);
-  const shifted = new Float64Array(power.length);
-  const half = Math.floor(power.length / 2);
-  shifted.set(power.slice(half), 0);
-  shifted.set(power.slice(0, half), power.length - half);
-  return shifted;
-}
-
 function convertPower(power: Float64Array, unit: string, rbw: number): Float64Array {
   const values = new Float64Array(power.length);
   for (let index = 0; index < power.length; index += 1) {
@@ -727,41 +616,6 @@ function convertPower(power: Float64Array, unit: string, rbw: number): Float64Ar
   return values;
 }
 
-function spectrumWindow(name: string, count: number): Float64Array {
-  const values = new Float64Array(count);
-  for (let index = 0; index < count; index += 1) {
-    const phase = count > 1 ? 2 * Math.PI * index / (count - 1) : 0;
-    if (name === "boxcar") {
-      values[index] = 1;
-    } else if (name === "hamming") {
-      values[index] = 0.54 - 0.46 * Math.cos(phase);
-    } else if (name === "flattop") {
-      values[index] =
-        0.21557895 -
-        0.41663158 * Math.cos(phase) +
-        0.277263158 * Math.cos(2 * phase) -
-        0.083578947 * Math.cos(3 * phase) +
-        0.006947368 * Math.cos(4 * phase);
-    } else if (name === "gaussian") {
-      const center = (count - 1) / 2;
-      const sigma = Math.max(1, count / 10);
-      values[index] = Math.exp(-0.5 * ((index - center) / sigma) ** 2);
-    } else {
-      values[index] = 0.42 - 0.5 * Math.cos(phase) + 0.08 * Math.cos(2 * phase);
-    }
-  }
-  const sum = values.reduce((total, value) => total + value, 0);
-  const scale = sum ? 2 / sum : 1;
-  for (let index = 0; index < values.length; index += 1) {
-    values[index] *= scale;
-  }
-  return values;
-}
-
-function largestPowerOfTwo(value: number): number {
-  return 2 ** Math.floor(Math.log2(Math.max(2, value)));
-}
-
 function cloneSpectrumFrame(frame: SpectrumFrame): SpectrumFrame {
   return {
     ...frame,
@@ -769,17 +623,23 @@ function cloneSpectrumFrame(frame: SpectrumFrame): SpectrumFrame {
     series: frame.series.map((series) => ({
       label: series.label,
       values: new Float64Array(series.values),
+      ...(series.imaginary ? { imaginary: new Float64Array(series.imaginary) } : {}),
     })),
   };
 }
 
-function displaySpectrumFrame(frame: SpectrumFrame, unit: string): SpectrumFrame {
+function displaySpectrumFrame(frame: SpectrumFrame, settings: SpectrumSettings): SpectrumFrame {
+  const series = displayedBasebandSeries(frame.series, settings);
   return {
     ...frame,
-    unit,
-    series: frame.series.map((series) => ({
+    unit: settings.displayUnit,
+    series: series.map((series) => ({
       label: series.label,
-      values: convertPower(series.values, unit, frame.rbw),
+      values: convertPower(
+        series.imaginary ? complexMagnitude(series.values, series.imaginary) : series.values,
+        settings.displayUnit,
+        frame.rbw,
+      ),
     })),
   };
 }
@@ -790,11 +650,26 @@ function spectrumAveragingKey(settings: SpectrumSettings): string {
     settings.span,
     settings.center,
     settings.window,
-    settings.displayUnit,
-    settings.displayInput1Baseband,
-    settings.displayInput2Baseband,
-    settings.displayCrossAmplitude,
+    settings.iqBandwidth.join(","),
   ].join("|");
+}
+
+function displayedBasebandSeries(series: SpectrumSeries[], settings: SpectrumSettings): SpectrumSeries[] {
+  if (!settings.baseband) return series;
+  return series.filter((item) =>
+    item.label === "Input 1" ? settings.displayInput1Baseband
+      : item.label === "Input 2" ? settings.displayInput2Baseband
+        : item.label === "Cross" ? settings.displayCrossAmplitude
+          : true,
+  );
+}
+
+function complexMagnitude(real: Float64Array, imaginary: Float64Array): Float64Array {
+  const magnitude = new Float64Array(real.length);
+  for (let index = 0; index < magnitude.length; index += 1) {
+    magnitude[index] = Math.hypot(real[index], imaginary[index]);
+  }
+  return magnitude;
 }
 
 function formatCompactNumber(value: number): string {

@@ -21,8 +21,16 @@ def main() -> None:
         missing = sorted(required - names)
         if missing:
             raise SystemExit(f"wheel is missing required files: {missing}")
-        if not any(name.startswith("pyrpl_websocket/frontend/assets/") for name in names):
+        asset_prefix = "pyrpl_websocket/frontend/assets/"
+        assets = [name for name in names if name.startswith(asset_prefix)]
+        if not assets:
             raise SystemExit("wheel is missing compiled frontend assets")
+        main_scripts = [name for name in assets if name.rsplit("/", 1)[-1].startswith("index-") and name.endswith(".js")]
+        workers = [name for name in assets if "/spectrum-worker-" in name and name.endswith(".js")]
+        if len(main_scripts) != 1:
+            raise SystemExit(f"wheel must contain exactly one compiled frontend script, found {main_scripts}")
+        if len(workers) != 1:
+            raise SystemExit(f"wheel must contain exactly one Spectrum FFT worker, found {workers}")
         entry_points_name = next(name for name in names if name.endswith(".dist-info/entry_points.txt"))
         entry_points = archive.read(entry_points_name).decode("utf-8")
         for command in ["pyrpl-web =", "pyrpl-web-audit ="]:

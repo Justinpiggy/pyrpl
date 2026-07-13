@@ -2175,6 +2175,7 @@ function exposeDebugState(): void {
     moduleStatusText: () => moduleStatus.textContent ?? "",
     statusText: () => status.textContent ?? "",
     getSpectrumSeriesCount: () => spectrumPlot.getSeriesCount(),
+    getSpectrumBinCount: () => spectrumPlot.getBinCount(),
     getSpectrumAverageCount: () => spectrumPlot.getAverageCount(),
     getSpectrumXRange: () => spectrumPlot.getXRange(),
     getSpectrumYRange: () => spectrumPlot.getYRange(),
@@ -3673,7 +3674,7 @@ async function persistSpectrumCurves(): Promise<number> {
     module: "spectrumanalyzer",
     ch: series.label === "Cross" ? "cross" : index,
     curve_unit: data.unit,
-  })));
+  }, series.imaginary)));
   return data.series.length;
 }
 
