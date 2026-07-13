@@ -988,17 +988,42 @@ test("lockbox panel switches classes, edits stages, and renders static plots", a
     buttons.map((button) => button.getBoundingClientRect().top),
   );
   expect(new Set(actionBoxes.map((top) => Math.round(top))).size).toBe(1);
+  await expect(page.locator("#lockbox-actions")).toContainText("is_locked?");
+  await expect(page.locator("#lockbox-actions")).not.toContainText("Get Offsets");
   expect(await page.evaluate(() => window.pyrplScope?.getLockboxClassname())).toBe("Linear");
   await expect(page.locator("#lockbox-input-plot .uplot")).toBeVisible();
-  await expect(page.locator("#lockbox-output-plot .uplot")).toBeVisible();
+  await expect(page.locator("#lockbox-output-plot .uplot")).toHaveCount(2);
+  await expect(page.locator("#lockbox-output-plot .uplot").first()).toBeVisible();
   expect(await page.locator("#lockbox-input-plot canvas").first().evaluate(countPaintedPixels)).toBeGreaterThan(1000);
   expect(await page.locator("#lockbox-output-plot canvas").first().evaluate(countPaintedPixels)).toBeGreaterThan(1000);
+  expect(
+    await page.locator("#lockbox-output-plot .uplot").nth(1).locator("canvas").first().evaluate(countPaintedPixels),
+  ).toBeGreaterThan(1000);
 
   await page.locator("#lockbox-class").selectOption("Interferometer");
   await expect.poll(() => page.evaluate(() => window.pyrplScope?.getLockboxClassname())).toBe("Interferometer");
   await expect(page.locator("#lockbox-inputs")).toContainText("port1");
   await expect(page.locator("#lockbox-inputs")).toContainText("port2");
   await expect(page.locator("#lockbox-outputs")).toContainText("piezo");
+  await expect(page.locator("#lockbox-input-plot-select option")).toHaveCount(2);
+  await page.locator("#lockbox-input-plot-select").selectOption("port2");
+  await expect(page.locator("#lockbox-input-plot .uplot")).toBeVisible();
+  const piezo = page.locator('#lockbox-outputs [data-node-name="piezo"]');
+  await expect(piezo.locator('[data-attribute="assisted_design"] input')).toBeChecked();
+  await expect(piezo.locator('[data-attribute="p"] input')).toBeDisabled();
+  await expect(piezo.locator('[data-attribute="desired_unity_gain_frequency"] input')).toBeEnabled();
+  const lockboxOutputRows = await page.evaluate(() => ({
+    controlsBottom: document.querySelector("#lockbox-outputs")?.getBoundingClientRect().bottom ?? 0,
+    plotTop: document.querySelector("#lockbox-output-plot")?.getBoundingClientRect().top ?? 0,
+  }));
+  expect(lockboxOutputRows.plotTop).toBeGreaterThanOrEqual(lockboxOutputRows.controlsBottom);
+  await piezo.locator('[data-attribute="assisted_design"] input').setChecked(false);
+  await expect(piezo.locator('[data-attribute="p"] input')).toBeEnabled();
+  await expect(piezo.locator('[data-attribute="desired_unity_gain_frequency"] input')).toBeDisabled();
+  await piezo.locator('[data-attribute="tf_type"] select').selectOption("curve");
+  await expect(piezo.locator('[data-attribute="tf_curve"] input')).toBeEnabled();
+  await page.locator('#lockbox-inputs [data-node-name="port1"] button', { hasText: "Calibrate" }).click();
+  await expect(page.locator("#lockbox-status")).toContainText("sweep");
 
   await page.locator("#lockbox-class").selectOption("FabryPerot");
   await expect.poll(() => page.evaluate(() => window.pyrplScope?.getLockboxClassname())).toBe("FabryPerot");
@@ -1010,4 +1035,6 @@ test("lockbox panel switches classes, edits stages, and renders static plots", a
   await page.locator("#lockbox-stages input[type='number']").first().fill("0.125");
   await page.locator("#lockbox-stages input[type='number']").first().blur();
   await expect(page.locator("#lockbox-status")).toContainText("FabryPerot");
+  await page.locator("#lockbox-stages button", { hasText: "Go to this stage" }).first().click();
+  await expect(page.locator("#lockbox-status")).toContainText(/stage|lock_on/);
 });

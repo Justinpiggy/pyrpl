@@ -348,6 +348,7 @@ app.innerHTML = `
             <div class="lockbox-column">
               <header class="lockbox-section-header">
                 <h3>Inputs</h3>
+                <label><span>Plot</span><select id="lockbox-input-plot-select"></select></label>
               </header>
               <div id="lockbox-inputs"></div>
               <div class="lockbox-plot" id="lockbox-input-plot"></div>
@@ -355,6 +356,7 @@ app.innerHTML = `
             <div class="lockbox-column">
               <header class="lockbox-section-header">
                 <h3>Outputs</h3>
+                <label><span>Plot</span><select id="lockbox-output-plot-select"></select></label>
               </header>
               <div id="lockbox-outputs"></div>
               <div class="lockbox-plot" id="lockbox-output-plot"></div>
@@ -1377,7 +1379,7 @@ style.textContent = `
 
   .lockbox-column {
     display: grid;
-    grid-template-rows: auto auto minmax(220px, 280px);
+    grid-template-rows: auto max-content auto;
     align-content: start;
     gap: 6px;
     min-width: 0;
@@ -1402,9 +1404,29 @@ style.textContent = `
     font-size: 13px;
   }
 
+  .lockbox-section-header label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .lockbox-section-header label span {
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .lockbox-section-header select {
+    min-width: 110px;
+  }
+
   .lockbox-card-title span {
     color: var(--muted);
     font-size: 11px;
+  }
+
+  .lockbox-card-actions {
+    display: flex;
+    gap: 4px;
   }
 
   #lockbox-inputs,
@@ -1412,6 +1434,9 @@ style.textContent = `
   #lockbox-stages {
     display: grid;
     gap: 6px;
+  }
+
+  #lockbox-stages {
     min-height: 0;
   }
 
@@ -1443,6 +1468,10 @@ style.textContent = `
   .lockbox-card label span {
     color: var(--muted);
     font-size: 11px;
+  }
+
+  .lockbox-card label.is-disabled {
+    opacity: 0.5;
   }
 
   .lockbox-stage-output-grid {
@@ -1477,9 +1506,29 @@ style.textContent = `
     background: var(--plot-bg);
   }
 
+  .lockbox-plot,
+  .lockbox-plot * {
+    pointer-events: none;
+  }
+
   .lockbox-plot > .uplot {
     max-width: 100%;
     max-height: 100%;
+  }
+
+  #lockbox-output-plot {
+    display: grid;
+    grid-template-rows: repeat(2, minmax(160px, 1fr));
+    gap: 6px;
+    min-height: 340px;
+  }
+
+  .lockbox-output-plot-frame {
+    min-width: 0;
+    min-height: 0;
+    contain: size layout;
+    overflow: hidden;
+    background: var(--plot-bg);
   }
 
   .housekeeping-top-row {
@@ -1843,6 +1892,8 @@ const lockboxPanel = new LockboxPanel({
   addStage: requireElement<HTMLButtonElement>("#lockbox-add-stage"),
   inputPlot: requireElement<HTMLElement>("#lockbox-input-plot"),
   outputPlot: requireElement<HTMLElement>("#lockbox-output-plot"),
+  inputPlotSelect: requireElement<HTMLSelectElement>("#lockbox-input-plot-select"),
+  outputPlotSelect: requireElement<HTMLSelectElement>("#lockbox-output-plot-select"),
 });
 const sessionLine = requireElement<HTMLParagraphElement>("#session-line");
 createRegisterPanel({

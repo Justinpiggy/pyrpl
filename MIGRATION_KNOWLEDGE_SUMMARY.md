@@ -40,6 +40,17 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Preserve PyRPL special cases such as spectrum analyzer directly owning `iq2`.
 - Lockbox should not unnecessarily stop scope or spectrum analyzer except when
   the original routine temporarily owns scope for calibration/acquisition.
+- Lockbox calibration configures a one-period Scope capture from the selected
+  sweep output, subtracts the stored analog offset, and computes standard
+  deviation plus midpoint/amplitude from the extrema. Forward that capture to
+  the Scope stream while its controls are owned, then restore the prior setup.
+- Output assisted design uses `i = desired_unity_gain_frequency` and
+  `p = i / analog_filter_cutoff` (or zero at zero cutoff); manual mode derives
+  the two assisted values from `p` and `i`. Reapply edits according to the
+  output's current lock/sweep/unlock state.
+- Original Lockbox output plots show the complete open-loop magnitude and
+  phase: analog flat/filter/CurveDB plant, PID/filter/delay response, and the
+  optional IIR response divided by IIR gain.
 - Sampler and AMS are programmatic services with no original GUI/setup
   attributes. Do not add setup actions, saved states, or ownership for them.
 - Sampler reads signed 14-bit DSP values normalized by 8191. AMS DAC2/DAC3 use
@@ -95,6 +106,10 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Scope runtime events may update running state, current average, and ownership.
   Do not apply their full setup snapshot over controls; explicit attribute
   events and state-load responses own setup values.
+- On the last single-shot average, send the binary Scope frame before
+  publishing the terminal `paused_single` event. The terminal event closes the
+  browser stream; sending it first can discard the final capture and leave the
+  browser average counter one frame behind.
 - Releasing temporary Scope ownership must restore intrinsic disabled states
   such as rolling-mode restrictions instead of blindly enabling every input.
 - Network analyzer is an IQ accumulator sweep, not a scope capture or CPU FFT.
@@ -105,6 +120,10 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   gutters interfere with workspace selectors and are sized from zero geometry.
 - Do not overwrite a focused form input with an older asynchronous state event.
   Apply remote values after the user's edit has committed.
+- Static uPlot canvases must not intercept clicks intended for controls that
+  become adjacent after responsive scrolling. Disable pointer events on the
+  entire static plot subtree, and rebuild `web/dist` before Playwright tests
+  because the FastAPI test server serves compiled assets.
 
 ## Curve Rules
 

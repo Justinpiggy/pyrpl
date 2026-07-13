@@ -14,7 +14,7 @@ from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
 from math import pi
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -512,10 +512,6 @@ class LockboxOutput(DynamicModuleValues):
         self.values.setdefault("dc_gain", 1.0)
         if not self.values.get("dc_gain"):
             self.values["dc_gain"] = 1.0
-        if not self.values.get("p"):
-            self.values["p"] = 1.0
-        if not self.values.get("i"):
-            self.values["i"] = 100.0
         self.values.setdefault("max_voltage", 1.0)
         self.values.setdefault("min_voltage", -1.0)
         self.values.setdefault("sweep_amplitude", 1.0)
@@ -637,14 +633,22 @@ class LockboxState:
         outputs: OrderedDict[str, LockboxOutput] = OrderedDict()
         for index, (name, class_name) in enumerate(spec.outputs.items()):
             output_specs = self._module_attr_specs(class_name)
-            outputs[name] = LockboxOutput(name=name, class_name=class_name, attr_specs=output_specs, index=index)
+            output = LockboxOutput(name=name, class_name=class_name, attr_specs=output_specs, index=index)
+            self._synchronize_output_design(output)
+            outputs[name] = output
         if not outputs:
-            outputs["output1"] = LockboxOutput("output1", "OutputSignal", self._module_attr_specs("OutputSignal"), 0)
+            output = LockboxOutput("output1", "OutputSignal", self._module_attr_specs("OutputSignal"), 0)
+            self._synchronize_output_design(output)
+            outputs["output1"] = output
         return outputs
 
     def _module_attr_specs(self, class_name: str) -> list[PropertySpec]:
         properties = self.library.resolve_properties(class_name)
         attrs = self.library.resolve_gui_attributes(class_name)
+        if "OutputSignal" in self.library.resolve_mro(class_name):
+            # These setup attributes are exposed by OutputSignalWidget's
+            # assisted-design radios and analog transfer-function dialog.
+            attrs = _unique([*attrs, "assisted_design", "tf_type", "tf_curve"])
         return [properties[name] for name in attrs if name in properties]
 
     def schema(self) -> dict[str, Any]:
@@ -715,7 +719,17 @@ class LockboxState:
         output = self.outputs[output_name]
         prop = _find_spec(output.attr_specs, attribute)
         output.values[attribute] = _coerce_value(prop, value, self)
+        self._synchronize_output_design(output)
         return self.schema()
+
+    def _synchronize_output_design(self, output: LockboxOutput) -> None:
+        if bool(getattr(output, "assisted_design", True)):
+            output.i = float(getattr(output, "desired_unity_gain_frequency", 0.0))
+            cutoff = float(getattr(output, "analog_filter_cutoff", 0.0))
+            output.p = 0.0 if cutoff == 0.0 else output.i / cutoff
+        else:
+            output.desired_unity_gain_frequency = float(getattr(output, "i", 0.0))
+            output.analog_filter_cutoff = 0.0 if output.p == 0.0 else output.i / output.p
 
     def append_stage(self) -> dict[str, Any]:
         used = {stage.name for stage in self.sequence}
@@ -795,18 +809,58 @@ class LockboxState:
             "y_label": "signal (V)",
         }
 
-    def output_transfer_function(self, output_name: str, points: int = 200) -> dict[str, Any]:
+    def output_transfer_function(
+        self,
+        output_name: str,
+        points: int = 200,
+        curve_loader: Callable[[int], dict[str, Any]] | None = None,
+        iir_transfer: Callable[[np.ndarray], np.ndarray] | None = None,
+    ) -> dict[str, Any]:
         output = self.outputs[output_name]
-        freqs = np.geomspace(1.0, 1.0e6, max(8, min(2000, int(points))))
-        if output.tf_type == "flat":
-            magnitude = np.ones_like(freqs)
-            phase = np.zeros_like(freqs)
-        elif output.tf_type == "curve":
-            magnitude = 1.0 / np.sqrt(1.0 + (freqs / 1.0e4) ** 2)
-            phase = -np.degrees(np.arctan(freqs / 1.0e4))
-        else:
-            magnitude = 1.0 / np.sqrt(1.0 + (freqs / 1.0e3) ** 2)
-            phase = -np.degrees(np.arctan(freqs / 1.0e3))
+        point_count = max(8, min(2000, int(points)))
+        curve = None
+        if output.tf_type == "curve" and curve_loader is not None:
+            try:
+                curve = curve_loader(int(output.tf_curve))
+            except (OSError, EOFError, TypeError, ValueError):
+                curve = None
+        if curve is not None:
+            freqs = np.asarray(curve["x"], dtype=np.float64)
+            positive = np.isfinite(freqs) & (freqs > 0)
+            freqs = freqs[positive]
+            if freqs.size < 2:
+                curve = None
+        if curve is None:
+            freqs = np.geomspace(1.0, 1.0e6, point_count)
+
+        analog_tf = np.ones(freqs.size, dtype=np.complex128)
+        if output.tf_type == "filter":
+            analog_tf = _pid_filter_transfer_function(freqs, [float(output.analog_filter_cutoff)])
+        elif output.tf_type == "curve" and curve is not None:
+            curve_x = np.asarray(curve["x"], dtype=np.float64)
+            curve_y = np.asarray(curve["y"], dtype=np.float64).astype(np.complex128)
+            if "y_imag" in curve:
+                curve_y += 1j * np.asarray(curve["y_imag"], dtype=np.float64)
+            finite = np.isfinite(curve_x) & np.isfinite(curve_y.real) & np.isfinite(curve_y.imag)
+            curve_x = curve_x[finite]
+            curve_y = curve_y[finite]
+            order = np.argsort(curve_x)
+            curve_x = curve_x[order]
+            curve_y = curve_y[order]
+            analog_tf = np.interp(freqs, curve_x, np.abs(curve_y)) * np.exp(
+                1j * np.interp(freqs, curve_x, np.unwrap(np.angle(curve_y)))
+            )
+
+        result = analog_tf * _pid_transfer_function(
+            freqs,
+            float(output.p),
+            float(output.i),
+            _filter_values(getattr(output, "additional_filter", [])),
+        )
+        if output.extra_module == "iir" and iir_transfer is not None:
+            result *= iir_transfer(freqs)
+        magnitude = np.abs(result)
+        phase = np.degrees(np.angle(result))
         return {
             "output": output_name,
             "x": freqs.astype(float).tolist(),
@@ -849,12 +903,52 @@ class LockboxState:
 
 def lockbox_actions() -> list[dict[str, str]]:
     return [
+        {"name": "is_locked", "label": "is_locked?", "description": "Evaluate the current lock status."},
         {"name": "unlock", "label": "Unlock", "description": "Unlock all lockbox outputs."},
         {"name": "sweep", "label": "Sweep", "description": "Sweep the default output."},
         {"name": "lock", "label": "Lock", "description": "Execute the configured stage sequence."},
         {"name": "calibrate_all", "label": "Calibrate All", "description": "Calibrate all lockbox inputs."},
-        {"name": "get_analog_offsets", "label": "Get Offsets", "description": "Measure analog offsets for inputs."},
     ]
+
+
+def _filter_values(value: Any) -> list[float]:
+    if isinstance(value, str):
+        parts = value.replace("[", "").replace("]", "").split(",")
+        return [float(part.strip()) for part in parts if part.strip()]
+    if isinstance(value, (list, tuple, np.ndarray)):
+        return [float(item) for item in value]
+    if value in {None, ""}:
+        return []
+    return [float(value)]
+
+
+def _pid_transfer_function(
+    frequencies: np.ndarray,
+    p: float,
+    i: float,
+    filter_values: list[float],
+) -> np.ndarray:
+    complex_frequencies = np.asarray(frequencies, dtype=np.complex128)
+    result = i / (1j * complex_frequencies) * np.exp(-1j * 8e-9 * complex_frequencies * 2 * pi)
+    result += p
+    result *= _pid_filter_transfer_function(complex_frequencies, filter_values)
+    result *= np.exp(-1j * 3 * 8e-9 * complex_frequencies * 2 * pi)
+    return result
+
+
+def _pid_filter_transfer_function(frequencies: np.ndarray, filter_values: list[float]) -> np.ndarray:
+    complex_frequencies = np.asarray(frequencies, dtype=np.complex128)
+    result = np.ones(complex_frequencies.size, dtype=np.complex128)
+    module_delay = 0
+    for cutoff in filter_values:
+        if cutoff > 0:
+            result /= 1.0 + 1j * complex_frequencies / cutoff
+            module_delay += 2
+        elif cutoff < 0:
+            result /= 1.0 + 1j * cutoff / complex_frequencies
+            module_delay += 1
+    result *= np.exp(-1j * module_delay * 8e-9 * complex_frequencies * 2 * pi)
+    return result
 
 
 def _expected_signal(kind: str, x: np.ndarray, calibration: LockboxCalibration) -> np.ndarray:

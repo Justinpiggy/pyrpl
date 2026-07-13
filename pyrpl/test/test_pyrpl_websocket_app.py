@@ -141,6 +141,8 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("/api/lockbox/class", paths)
         self.assertIn("/api/lockbox/stages", paths)
         self.assertIn("/api/lockbox/stages/{index}", paths)
+        self.assertIn("/api/lockbox/inputs/{input_name}/actions/{action}", paths)
+        self.assertIn("/api/lockbox/stages/{index}/actions/{action}", paths)
         self.assertIn("/api/lockbox/inputs/{input_name}/plot", paths)
         self.assertIn("/api/lockbox/outputs/{output_name}/transfer_function", paths)
         self.assertIn("/ws/control", paths)
@@ -211,6 +213,10 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(switched["classname"], "Interferometer")
             self.assertEqual([item["name"] for item in switched["inputs"]], ["port1", "port2"])
             self.assertEqual([item["name"] for item in switched["outputs"]], ["piezo"])
+            output_controls = {attribute["name"] for attribute in switched["outputs"][0]["attributes"]}
+            self.assertIn("assisted_design", output_controls)
+            self.assertIn("tf_type", output_controls)
+            self.assertIn("tf_curve", output_controls)
 
             fabry = session.set_lockbox_class("FabryPerot")
             self.assertEqual([item["name"] for item in fabry["inputs"]], ["transmission", "reflection", "pdh"])
@@ -258,6 +264,57 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(len(transfer["x"]), 32)
             self.assertEqual(len(transfer["series"]), 2)
             self.assertEqual(len(transfer["series"][0]["values"]), 32)
+        finally:
+            session.close()
+
+    def test_session_lockbox_assisted_design_and_curvedb_transfer_function(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session = WebSession(ServerSettings(hostname="_FAKE_", curve_dir=directory))
+            try:
+                session.set_lockbox_class("Interferometer")
+                session.set_lockbox_output_attribute("piezo", "desired_unity_gain_frequency", 250.0)
+                schema = session.set_lockbox_output_attribute("piezo", "analog_filter_cutoff", 50.0)
+                values = {
+                    attribute["name"]: attribute["value"]
+                    for attribute in schema["outputs"][0]["attributes"]
+                }
+                self.assertEqual(values["i"], 250.0)
+                self.assertEqual(values["p"], 5.0)
+
+                session.set_lockbox_output_attribute("piezo", "assisted_design", False)
+                session.set_lockbox_output_attribute("piezo", "i", 0.0)
+                session.set_lockbox_output_attribute("piezo", "p", 1.0)
+                curve = session.create_curve(
+                    [1.0, 10.0, 100.0],
+                    [1.0, 0.5, 0.25],
+                    [0.0, 0.0, 0.0],
+                    {"name": "actuator"},
+                )
+                session.set_lockbox_output_attribute("piezo", "tf_curve", curve["pk"])
+                session.set_lockbox_output_attribute("piezo", "tf_type", "curve")
+                transfer = session.lockbox_output_transfer_function("piezo", points=32)
+                self.assertEqual(transfer["x"], [1.0, 10.0, 100.0])
+                magnitude = transfer["series"][0]["values"]
+                for actual, expected in zip(magnitude, [1.0, 0.5, 0.25]):
+                    self.assertAlmostEqual(actual, expected, places=6)
+            finally:
+                session.close()
+
+    def test_session_lockbox_input_calibrate_and_stage_execute_actions(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_lockbox_class("Interferometer")
+            before_other = session.lockbox.inputs["port2"].calibration.amplitude
+            calibrated = session.call_lockbox_input_action("port1", "calibrate")
+            self.assertEqual(calibrated["state"]["current_state"], "sweep")
+            self.assertNotEqual(session.lockbox.inputs["port1"].calibration.amplitude, 1.0)
+            self.assertEqual(session.lockbox.inputs["port2"].calibration.amplitude, before_other)
+            self.assertIsNone(session.module_state("scope")["owner"])
+
+            session.set_lockbox_stage_output_attribute(0, "piezo", "lock_on", True)
+            executed = session.call_lockbox_stage_action(0, "execute")
+            self.assertEqual(executed["state"]["current_state"], "lock_on")
+            self.assertEqual(session.module_state("pid0")["owner"], "lockbox")
         finally:
             session.close()
 
@@ -337,7 +394,7 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.module_state("pid0")["owner"], "lockbox")
             self.assertEqual(session.pid_settings["pid0"].input, "in1")
             self.assertEqual(session.pid_settings["pid0"].setpoint, 0.0)
-            self.assertNotEqual(session.pid_settings["pid0"].p, 0.0)
+            self.assertEqual(session.pid_settings["pid0"].p, 0.0)
             self.assertNotEqual(session.pid_settings["pid0"].i, 0.0)
 
             unlocked = session.call_lockbox_action("unlock")
@@ -389,6 +446,10 @@ class WebAppTest(unittest.TestCase):
             self.assertNotEqual(after, before)
             self.assertEqual(session.scope_settings.running_state, "running_continuous")
             self.assertIsNone(session.module_state("scope")["owner"])
+            calibration_frame = session.acquire_scope_frame(sequence=17, sample_count=1024).frame
+            self.assertIsNotNone(calibration_frame)
+            self.assertEqual(calibration_frame.sequence, 17)
+            self.assertEqual(calibration_frame.sample_count, 1024)
         finally:
             session.close()
 

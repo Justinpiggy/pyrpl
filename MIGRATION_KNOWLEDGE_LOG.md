@@ -5,6 +5,60 @@ and implementing the PyRPL web-interface migration. Future work should update
 this file whenever new architecture, protocol, performance, or tooling knowledge
 is discovered.
 
+## 2026-07-13 Lockbox Calibration And Output-Design Parity
+
+### PyRPL Reference
+
+- `LockboxWidget` exposes only `is_locked?`, Lock, Unlock, Sweep, and Calibrate
+  all inputs at the top level. Each input adds Calibrate, and each stage adds
+  Go to this stage. `get_analog_offsets()` remains a programmatic method rather
+  than a normal GUI button.
+- `InputSignal.sweep_acquire()` temporarily takes Scope, configures one sweep
+  period with the logical input on channel 1 and sweep output on channel 2,
+  enables FPGA averaging, captures a full Scope buffer, subtracts the existing
+  analog offset, and restores Scope.
+- Calibration records min, max, mean, standard deviation, midpoint offset, and
+  half peak-to-peak amplitude. RMS in the original field is computed with
+  `np.std`, not root-mean-square.
+- `OutputSignal._setup()` synchronizes assisted/manual design exactly. The
+  complete output plot combines the selected analog plant, PID input filters
+  and delays, and optional IIR transfer response.
+
+### Migration
+
+- Added the original per-input and stage actions, stage duration handling, and
+  removed Get Offsets from the normal web action row.
+- Added exact assisted/manual calculations and reapply the active output state
+  after an output edit so changes reach its PID/ASG routing immediately.
+- Added selectable input plots and separate output magnitude/phase plots. The
+  output model supports flat, PID-filter, and CurveDB analog plants plus IIR.
+- Calibration now performs a full sweep capture in fake and hardware paths,
+  forwards that binary capture to the Scope stream while controls are locked,
+  and restores the prior Scope setup and running state afterward.
+
+### Mistake Prevention
+
+- Do not treat setup-only attributes such as `assisted_design`, `tf_type`, and
+  `tf_curve` as invisible: the original custom output widget exposes them with
+  dedicated controls even though they are not all in `_gui_attributes`.
+- Do not synthesize placeholder transfer curves or calibration samples when
+  the original routines define exact calculations and hardware acquisition.
+- A static uPlot canvas can intercept clicks after a responsive scroll even
+  when its parent looks visually separate. Disable pointer events for the full
+  static plot subtree. Rebuild `web/dist` before Playwright because the FastAPI
+  e2e server serves compiled assets, not TypeScript/CSS source.
+- A terminal Scope acquisition event must be published after its binary frame.
+  Publishing `paused_single` first lets the browser close the WebSocket before
+  the final frame arrives, producing a completed backend average but a stale
+  browser trace and counter.
+
+### Remaining Gap
+
+Arbitrary executable methods in third-party Lockbox Python classes are not yet
+loaded and run by the Qt-free source schema. Descriptor-declared attributes are
+dynamic, but custom method execution requires an explicit trusted plugin model
+and remains documented rather than being guessed from method names.
+
 ## 2026-07-09 Lockbox Dynamic Schema Requirement
 
 ### Correction

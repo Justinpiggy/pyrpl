@@ -468,6 +468,24 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
         return schema
 
+    @app.post("/api/lockbox/inputs/{input_name}/actions/{action}")
+    async def call_lockbox_input_action(input_name: str, action: str):
+        state = app.state.session.module_state("scope")
+        state["owner"] = "lockbox"
+        await app.state.events.publish(module_state_event("scope", state))
+        try:
+            schema = await asyncio.to_thread(app.state.session.call_lockbox_input_action, input_name, action)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unknown lockbox input or action") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        finally:
+            await app.state.events.publish(module_state_event("scope", app.state.session.module_state("scope")))
+        await app.state.events.publish(module_state_event("lockbox", schema))
+        for resource_module in _lockbox_resource_event_modules():
+            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
+        return schema
+
     @app.post("/api/lockbox/outputs/{output_name}/attributes/{attribute}")
     async def set_lockbox_output_attribute(output_name: str, attribute: str, request: ModuleAttributeWriteRequest):
         try:
@@ -519,6 +537,19 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
+        return schema
+
+    @app.post("/api/lockbox/stages/{index}/actions/{action}")
+    async def call_lockbox_stage_action(index: int, action: str):
+        try:
+            schema = await asyncio.to_thread(app.state.session.call_lockbox_stage_action, index, action)
+        except (IndexError, KeyError) as exc:
+            raise HTTPException(status_code=404, detail="Unknown lockbox stage or action") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        await app.state.events.publish(module_state_event("lockbox", schema))
+        for resource_module in _lockbox_resource_event_modules():
+            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
         return schema
 
     @app.get("/api/lockbox/actions")
@@ -775,11 +806,11 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                     sequence,
                     sample_count,
                 )
-                if acquisition.state_changed:
-                    await app.state.events.publish(module_state_event("scope", app.state.session.module_state("scope")))
                 if acquisition.frame is not None:
                     await websocket.send_bytes(acquisition.frame.to_bytes())
                     sequence += 1
+                if acquisition.state_changed:
+                    await app.state.events.publish(module_state_event("scope", app.state.session.module_state("scope")))
                 await asyncio.sleep(settings.scope_interval)
         except WebSocketDisconnect:
             return

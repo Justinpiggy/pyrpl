@@ -197,8 +197,9 @@ Sampler/AMS/status telemetry and the Scope XY/math/acquisition-control pass are
 complete. With Network Analyzer and final Scope hardware validation deferred
 until the board is available, the next software-only work is:
 
-1. Complete Lockbox calibration sweeps, assisted design, output transfer
-   functions, and dynamic custom actions.
+1. Complete dynamic execution of arbitrary custom Lockbox model methods. The
+   original fixed actions, per-input calibration sweeps, stage execution,
+   assisted design, and output transfer-function plots are migrated.
 2. Align the remaining Spectrum Analyzer acquisition controls and RBW display
    with the original PyRPL widget.
 3. Add the PyRPL configuration editor and custom CurveDB backend support.

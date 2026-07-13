@@ -118,6 +118,10 @@ class WebSession:
     def __init__(self, settings: ServerSettings):
         self.settings = settings
         self._lock = Lock()
+        self._scope_calibration_lock = Lock()
+        self._scope_calibration_active = False
+        self._scope_calibration_frame: ScopeFrame | None = None
+        self._scope_calibration_frame_pending = False
         self.client = DummyClient() if settings.fake else MonitorClient(settings.hostname, settings.port)
         self.scope_settings = ScopeSettings()
         self.asg_settings = {"asg0": AsgSettings(), "asg1": AsgSettings()}
@@ -225,9 +229,20 @@ class WebSession:
             self._configure_lockbox_input_no_lock(input_name)
             return schema
 
+    def call_lockbox_input_action(self, input_name: str, action: str) -> dict:
+        with self._lock:
+            if input_name not in self.lockbox.inputs:
+                raise KeyError(input_name)
+            if action != "calibrate":
+                raise KeyError(action)
+            self._calibrate_lockbox_inputs_no_lock([input_name])
+            return self.lockbox.schema()
+
     def set_lockbox_output_attribute(self, output_name: str, attribute: str, value) -> dict:
         with self._lock:
-            return self.lockbox.set_output_attribute(output_name, attribute, value)
+            schema = self.lockbox.set_output_attribute(output_name, attribute, value)
+            self._reapply_lockbox_output_no_lock(output_name)
+            return schema
 
     def append_lockbox_stage(self) -> dict:
         with self._lock:
@@ -245,6 +260,15 @@ class WebSession:
         with self._lock:
             return self.lockbox.set_stage_output_attribute(index, output_name, attribute, value)
 
+    def call_lockbox_stage_action(self, index: int, action: str) -> dict:
+        with self._lock:
+            if not 0 <= index < len(self.lockbox.sequence):
+                raise IndexError(index)
+            if action != "execute":
+                raise KeyError(action)
+            self._execute_lockbox_stage_no_lock(self.lockbox.sequence[index])
+            return self.lockbox.schema()
+
     def call_lockbox_action(self, action: str) -> dict:
         with self._lock:
             return self._call_lockbox_action_no_lock(action)
@@ -258,7 +282,16 @@ class WebSession:
 
     def lockbox_output_transfer_function(self, output_name: str, points: int = 200) -> dict:
         with self._lock:
-            return self.lockbox.output_transfer_function(output_name, points)
+            return self.lockbox.output_transfer_function(
+                output_name,
+                points,
+                curve_loader=self.curves.get,
+                iir_transfer=lambda frequencies: transfer_function_by_kind(
+                    self.iir_settings,
+                    frequencies,
+                    "final",
+                ) / max(abs(self.iir_settings.gain), 1e-30),
+            )
 
     def module_attributes(self, module_name: str) -> list[dict]:
         if module_name == "scope":
@@ -769,12 +802,25 @@ class WebSession:
     def acquire_scope_frame(self, sequence: int, sample_count: int) -> ScopeAcquisition:
         """Acquire one display frame according to current run/trigger state."""
 
-        with self._lock:
+        while True:
+            calibration = self._take_scope_calibration_frame(sequence, sample_count)
+            if calibration is not None:
+                return calibration
+            if self._scope_calibration_is_active():
+                return ScopeAcquisition(None)
+            if self._lock.acquire(timeout=0.05):
+                break
+        try:
+            calibration = self._take_scope_calibration_frame(sequence, sample_count)
+            if calibration is not None:
+                return calibration
             sample_count = max(1, min(SCOPE_DATA_LENGTH, int(sample_count)))
             if not isinstance(self.client, DummyClient):
                 return self._acquire_hardware_scope_frame(sequence, sample_count)
             frame = self._acquire_fake_scope_frame(sequence, sample_count)
             return frame
+        finally:
+            self._lock.release()
 
     def test_scope_trigger(self, sample_count: int = SCOPE_DATA_LENGTH) -> dict:
         frame = read_scope_frame(self.client, sequence=0, sample_count=sample_count)
@@ -973,7 +1019,9 @@ class WebSession:
         return state
 
     def _call_lockbox_action_no_lock(self, action: str) -> dict:
-        if action == "unlock":
+        if action == "is_locked":
+            self.lockbox.is_locked()
+        elif action == "unlock":
             self._unlock_lockbox_outputs_no_lock(reset_offset=True)
             self.lockbox.current_state = "unlock"
             self._release_lockbox_resources_no_lock()
@@ -990,6 +1038,25 @@ class WebSession:
         else:
             raise KeyError(action)
         return self.lockbox.schema()
+
+    def _reapply_lockbox_output_no_lock(self, output_name: str) -> None:
+        output = self.lockbox.outputs[output_name]
+        if output.current_state == "sweep" and output_name == self.lockbox.default_sweep_output:
+            self._configure_lockbox_sweep_no_lock()
+        elif output.current_state == "lock":
+            for stage in reversed(self.lockbox.sequence):
+                stage_output = stage.outputs.get(output_name)
+                if stage_output is not None and stage_output.lock_on is True:
+                    self._lock_one_lockbox_output_no_lock(
+                        output_name,
+                        stage.input,
+                        stage.setpoint,
+                        stage_output.offset if stage_output.reset_offset else None,
+                        stage.gain_factor,
+                    )
+                    return
+        else:
+            self._unlock_one_lockbox_output_no_lock(output_name, reset_offset=False)
 
     def _configure_lockbox_sweep_no_lock(self) -> None:
         output = self.lockbox.outputs[self.lockbox.default_sweep_output]
@@ -1021,20 +1088,35 @@ class WebSession:
             self._reserve_lockbox_output_no_lock(output_name)
 
         for stage in self.lockbox.sequence:
-            for output_name, stage_output in stage.outputs.items():
-                if stage_output.lock_on == "ignore":
-                    continue
-                if not bool(stage_output.lock_on):
-                    self._unlock_one_lockbox_output_no_lock(output_name, reset_offset=False)
-                if stage_output.reset_offset:
-                    self._set_lockbox_output_offset_no_lock(output_name, stage_output.offset)
+            self._execute_lockbox_stage_no_lock(stage)
 
-            for output_name, stage_output in stage.outputs.items():
-                if stage_output.lock_on is True:
-                    self._lock_one_lockbox_output_no_lock(output_name, stage.input, stage.setpoint, stage_output.offset, stage.gain_factor)
+    def _execute_lockbox_stage_no_lock(self, stage) -> None:
+        for output_name in self.lockbox.outputs:
+            self._reserve_lockbox_output_no_lock(output_name)
+        for output_name, stage_output in stage.outputs.items():
+            if stage_output.lock_on == "ignore":
+                continue
+            if not bool(stage_output.lock_on):
+                self._unlock_one_lockbox_output_no_lock(output_name, reset_offset=False)
+            if stage_output.reset_offset:
+                self._set_lockbox_output_offset_no_lock(output_name, stage_output.offset)
 
-            self._call_lockbox_stage_function_no_lock(stage.function_call)
-            self.lockbox.current_state = stage.name
+        for output_name, stage_output in stage.outputs.items():
+            if stage_output.lock_on is True:
+                self._lock_one_lockbox_output_no_lock(
+                    output_name,
+                    stage.input,
+                    stage.setpoint,
+                    stage_output.offset if stage_output.reset_offset else None,
+                    stage.gain_factor,
+                )
+
+        self._call_lockbox_stage_function_no_lock(stage.function_call)
+        self.lockbox.current_state = stage.name
+        if stage.duration > 0:
+            time.sleep(stage.duration)
+        if self.lockbox.sequence[-1] is stage:
+            self.lockbox.current_state = "lock_on"
 
     def _call_lockbox_stage_function_no_lock(self, function_call: str) -> None:
         if not function_call:
@@ -1173,27 +1255,98 @@ class WebSession:
             return self._configure_lockbox_iq_input_no_lock(input_model)
         return self._resolve_lockbox_dsp_signal_no_lock(input_model.input_signal)
 
-    def _calibrate_lockbox_inputs_no_lock(self) -> None:
-        if isinstance(self.client, DummyClient):
-            self._reserve_module_no_lock("scope", "lockbox")
-            try:
-                for input_model in self.lockbox.inputs.values():
-                    samples = self._sample_lockbox_input_no_lock(self._lockbox_input_signal_no_lock(input_model))
-                    self._update_lockbox_calibration_from_samples(input_model, samples)
-            finally:
-                self._release_module_no_lock("scope", "lockbox")
-            return
+    def _calibrate_lockbox_inputs_no_lock(self, input_names: list[str] | None = None) -> None:
         self._reserve_module_no_lock("scope", "lockbox")
         saved_scope = deepcopy(self.scope_settings)
+        self._begin_scope_calibration()
         try:
-            for input_model in self.lockbox.inputs.values():
-                samples = self._sample_lockbox_input_no_lock(self._lockbox_input_signal_no_lock(input_model))
+            names = input_names if input_names is not None else list(self.lockbox.inputs)
+            for input_name in names:
+                input_model = self.lockbox.inputs[input_name]
+                self._configure_lockbox_sweep_no_lock()
+                self.lockbox.current_state = "sweep"
+                samples = self._acquire_lockbox_sweep_no_lock(input_model)
                 self._update_lockbox_calibration_from_samples(input_model, samples)
         finally:
             self.scope_settings = saved_scope
-            sync_scope_settings(self.client, self.scope_settings)
+            if not isinstance(self.client, DummyClient):
+                sync_scope_settings(self.client, self.scope_settings)
             self._hardware_rolling_started = False
+            self._end_scope_calibration()
             self._release_module_no_lock("scope", "lockbox")
+
+    def _acquire_lockbox_sweep_no_lock(self, input_model) -> np.ndarray:
+        output = self.lockbox.outputs[self.lockbox.default_sweep_output]
+        input_signal = self._lockbox_input_signal_no_lock(input_model)
+        self.scope_settings.input1 = input_signal
+        self.scope_settings.input2 = self.pid_settings[output.pid].output_direct
+        self.scope_settings.trigger_source = "asg0"
+        self.scope_settings.trigger_delay = 0.0
+        set_scope_attribute(
+            self.scope_settings,
+            "duration",
+            1.0 / max(float(output.sweep_frequency), 1e-12),
+        )
+        self.scope_settings.ch1_active = True
+        self.scope_settings.ch2_active = True
+        self.scope_settings.average = True
+        self.scope_settings.trace_average = 1
+        self.scope_settings.run_continuous = False
+        self.scope_settings.rolling_mode = False
+        self.scope_settings.current_avg = 0
+        self.scope_settings.running_state = "running_single"
+
+        if isinstance(self.client, DummyClient):
+            frame = self._fake_scope_frame(0, self._fake_scope_clock, SCOPE_DATA_LENGTH)
+            self._fake_scope_clock += SCOPE_DATA_LENGTH
+        else:
+            sync_scope_settings(self.client, self.scope_settings)
+            acquisition = self._acquire_hardware_scope_frame(0, SCOPE_DATA_LENGTH)
+            if acquisition.frame is None:
+                return np.asarray([], dtype=np.float64)
+            frame = acquisition.frame
+        self._publish_scope_calibration_frame(frame)
+        return (
+            frame.samples()[:, 0].astype(np.float64, copy=False)
+            - float(input_model.calibration.analog_offset)
+        )
+
+    def _begin_scope_calibration(self) -> None:
+        with self._scope_calibration_lock:
+            self._scope_calibration_active = True
+            self._scope_calibration_frame = None
+            self._scope_calibration_frame_pending = False
+
+    def _publish_scope_calibration_frame(self, frame: ScopeFrame) -> None:
+        with self._scope_calibration_lock:
+            self._scope_calibration_frame = frame
+            self._scope_calibration_frame_pending = True
+
+    def _end_scope_calibration(self) -> None:
+        with self._scope_calibration_lock:
+            self._scope_calibration_active = False
+
+    def _scope_calibration_is_active(self) -> bool:
+        with self._scope_calibration_lock:
+            return self._scope_calibration_active
+
+    def _take_scope_calibration_frame(self, sequence: int, sample_count: int) -> ScopeAcquisition | None:
+        with self._scope_calibration_lock:
+            if not self._scope_calibration_frame_pending or self._scope_calibration_frame is None:
+                return None
+            source = self._scope_calibration_frame
+            self._scope_calibration_frame_pending = False
+        count = max(1, min(source.sample_count, int(sample_count)))
+        payload_bytes = count * source.channel_count * np.dtype(np.float32).itemsize
+        return ScopeAcquisition(
+            ScopeFrame(
+                sequence=sequence,
+                timestamp_ns=source.timestamp_ns,
+                sample_count=count,
+                channel_count=source.channel_count,
+                payload=source.payload[:payload_bytes],
+            )
+        )
 
     def _measure_lockbox_offsets_no_lock(self) -> None:
         if isinstance(self.client, DummyClient):
@@ -1202,7 +1355,7 @@ class WebSession:
                 for input_model in self.lockbox.inputs.values():
                     samples = self._sample_lockbox_input_no_lock(self._lockbox_input_signal_no_lock(input_model))
                     if samples.size:
-                        input_model.calibration.analog_offset = -float(np.mean(samples))
+                        input_model.calibration.analog_offset = float(np.mean(samples))
             finally:
                 self._release_module_no_lock("scope", "lockbox")
             return
@@ -1212,7 +1365,7 @@ class WebSession:
             for input_model in self.lockbox.inputs.values():
                 samples = self._sample_lockbox_input_no_lock(self._lockbox_input_signal_no_lock(input_model))
                 if samples.size:
-                    input_model.calibration.analog_offset = -float(np.mean(samples))
+                    input_model.calibration.analog_offset = float(np.mean(samples))
         finally:
             self.scope_settings = saved_scope
             sync_scope_settings(self.client, self.scope_settings)
@@ -1226,8 +1379,8 @@ class WebSession:
         calibration.min = float(np.min(samples))
         calibration.max = float(np.max(samples))
         calibration.mean = float(np.mean(samples))
-        calibration.rms = float(np.sqrt(np.mean(np.square(samples))))
-        calibration.offset = calibration.mean
+        calibration.rms = float(np.std(samples))
+        calibration.offset = (calibration.max + calibration.min) / 2.0
         amplitude = (calibration.max - calibration.min) / 2.0
         calibration.amplitude = amplitude if amplitude > 1e-12 else 1.0
 
