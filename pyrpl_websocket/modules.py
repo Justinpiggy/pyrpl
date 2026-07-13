@@ -244,6 +244,33 @@ SPECTRUM_ACTIONS = [
     {"name": "release", "label": "Release", "description": "Release spectrum analyzer resources."},
 ]
 
+NETWORK_ANALYZER_SETUP_ATTRIBUTES = [
+    "input",
+    "output_direct",
+    "acbandwidth",
+    "start_freq",
+    "stop_freq",
+    "rbw",
+    "average_per_point",
+    "points",
+    "amplitude",
+    "logscale",
+    "auto_bandwidth",
+    "q_factor_min",
+    "auto_amplitude",
+    "target_dbv",
+    "auto_amp_min",
+    "auto_amp_max",
+    "trace_average",
+    "curve_name",
+    "run_continuous",
+]
+NETWORK_ANALYZER_ACTIONS = [
+    {"name": "single", "label": "Single", "description": "Acquire trace_average complete sweeps."},
+    {"name": "continuous", "label": "Continuous", "description": "Continuously acquire network analyzer sweeps."},
+    {"name": "stop", "label": "Stop", "description": "Stop acquisition and release the assigned IQ."},
+]
+
 
 @dataclass
 class ScopeSettings:
@@ -449,6 +476,40 @@ class SpectrumAnalyzerSettings:
         return asdict(self)
 
 
+@dataclass
+class NetworkAnalyzerSettings:
+    """PyRPL network analyzer controls and acquisition state."""
+
+    input: str = "networkanalyzer"
+    output_direct: str = "off"
+    acbandwidth: float = 50.0
+    start_freq: float = 1e3
+    stop_freq: float = 1e6
+    rbw: float = 500.0
+    average_per_point: int = 1
+    points: int = 1001
+    amplitude: float = 0.1
+    logscale: bool = True
+    auto_bandwidth: bool = False
+    q_factor_min: float = 10.0
+    auto_amplitude: bool = False
+    target_dbv: float = -80.0
+    auto_amp_min: float = 0.0001
+    auto_amp_max: float = 1.0
+    trace_average: int = 10
+    curve_name: str = "networkanalyzer curve"
+    run_continuous: bool = False
+    running_state: str = "stopped"
+    iq_module: str | None = None
+    current_point: int = 0
+    current_avg: int = 0
+    measured_time_per_point: float = 0.0
+    last_action: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def module_list() -> list[dict[str, Any]]:
     """Return the first module inventory for the web UI."""
 
@@ -521,6 +582,12 @@ def module_list() -> list[dict[str, Any]]:
             "kind": "software",
             "label": "Spectrum Analyzer",
             "description": "FFT spectrum analyzer using the scope and IQ demodulator resources.",
+        },
+        {
+            "name": "networkanalyzer",
+            "kind": "software",
+            "label": "Network Analyzer",
+            "description": "Coherent swept-frequency transfer-function measurement using an IQ module.",
         },
         {
             "name": "lockbox",
@@ -701,6 +768,33 @@ def spectrum_actions() -> list[dict[str, Any]]:
     return [dict(action) for action in SPECTRUM_ACTIONS]
 
 
+def network_analyzer_attribute_schema(settings: NetworkAnalyzerSettings) -> list[dict[str, Any]]:
+    return [
+        _select("input", "Input", settings.input, ["networkanalyzer", *SCOPE_INPUTS]),
+        _select("output_direct", "Output", settings.output_direct, DSP_OUTPUT_DIRECTS),
+        _number("acbandwidth", "AC BW", settings.acbandwidth, 0.0, 62.5e6),
+        _number("start_freq", "Start Frequency", settings.start_freq, 0.03, 62.5e6),
+        _number("stop_freq", "Stop Frequency", settings.stop_freq, 0.03, 62.5e6),
+        _number("rbw", "RBW", settings.rbw, 1.0, 62.5e6),
+        _number("average_per_point", "Average / Point", settings.average_per_point, 1, 2**31 - 1, step=1),
+        _number("points", "Points", settings.points, 1, 100000000, step=1),
+        _number("amplitude", "Amplitude", settings.amplitude, 0.0, 1.0),
+        _boolean("logscale", "Log Scale", settings.logscale),
+        _boolean("auto_bandwidth", "Auto Bandwidth", settings.auto_bandwidth),
+        _number("q_factor_min", "Minimum Q", settings.q_factor_min, 0.001, 1e9),
+        _boolean("auto_amplitude", "Auto Amplitude", settings.auto_amplitude),
+        _number("target_dbv", "Target dBV", settings.target_dbv, -200.0, 20.0),
+        _number("auto_amp_min", "Auto Amp Min", settings.auto_amp_min, 0.0, 1.0),
+        _number("auto_amp_max", "Auto Amp Max", settings.auto_amp_max, 0.0, 1.0),
+        _number("trace_average", "Trace Average", settings.trace_average, 1, 1000000, step=1),
+        _text("curve_name", "Curve Name", settings.curve_name),
+    ]
+
+
+def network_analyzer_actions() -> list[dict[str, Any]]:
+    return [dict(action) for action in NETWORK_ANALYZER_ACTIONS]
+
+
 def set_scope_attribute(settings: ScopeSettings, name: str, value: Any) -> Any:
     """Validate and update a scope setting."""
 
@@ -874,6 +968,34 @@ def set_trig_attribute(settings: TrigSettings, name: str, value: Any) -> Any:
 def set_pwm_attribute(settings: PwmSettings, name: str, value: Any) -> Any:
     if name == "input":
         normalized = _require_option(name, str(value), SCOPE_INPUTS)
+    else:
+        raise KeyError(name)
+    setattr(settings, name, normalized)
+    return normalized
+
+
+def set_network_analyzer_attribute(settings: NetworkAnalyzerSettings, name: str, value: Any) -> Any:
+    if name == "input":
+        normalized = _require_option(name, str(value), ["networkanalyzer", *SCOPE_INPUTS])
+    elif name == "output_direct":
+        normalized = _require_option(name, str(value), DSP_OUTPUT_DIRECTS)
+    elif name in {"logscale", "auto_bandwidth", "auto_amplitude", "run_continuous"}:
+        normalized = bool(value)
+    elif name in {"average_per_point", "points", "trace_average"}:
+        maximum = 100000000 if name == "points" else 2**31 - 1
+        normalized = int(round(_clamp(float(value), 1, maximum)))
+    elif name in {"start_freq", "stop_freq"}:
+        normalized = _clamp(float(value), 0.03, 62.5e6)
+    elif name in {"rbw", "acbandwidth"}:
+        normalized = _clamp(float(value), 0.0 if name == "acbandwidth" else 1.0, 62.5e6)
+    elif name in {"amplitude", "auto_amp_min", "auto_amp_max"}:
+        normalized = _clamp(float(value), 0.0, 1.0)
+    elif name == "q_factor_min":
+        normalized = max(0.001, float(value))
+    elif name == "target_dbv":
+        normalized = _clamp(float(value), -200.0, 20.0)
+    elif name == "curve_name":
+        normalized = str(value)
     else:
         raise KeyError(name)
     setattr(settings, name, normalized)

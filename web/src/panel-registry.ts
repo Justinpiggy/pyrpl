@@ -7,6 +7,7 @@ export type PanelId =
   | "trig"
   | "pwm"
   | "spectrumanalyzer"
+  | "networkanalyzer"
   | "lockbox"
   | "housekeeping"
   | "registers";
@@ -69,6 +70,13 @@ export const PANEL_DEFINITIONS: PanelDefinition[] = [
     description: "FFT spectrum analyzer controls and plot",
     defaultEnabled: false,
     defaultSplitSizes: [35, 65],
+  },
+  {
+    id: "networkanalyzer",
+    title: "Network Analyzer",
+    description: "Coherent swept-frequency response measurement",
+    defaultEnabled: false,
+    defaultSplitSizes: [34, 66],
   },
   {
     id: "lockbox",

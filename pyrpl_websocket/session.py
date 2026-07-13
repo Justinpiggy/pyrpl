@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import struct
+import time
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -35,6 +36,7 @@ from .modules import (
     HK_SETUP_ATTRIBUTES,
     IQ_SETUP_ATTRIBUTES,
     IIR_SETUP_ATTRIBUTES,
+    NETWORK_ANALYZER_SETUP_ATTRIBUTES,
     PID_SETUP_ATTRIBUTES,
     PWM_SETUP_ATTRIBUTES,
     SCOPE_SETUP_ATTRIBUTES,
@@ -44,6 +46,7 @@ from .modules import (
     HkSettings,
     IirSettings,
     IqSettings,
+    NetworkAnalyzerSettings,
     PidSettings,
     PwmSettings,
     ScopeSettings,
@@ -58,6 +61,8 @@ from .modules import (
     iq_actions,
     iq_attribute_schema,
     module_list,
+    network_analyzer_actions,
+    network_analyzer_attribute_schema,
     pid_actions,
     pid_attribute_schema,
     pwm_actions,
@@ -71,6 +76,7 @@ from .modules import (
     set_asg_attribute,
     set_hk_attribute,
     set_iir_attribute,
+    set_network_analyzer_attribute,
     set_scope_attribute,
     set_trig_attribute,
     spectrum_actions,
@@ -78,6 +84,7 @@ from .modules import (
     trig_actions,
     trig_attribute_schema,
 )
+from .network_analyzer import NetworkAnalyzerRun, acquire_point, configure_iq, stop_iq
 from .scope import SCOPE_DATA_LENGTH, ScopeFrame, read_rolling_scope_frame, read_scope_frame, read_trigger_aligned_scope_frame
 from .scope_registers import (
     DSP_INPUT_VALUES,
@@ -113,6 +120,8 @@ class WebSession:
         self.trig_settings = TrigSettings()
         self.pwm_settings = {f"pwm{index}": PwmSettings() for index in range(2)}
         self.spectrum_settings = SpectrumAnalyzerSettings()
+        self.network_analyzer_settings = NetworkAnalyzerSettings()
+        self.network_analyzer_run = NetworkAnalyzerRun()
         self.lockbox = LockboxState()
         config_enabled = settings.config is not None or settings.source is not None
         self.config = None if settings.state_file or not config_enabled else WebConfig(settings.config, settings.source)
@@ -152,6 +161,7 @@ class WebSession:
             "pwm0": self.pwm_settings["pwm0"].as_dict(),
             "pwm1": self.pwm_settings["pwm1"].as_dict(),
             "spectrumanalyzer": self.spectrum_settings.as_dict(),
+            "networkanalyzer": self.network_analyzer_settings.as_dict(),
             "lockbox": self.lockbox.schema(),
             "owners": dict(self.module_owners),
             "config_file": str(self.config.path) if self.config and self.config.path else self.settings.state_file,
@@ -235,6 +245,8 @@ class WebSession:
             return pwm_attribute_schema(self.pwm_settings[module_name])
         if module_name == "spectrumanalyzer":
             return spectrum_attribute_schema(self.spectrum_settings)
+        if module_name == "networkanalyzer":
+            return network_analyzer_attribute_schema(self.network_analyzer_settings)
         raise KeyError(module_name)
 
     def module_state(self, module_name: str) -> dict:
@@ -258,6 +270,10 @@ class WebSession:
         if module_name == "spectrumanalyzer":
             state = self.spectrum_settings.as_dict()
             state["resources"] = self._resources_owned_by("spectrumanalyzer")
+            return state
+        if module_name == "networkanalyzer":
+            state = self.network_analyzer_settings.as_dict()
+            state["resources"] = self._resources_owned_by("networkanalyzer")
             return state
         if module_name == "lockbox":
             state = self.lockbox.schema()
@@ -284,6 +300,8 @@ class WebSession:
             return pwm_actions()
         if module_name == "spectrumanalyzer":
             return spectrum_actions()
+        if module_name == "networkanalyzer":
+            return network_analyzer_actions()
         if module_name == "lockbox":
             return lockbox_actions()
         raise KeyError(module_name)
@@ -348,6 +366,12 @@ class WebSession:
                     self._configure_spectrum_no_lock()
                 self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
+            if module_name == "networkanalyzer":
+                normalized = set_network_analyzer_attribute(self.network_analyzer_settings, attribute, value)
+                if self.network_analyzer_settings.running_state != "stopped":
+                    self._stop_network_analyzer_no_lock()
+                self._persist_module_setup_if_needed(module_name, attribute)
+                return normalized
             raise KeyError(module_name)
 
     def call_module_action(self, module_name: str, action: str) -> dict:
@@ -357,6 +381,8 @@ class WebSession:
                 return self._call_lockbox_action_no_lock(action)
             if module_name == "spectrumanalyzer":
                 return self._call_spectrum_action_no_lock(action)
+            if module_name == "networkanalyzer":
+                return self._call_network_analyzer_action_no_lock(action)
             if module_name in self.pid_settings:
                 if action != "setup":
                     raise KeyError(action)
@@ -685,6 +711,8 @@ class WebSession:
             return getattr(self.pwm_settings[module_name], attribute)
         if module_name == "spectrumanalyzer":
             return getattr(self.spectrum_settings, attribute)
+        if module_name == "networkanalyzer":
+            return getattr(self.network_analyzer_settings, attribute)
         raise KeyError(module_name)
 
     def _set_module_attribute_no_lock(self, module_name: str, attribute: str, value) -> None:
@@ -720,6 +748,8 @@ class WebSession:
         elif module_name == "spectrumanalyzer":
             set_spectrum_attribute(self.spectrum_settings, attribute, value)
             self._configure_spectrum_no_lock()
+        elif module_name == "networkanalyzer":
+            set_network_analyzer_attribute(self.network_analyzer_settings, attribute, value)
         else:
             raise KeyError(module_name)
 
@@ -1053,6 +1083,92 @@ class WebSession:
         settings.last_action = action
         return self.module_state("spectrumanalyzer")
 
+    def _call_network_analyzer_action_no_lock(self, action: str) -> dict:
+        settings = self.network_analyzer_settings
+        if action in {"single", "continuous"}:
+            self._stop_network_analyzer_no_lock()
+            iq_module = self._reserve_available_iq_no_lock("networkanalyzer")
+            settings.iq_module = iq_module
+            settings.run_continuous = action == "continuous"
+            settings.running_state = "running_continuous" if settings.run_continuous else "running_single"
+            self.network_analyzer_run.prepare(settings)
+            configure_iq(
+                self.client,
+                iq_module,
+                self.iq_settings[iq_module],
+                settings,
+                self.network_analyzer_run,
+            )
+        elif action == "stop":
+            self._stop_network_analyzer_no_lock()
+        else:
+            raise KeyError(action)
+        settings.last_action = action
+        return self.module_state("networkanalyzer")
+
+    def acquire_network_analyzer_point(self) -> dict | None:
+        with self._lock:
+            settings = self.network_analyzer_settings
+            run = self.network_analyzer_run
+            if settings.running_state == "stopped" or settings.iq_module is None:
+                return None
+            index = run.current_point
+            frequency, value, amplitude = acquire_point(
+                self.client,
+                settings.iq_module,
+                self.iq_settings[settings.iq_module],
+                settings,
+                run,
+            )
+            if settings.start_freq == settings.stop_freq:
+                now = time.monotonic()
+                if run.time_first_point is None:
+                    run.time_first_point = now
+                x_value = now - run.time_first_point
+            else:
+                x_value = frequency
+            run.data[index] = (run.data[index] * run.current_avg + value) / (run.current_avg + 1)
+            run.amplitudes[index] = amplitude
+            run.current_point += 1
+            scan_complete = run.current_point >= settings.points
+            if scan_complete:
+                run.current_avg = min(run.current_avg + 1, settings.trace_average)
+                run.current_point = 0
+                if settings.running_state == "running_single" and run.current_avg >= settings.trace_average:
+                    self._stop_network_analyzer_no_lock()
+            settings.current_point = run.current_point
+            settings.current_avg = run.current_avg
+            return {
+                "run_id": run.run_id,
+                "index": index,
+                "x": x_value,
+                "real": float(run.data[index].real),
+                "imag": float(run.data[index].imag),
+                "points": settings.points,
+                "current_avg": run.current_avg,
+                "scan_complete": scan_complete,
+                "logscale": settings.logscale and settings.start_freq != settings.stop_freq,
+                "zero_span": settings.start_freq == settings.stop_freq,
+                "running_state": settings.running_state,
+                "time_per_point": settings.measured_time_per_point,
+            }
+
+    def _reserve_available_iq_no_lock(self, owner: str) -> str:
+        for module_name in ("iq2", "iq1", "iq0"):
+            if self.module_owners[module_name] is None:
+                self._reserve_module_no_lock(module_name, owner)
+                return module_name
+        raise ValueError("No more iqs left.")
+
+    def _stop_network_analyzer_no_lock(self) -> None:
+        settings = self.network_analyzer_settings
+        if settings.iq_module is not None:
+            stop_iq(self.client, settings.iq_module, self.iq_settings[settings.iq_module])
+            self._release_module_no_lock(settings.iq_module, "networkanalyzer")
+        settings.iq_module = None
+        settings.running_state = "stopped"
+        settings.run_continuous = False
+
     def _acquire_spectrum_arrays_no_lock(self, sequence: int, sample_count: int) -> dict:
         sample_count = max(256, min(SCOPE_DATA_LENGTH, int(sample_count)))
         self._configure_spectrum_no_lock()
@@ -1275,7 +1391,7 @@ def _normalize_state_name(state_name: str) -> str:
 
 def _empty_saved_states() -> dict[str, dict[str, dict]]:
     module_names = (
-        ["scope", "asg0", "asg1", "hk", "trig", "spectrumanalyzer"]
+        ["scope", "asg0", "asg1", "hk", "trig", "spectrumanalyzer", "networkanalyzer"]
         + [f"pid{index}" for index in range(3)]
         + [f"iq{index}" for index in range(3)]
         + ["iir"]
@@ -1311,6 +1427,8 @@ def _setup_attributes(module_name: str) -> list[str]:
         return list(PWM_SETUP_ATTRIBUTES)
     if module_name == "spectrumanalyzer":
         return list(SPECTRUM_SETUP_ATTRIBUTES)
+    if module_name == "networkanalyzer":
+        return list(NETWORK_ANALYZER_SETUP_ATTRIBUTES)
     raise KeyError(module_name)
 
 

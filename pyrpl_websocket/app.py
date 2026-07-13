@@ -134,7 +134,7 @@ async def handle_control_message(
             return _control_error(message, "bad_request", str(exc))
         if events is not None:
             await events.publish(module_attribute_event(module_name, attribute, value))
-            if module_name == "spectrumanalyzer":
+            if module_name in {"spectrumanalyzer", "networkanalyzer"}:
                 state = session.module_state(module_name)
                 await events.publish(module_state_event(module_name, state))
                 for resource_module in _resource_event_modules(module_name, state):
@@ -268,9 +268,9 @@ async def handle_control_message(
 
 
 def _resource_event_modules(module_name: str, state: dict[str, Any]) -> list[str]:
-    if module_name != "spectrumanalyzer":
+    if module_name not in {"spectrumanalyzer", "networkanalyzer"}:
         return []
-    resource_modules = {"iq2", "scope"}
+    resource_modules = {"iq2", "scope"} if module_name == "spectrumanalyzer" else {"iq0", "iq1", "iq2"}
     resources = state.get("resources")
     if isinstance(resources, list):
         resource_modules.update(str(resource) for resource in resources)
@@ -581,7 +581,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_attribute_event(module_name, attribute, value))
-        if module_name == "spectrumanalyzer":
+        if module_name in {"spectrumanalyzer", "networkanalyzer"}:
             state = app.state.session.module_state(module_name)
             await app.state.events.publish(module_state_event(module_name, state))
             for resource_module in _resource_event_modules(module_name, state):
@@ -730,6 +730,26 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                     await websocket.send_bytes(frame.to_bytes())
                     sequence += 1
                 await asyncio.sleep(settings.scope_interval)
+        except WebSocketDisconnect:
+            return
+
+    @app.websocket("/ws/networkanalyzer")
+    async def network_analyzer_stream(websocket: WebSocket):
+        await websocket.accept()
+        try:
+            while True:
+                point = await asyncio.to_thread(app.state.session.acquire_network_analyzer_point)
+                if point is not None:
+                    await websocket.send_json(point)
+                    if point["running_state"] == "stopped":
+                        state = app.state.session.module_state("networkanalyzer")
+                        await app.state.events.publish(module_state_event("networkanalyzer", state))
+                        for resource_module in _resource_event_modules("networkanalyzer", state):
+                            await app.state.events.publish(
+                                module_state_event(resource_module, app.state.session.module_state(resource_module))
+                            )
+                else:
+                    await asyncio.sleep(0.05)
         except WebSocketDisconnect:
             return
 

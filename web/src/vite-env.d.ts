@@ -19,6 +19,7 @@ interface Window {
         | "trig"
         | "pwm"
         | "spectrumanalyzer"
+        | "networkanalyzer"
         | "lockbox"
         | "housekeeping"
         | "registers",
@@ -35,6 +36,7 @@ interface Window {
       | "trig"
       | "pwm"
       | "spectrumanalyzer"
+      | "networkanalyzer"
       | "lockbox"
       | "housekeeping"
       | "registers"

@@ -14,6 +14,7 @@ const defaultWorkspace = {
     trig: { enabled: false },
     pwm: { enabled: false },
     spectrumanalyzer: { enabled: false, splitSizes: [35, 65] },
+    networkanalyzer: { enabled: false, splitSizes: [34, 66] },
     lockbox: { enabled: false },
     housekeeping: { enabled: false },
     registers: { enabled: false },
@@ -28,6 +29,7 @@ async function setModuleAttribute(page: Page, module: string, attribute: string,
 async function resetServerConfig(page: Page): Promise<void> {
   await page.request.post("/api/modules/scope/actions/stop");
   await page.request.post("/api/modules/spectrumanalyzer/actions/stop");
+  await page.request.post("/api/modules/networkanalyzer/actions/stop");
   await page.request.post("/api/lockbox/actions/unlock");
   await page.request.post("/api/workspace", { data: { workspace: defaultWorkspace } });
 
@@ -741,6 +743,44 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   await expect(page.locator("#spectrum-run")).toHaveText("Run");
   await page.getByRole("button", { name: "IQ" }).click();
   await expect(page.locator("#iq2-frequency")).toBeEnabled();
+});
+
+test("network analyzer streams a complete sweep and releases its IQ", async ({ page }) => {
+  await resetServerConfig(page);
+  await setModuleAttribute(page, "networkanalyzer", "points", 32);
+  await setModuleAttribute(page, "networkanalyzer", "trace_average", 1);
+  await page.goto("/");
+
+  await page.locator(".menu-dropdown summary").click();
+  await page.locator("#panel-iq-enabled").setChecked(true);
+  await page.locator(".menu-dropdown summary").click();
+  await page.locator("#panel-networkanalyzer-enabled").setChecked(true);
+  await page.getByRole("button", { name: "Network Analyzer", exact: true }).click();
+  await expect(page.locator("#networkanalyzer-panel")).toBeVisible();
+  await expect(page.locator("#networkanalyzer-panel > .network-content > .gutter-vertical")).toBeVisible();
+  await expect(page.locator("#networkanalyzer-start-freq")).toBeVisible();
+
+  const frameBefore = await page.locator(".network-plot-frame").first().boundingBox();
+  expect(frameBefore?.width ?? 0).toBeGreaterThan(400);
+  expect(frameBefore?.height ?? 0).toBeGreaterThan(100);
+  await page.locator("#network-single").click();
+  await expect(page.locator("#network-status")).toContainText("32/32", { timeout: 10000 });
+  await expect.poll(async () => {
+    const response = await page.request.get("/api/modules/iq2");
+    const payload = await response.json();
+    return payload.state?.owner ?? null;
+  }).toBeNull();
+  await page.getByRole("button", { name: "IQ", exact: true }).click();
+  await expect(page.locator("#iq2-frequency")).toBeEnabled();
+  await expect(page.locator("[data-module='iq2']")).not.toHaveClass(/is-owned/);
+  await page.getByRole("button", { name: "Network Analyzer", exact: true }).click();
+
+  const canvases = page.locator("#networkanalyzer-panel canvas");
+  await expect(canvases).toHaveCount(2);
+  await expect.poll(() => canvases.first().evaluate(countPaintedPixels)).toBeGreaterThan(1000);
+  await page.waitForTimeout(300);
+  const frameAfter = await page.locator(".network-plot-frame").first().boundingBox();
+  expect(Math.abs((frameAfter?.height ?? 0) - (frameBefore?.height ?? 0))).toBeLessThan(2);
 });
 
 test("lockbox panel switches classes, edits stages, and renders static plots", async ({ page }) => {

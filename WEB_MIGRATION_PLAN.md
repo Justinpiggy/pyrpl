@@ -717,7 +717,10 @@ included as package data.
 
 ### Milestone 4: Acquisition Instruments
 
-- Network analyzer works in browser.
+- Network analyzer now works in browser with the original IQ point-acquisition
+  path, incremental WebSocket updates, magnitude/phase plots, resource
+  ownership, trace averaging, zero-span support, auto-amplitude ramping, and
+  CSV export. Hardware validation and curve-viewer persistence remain.
 - Spectrum analyzer works in browser.
 - Curve saving and curve viewer are usable.
 

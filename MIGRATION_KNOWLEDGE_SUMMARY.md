@@ -63,3 +63,14 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Pole/zero/gain/loops edits must run PyRPL's IIR design routine and write the
   FPGA coefficient RAM at IIR base `+ 0x8000`; updating only the browser plot is
   not a hardware migration.
+
+## Acquisition/UI Event Rules
+
+- Network analyzer is an IQ accumulator sweep, not a scope capture or CPU FFT.
+  It owns one IQ selected in reverse manager order and does not own Scope.
+- Incremental uPlot data must contain a finite, monotonic x-array. Do not pad
+  the x-array with trailing NaN values; render only the acquired prefix.
+- Create Split.js gutters lazily when a panel becomes visible. Hidden-panel
+  gutters interfere with workspace selectors and are sized from zero geometry.
+- Do not overwrite a focused form input with an older asynchronous state event.
+  Apply remote values after the user's edit has committed.

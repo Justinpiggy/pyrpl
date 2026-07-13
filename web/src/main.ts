@@ -2,6 +2,7 @@ import { ScopeStream } from "./scope-stream";
 import { SpectrumPlot } from "./spectrum-plot";
 import { IirPlot } from "./iir-plot";
 import { LockboxPanel, type LockboxSchema } from "./lockbox-panel";
+import { NetworkAnalyzerPanel } from "./network-analyzer-panel";
 import Split from "split.js";
 import { PANEL_DEFINITIONS, type PanelId } from "./panel-registry";
 import { createRegisterPanel } from "./register-panel";
@@ -257,6 +258,28 @@ app.innerHTML = `
             <div id="spectrum-plot"></div>
           </section>
         </div>
+        </section>
+        <section class="workspace-panel" id="networkanalyzer-panel" data-panel-id="networkanalyzer" hidden>
+          <header class="panel-header">
+            <div><h2>Network Analyzer</h2></div>
+            <div class="action-row">
+              <button id="network-single" type="button">Single</button>
+              <button id="network-run" type="button">Continuous</button>
+              <button id="network-stop" type="button" disabled>Stop</button>
+              <button id="network-save" type="button">Save Curve</button>
+              <button id="network-reset" type="button">Reset Zoom</button>
+            </div>
+          </header>
+          <div class="panel-content network-content">
+            <section class="module-panel network-controls-pane split-pane">
+              <div id="network-controls" class="network-controls"></div>
+              <output id="network-status">Network analyzer ready</output>
+            </section>
+            <section class="network-plots split-pane">
+              <div class="network-plot-frame"><div id="network-magnitude-plot"></div></div>
+              <div class="network-plot-frame"><div id="network-phase-plot"></div></div>
+            </section>
+          </div>
         </section>
         <section class="workspace-panel" id="lockbox-panel" data-panel-id="lockbox" hidden>
         <header class="panel-header">
@@ -691,6 +714,59 @@ style.textContent = `
   .spectrum-header {
     min-height: 42px;
     padding-block: 5px;
+  }
+
+  .network-content {
+    display: flex;
+  }
+
+  .network-controls-pane {
+    padding: 6px;
+    overflow: auto;
+  }
+
+  .network-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 6px;
+  }
+
+  .network-control-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+    min-width: 0;
+    margin: 0;
+    border: 1px solid var(--panel-border);
+    padding: 5px;
+  }
+
+  .network-control-group legend {
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .network-control-group label {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  .network-plots {
+    display: grid;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    min-height: 240px;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .network-plot-frame {
+    position: relative;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--plot-bg);
   }
 
   .panel-header p {
@@ -1371,6 +1447,7 @@ const iirPanel = requireElement<HTMLElement>("#iir-panel");
 const trigPanel = requireElement<HTMLElement>("#trig-panel");
 const pwmPanel = requireElement<HTMLElement>("#pwm-panel");
 const spectrumPanel = requireElement<HTMLElement>("#spectrumanalyzer-panel");
+const networkAnalyzerPanelElement = requireElement<HTMLElement>("#networkanalyzer-panel");
 const lockboxPanelElement = requireElement<HTMLElement>("#lockbox-panel");
 const housekeepingPanel = requireElement<HTMLElement>("#housekeeping-panel");
 const registersPanel = requireElement<HTMLElement>("#registers-panel");
@@ -1383,6 +1460,7 @@ const panelElements: Record<PanelId, HTMLElement> = {
   trig: trigPanel,
   pwm: pwmPanel,
   spectrumanalyzer: spectrumPanel,
+  networkanalyzer: networkAnalyzerPanelElement,
   lockbox: lockboxPanelElement,
   housekeeping: housekeepingPanel,
   registers: registersPanel,
@@ -1444,6 +1522,17 @@ const spectrumPanRightButton = requireElement<HTMLButtonElement>("#spectrum-pan-
 const spectrumPanUpButton = requireElement<HTMLButtonElement>("#spectrum-pan-up");
 const spectrumPanDownButton = requireElement<HTMLButtonElement>("#spectrum-pan-down");
 const spectrumZoomResetButton = requireElement<HTMLButtonElement>("#spectrum-zoom-reset");
+const networkAnalyzerPanel = new NetworkAnalyzerPanel(
+  requireElement<HTMLElement>("#network-controls"),
+  requireElement<HTMLElement>("#network-magnitude-plot"),
+  requireElement<HTMLElement>("#network-phase-plot"),
+  requireElement<HTMLOutputElement>("#network-status"),
+  requireElement<HTMLButtonElement>("#network-single"),
+  requireElement<HTMLButtonElement>("#network-run"),
+  requireElement<HTMLButtonElement>("#network-stop"),
+  requireElement<HTMLButtonElement>("#network-save"),
+  requireElement<HTMLButtonElement>("#network-reset"),
+);
 const lockboxPanel = new LockboxPanel({
   root: lockboxPanelElement,
   classSelect: requireElement<HTMLSelectElement>("#lockbox-class"),
@@ -1715,6 +1804,9 @@ function applyWorkspaceState(): void {
   if (visiblePanels.has("lockbox")) {
     window.requestAnimationFrame(() => lockboxPanel.refreshLayout());
   }
+  if (visiblePanels.has("networkanalyzer")) {
+    window.requestAnimationFrame(() => networkAnalyzerPanel.refreshLayout());
+  }
 }
 
 function enabledPanelIds(): PanelId[] {
@@ -1873,6 +1965,7 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
         stream.refreshLayout();
         spectrumPlot.refreshLayout();
         lockboxPanel.refreshLayout();
+        networkAnalyzerPanel.refreshLayout();
       },
       onDragEnd: (sizes) => {
         workspaceState = {
@@ -1883,6 +1976,7 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
         stream.refreshLayout();
         spectrumPlot.refreshLayout();
         lockboxPanel.refreshLayout();
+        networkAnalyzerPanel.refreshLayout();
       },
     },
   );
@@ -1951,6 +2045,9 @@ async function setActivePanel(panelId: PanelId): Promise<void> {
   if (panelId === "lockbox") {
     window.requestAnimationFrame(() => lockboxPanel.refreshLayout());
   }
+  if (panelId === "networkanalyzer") {
+    window.requestAnimationFrame(() => networkAnalyzerPanel.refreshLayout());
+  }
 }
 
 async function setWorkspaceLayoutMode(layoutMode: WorkspaceLayoutMode): Promise<void> {
@@ -1963,10 +2060,17 @@ async function setWorkspaceLayoutMode(layoutMode: WorkspaceLayoutMode): Promise<
   if (workspaceState.panels.lockbox.enabled && layoutMode !== "tabs") {
     window.requestAnimationFrame(() => lockboxPanel.refreshLayout());
   }
+  if (workspaceState.panels.networkanalyzer.enabled && layoutMode !== "tabs") {
+    window.requestAnimationFrame(() => networkAnalyzerPanel.refreshLayout());
+  }
 }
 
 async function activateScopePanel(): Promise<void> {
   await fetchSingleFrame();
+  if (!workspaceState.panels.scope.enabled || workspaceState.activePanelId !== "scope") {
+    stopStream("Scope panel disabled");
+    return;
+  }
   if (currentSession?.fake) {
     await callScopeAction("continuous");
     startStream();
@@ -2096,12 +2200,12 @@ function applyScopeControlValue(attribute: string, value: string | number | bool
     scopeTraceAverage.value = String(value);
     stream.setTraceAverage(Number(value));
   } else if (attribute === "trigger_delay") {
-    scopeTriggerDelay.value = String(value);
+    if (document.activeElement !== scopeTriggerDelay) scopeTriggerDelay.value = String(value);
     updatePlotTimeSettings();
   } else if (attribute === "threshold") {
-    scopeThreshold.value = String(value);
+    if (document.activeElement !== scopeThreshold) scopeThreshold.value = String(value);
   } else if (attribute === "hysteresis") {
-    scopeHysteresis.value = String(value);
+    if (document.activeElement !== scopeHysteresis) scopeHysteresis.value = String(value);
   }
 }
 
@@ -2771,6 +2875,8 @@ function connectEvents(): void {
         lockboxPanel.applySchema(message.state as LockboxSchema).catch((error: Error) => {
           moduleStatus.textContent = error.message;
         });
+      } else if (message.type === "module.state.changed" && message.module === "networkanalyzer") {
+        networkAnalyzerPanel.applyState(message.state ?? {});
       } else if (message.type === "module.states.changed" && message.module === "scope") {
         populateStateSelect(message.states ?? []);
         moduleStatus.textContent = `${message.states.length} saved state${message.states.length === 1 ? "" : "s"}`;
@@ -3168,6 +3274,7 @@ async function startup(): Promise<void> {
   await loadAsgControls();
   await loadHkControls();
   await loadGenericPanels();
+  await networkAnalyzerPanel.initialize();
   await lockboxPanel.load();
   connectEvents();
   await loadWorkspaceStateFromConfig();

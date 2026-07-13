@@ -2902,3 +2902,23 @@ conda run -n pyrpl-env npm run test:e2e
   locator bounding box immediately before absolute `page.mouse` operations.
 - When a graph has interactive overlays, attach navigation handling where all
   relevant plot layers can reach it, and explicitly skip marker/edit controls.
+
+## 2026-07-12 Network Analyzer Migration And Browser Race Lessons
+
+- Read the original `network_analyzer.py`, `na_widget.py`,
+  `acquisition_module_widget.py`, `module_managers.py`, and IQ NA accumulator
+  registers before implementation. The network analyzer sweeps an owned IQ,
+  waits for its FPGA accumulator per point, reads `_nadata_total`, normalizes by
+  averaging and drive amplitude, and corrects the IQ transfer function. It is
+  not a scope/FFT workflow and must not reserve Scope.
+- PyRPL managers choose the last free module first. Network analyzer therefore
+  tries IQ2, IQ1, then IQ0 and releases only the IQ it acquired.
+- A completed WebSocket scan initially produced a blank uPlot because its
+  x-array had trailing NaN placeholders. uPlot requires finite monotonic x data;
+  render only the contiguous acquired prefix.
+- Initializing Split.js while a panel is hidden creates gutters with zero-based
+  geometry and leaks hidden gutters into global selectors. Create the split
+  lazily when the panel is visible, then measure plot frames.
+- An old scope state event could overwrite a number input while the user was
+  typing, causing blur to submit the stale value. Focused controls now retain
+  the local edit until it commits.

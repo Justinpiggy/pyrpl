@@ -131,6 +131,7 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("/api/lockbox/outputs/{output_name}/transfer_function", paths)
         self.assertIn("/ws/control", paths)
         self.assertIn("/ws/scope", paths)
+        self.assertIn("/ws/networkanalyzer", paths)
 
     def test_asset_info_finds_copied_monitor_server_assets(self):
         assets = asset_info()
@@ -507,10 +508,58 @@ class WebAppTest(unittest.TestCase):
                 "pwm0",
                 "pwm1",
                 "spectrumanalyzer",
+                "networkanalyzer",
             ]:
                 self.assertIn(module_name, module_names)
                 self.assertTrue(session.module_attributes(module_name))
                 self.assertTrue(session.module_actions(module_name))
+        finally:
+            session.close()
+
+    def test_network_analyzer_sweeps_with_iq_manager_ownership(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_module_attribute("networkanalyzer", "points", 8)
+            session.set_module_attribute("networkanalyzer", "trace_average", 1)
+            state = session.call_module_action("networkanalyzer", "single")
+            self.assertEqual(state["iq_module"], "iq2")
+            self.assertEqual(session.module_state("iq2")["owner"], "networkanalyzer")
+            self.assertIsNone(session.module_state("scope")["owner"])
+
+            points = [session.acquire_network_analyzer_point() for _ in range(8)]
+            self.assertEqual([point["index"] for point in points], list(range(8)))
+            self.assertTrue(all(np.isfinite(point["real"]) for point in points))
+            self.assertEqual(points[-1]["running_state"], "stopped")
+            self.assertIsNone(session.module_state("iq2")["owner"])
+        finally:
+            session.close()
+
+    def test_network_analyzer_uses_next_free_iq_and_releases_it(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session._reserve_module_no_lock("iq2", "test")
+            state = session.call_module_action("networkanalyzer", "continuous")
+            self.assertEqual(state["iq_module"], "iq1")
+            self.assertEqual(session.module_state("iq1")["owner"], "networkanalyzer")
+            stopped = session.call_module_action("networkanalyzer", "stop")
+            self.assertEqual(stopped["resources"], [])
+            self.assertIsNone(session.module_state("iq1")["owner"])
+            self.assertEqual(session.module_state("iq2")["owner"], "test")
+        finally:
+            session.close()
+
+    def test_network_analyzer_auto_amplitude_follows_legacy_twofold_steps(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_module_attribute("networkanalyzer", "points", 24)
+            session.set_module_attribute("networkanalyzer", "auto_amplitude", True)
+            session.set_module_attribute("networkanalyzer", "amplitude", 0.1)
+            session.set_module_attribute("networkanalyzer", "target_dbv", -80)
+            session.call_module_action("networkanalyzer", "continuous")
+            for _ in range(22):
+                session.acquire_network_analyzer_point()
+            self.assertAlmostEqual(session.iq_settings["iq2"].amplitude, 0.05)
+            session.call_module_action("networkanalyzer", "stop")
         finally:
             session.close()
 
