@@ -182,9 +182,18 @@ IIR_SETUP_ATTRIBUTES = [
     "gain",
     "on",
     "bypass",
+    "data_curve",
+    "plot_data",
+    "plot_data_times_filter",
 ]
+IIR_TF_TYPES = ["continuous", "discrete", "coefficients", "rounded", "final"]
 IIR_ACTIONS = [
     {"name": "setup", "label": "Setup", "description": "Synchronize IIR routing, filter, and coefficients."},
+    {
+        "name": "measure_transfer_function",
+        "label": "Measure Transfer Function",
+        "description": "Measure the implemented IIR response with the Network Analyzer.",
+    },
 ]
 
 TRIG_TRIGGER_SOURCES = ["off", "pos_edge", "neg_edge", "both_edge"]
@@ -427,6 +436,13 @@ class IirSettings:
     gain: float = 1.0
     on: bool = False
     bypass: bool = False
+    overflow: str = "no overflow"
+    data_curve: int = -1
+    data_curve_name: str = ""
+    plot_data: bool = True
+    plot_data_times_filter: bool = True
+    plot_measurement: bool = True
+    tf_type: str = "final"
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -763,7 +779,20 @@ def iq_actions() -> list[dict[str, Any]]:
     return [dict(action) for action in IQ_ACTIONS]
 
 
-def iir_attribute_schema(settings: IirSettings) -> list[dict[str, Any]]:
+def iir_attribute_schema(
+    settings: IirSettings,
+    curves: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    curve_records = curves or []
+    curve_options = [-1] + [int(curve["pk"]) for curve in curve_records]
+    curve_labels = {"-1": "No curve"}
+    curve_labels.update({str(curve["pk"]): f'{curve["pk"]}: {curve["name"]}' for curve in curve_records})
+    overflow = _text("overflow", "Overflow", settings.overflow)
+    overflow["readonly"] = True
+    data_curve = _select("data_curve", "Data Curve", settings.data_curve, curve_options)
+    data_curve["option_labels"] = curve_labels
+    data_curve_name = _text("data_curve_name", "Curve Name", settings.data_curve_name)
+    data_curve_name["readonly"] = True
     return [
         _select("input", "Input", settings.input, SCOPE_INPUTS),
         _number("loops", "Loops", settings.loops, 3, 1023, step=1),
@@ -776,6 +805,13 @@ def iir_attribute_schema(settings: IirSettings) -> list[dict[str, Any]]:
         _number("gain", "Gain", settings.gain, -1e20, 1e20),
         _boolean("on", "On", settings.on),
         _boolean("bypass", "Bypass", settings.bypass),
+        overflow,
+        data_curve,
+        data_curve_name,
+        _boolean("plot_data", "Plot Data", settings.plot_data),
+        _boolean("plot_data_times_filter", "Plot Data x Filter", settings.plot_data_times_filter),
+        _boolean("plot_measurement", "Plot Measurement", settings.plot_measurement),
+        _select("tf_type", "Transfer Function", settings.tf_type, IIR_TF_TYPES),
     ]
 
 
@@ -992,8 +1028,12 @@ def set_iir_attribute(settings: IirSettings, name: str, value: Any) -> Any:
         normalized = _require_option(name, str(value), SCOPE_INPUTS)
     elif name == "output_direct":
         normalized = _require_option(name, str(value), DSP_OUTPUT_DIRECTS)
-    elif name in {"on", "bypass"}:
+    elif name in {"on", "bypass", "plot_data", "plot_data_times_filter", "plot_measurement"}:
         normalized = bool(value)
+    elif name == "data_curve":
+        normalized = int(value)
+    elif name == "tf_type":
+        normalized = _require_option(name, str(value), IIR_TF_TYPES)
     elif name == "loops":
         normalized = int(round(_clamp(float(value), 3, 1023)))
     elif name in {"real_zeros", "real_poles"}:

@@ -7,6 +7,7 @@ export const PLOT_COLORS = {
   grid: "#1c2a33",
   green: "#4fd17f",
   red: "#ef6461",
+  orange: "#ff9f43",
   blue: "#62a8ff",
   yellow: "#f2c94c",
   magenta: "#f05bd7",

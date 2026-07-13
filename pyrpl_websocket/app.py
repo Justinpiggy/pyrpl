@@ -183,7 +183,7 @@ async def handle_control_message(
         try:
             module_name = str(message["module"])
             action = str(message["action"])
-            state = session.call_module_action(module_name, action)
+            state = await asyncio.to_thread(session.call_module_action, module_name, action)
         except KeyError as exc:
             return _control_error(message, "not_found", f"Unknown module or action {exc}")
         except (TypeError, ValueError) as exc:
@@ -620,7 +620,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @app.post("/api/modules/{module_name}/actions/{action}")
     async def call_module_action(module_name: str, action: str):
         try:
-            state = app.state.session.call_module_action(module_name, action)
+            state = await asyncio.to_thread(app.state.session.call_module_action, module_name, action)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown module or action") from exc
         except (TypeError, ValueError) as exc:

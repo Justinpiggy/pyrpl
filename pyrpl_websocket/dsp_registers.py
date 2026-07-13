@@ -80,8 +80,22 @@ IIR_SETUP_ATTRIBUTES = (
     "gain",
     "on",
     "bypass",
+    "data_curve",
+    "plot_data",
+    "plot_data_times_filter",
 )
-IIR_COEFFICIENT_ATTRIBUTES = {"loops", "real_zeros", "real_poles", "complex_zeros", "complex_poles", "gain"}
+IIR_COEFFICIENT_ATTRIBUTES = {
+    "loops",
+    "real_zeros",
+    "real_poles",
+    "complex_zeros",
+    "complex_poles",
+    "gain",
+    "data_curve",
+    "plot_data",
+    "plot_data_times_filter",
+    "plot_measurement",
+}
 
 
 def sync_pid_setting(client: MonitorClient | DummyClient, module_name: str, settings: PidSettings, attribute: str) -> None:
@@ -233,6 +247,23 @@ def sync_iir_settings(client: MonitorClient | DummyClient, settings: IirSettings
     sync_iir_setting(client, settings, "on")
 
 
+def read_iir_overflow(client: MonitorClient | DummyClient) -> tuple[int, str]:
+    """Read the original IIR overflow bitfield and preserve its GUI text."""
+
+    value = int(client.reads(dsp_addr_base("iir") + 0x108, 1)[0]) & 0x7F
+    if not value:
+        text = "no overflow"
+    elif value & 0x7F:
+        text = "sum and internal saturation"
+    elif value & 0x40:
+        text = "sum saturation"
+    elif value & 0x3F:
+        text = "internal saturation"
+    else:
+        text = f"unknown overflow {value}"
+    return value, text
+
+
 def sync_iir_design(client: MonitorClient | DummyClient, settings: IirSettings) -> None:
     """Run PyRPL's IIR design step and write loops plus coefficient RAM."""
 
@@ -244,6 +275,27 @@ def sync_iir_design(client: MonitorClient | DummyClient, settings: IirSettings) 
         raise RuntimeError("This FPGA bitfile does not report IIR coefficient stages.")
 
     _write_bool_bit(client, base + 0x104, 0, False)
+    iir_filter = make_iir_filter(
+        settings,
+        totalbits=bitlength,
+        shiftbits=shift,
+        iirstages=stages,
+    )
+    settings.loops = int(iir_filter.loops)
+    _write_word(client, base + 0x100, settings.loops)
+    _write_iir_coefficients(client, base, iir_filter.coefficients, stages, bitlength, shift)
+    settings.on = True
+    _write_bool_bit(client, base + 0x104, 0, True)
+
+
+def make_iir_filter(
+    settings: IirSettings,
+    totalbits: int = 32,
+    shiftbits: int = 29,
+    iirstages: int = 14,
+):
+    """Build the same PyRPL IirFilter used for coefficient writes and plots."""
+
     iir_theory = _load_iir_theory()
     iir_filter = iir_theory.IirFilter(
         zeros=_iir_values(settings.real_zeros, settings.complex_zeros),
@@ -253,17 +305,27 @@ def sync_iir_design(client: MonitorClient | DummyClient, settings: IirSettings) 
         dt=8e-9,
         minloops=3,
         maxloops=1023,
-        iirstages=stages,
-        totalbits=bitlength,
-        shiftbits=shift,
+        iirstages=iirstages,
+        totalbits=totalbits,
+        shiftbits=shiftbits,
         inputfilter=0,
         moduledelay=5,
     )
-    settings.loops = int(iir_filter.loops)
-    _write_word(client, base + 0x100, settings.loops)
-    _write_iir_coefficients(client, base, iir_filter.coefficients, stages, bitlength, shift)
-    settings.on = True
-    _write_bool_bit(client, base + 0x104, 0, True)
+    # PyRPL designs coefficients without this analog model, then applies it to plots.
+    iir_filter.inputfilter = settings.inputfilter
+    return iir_filter
+
+
+def make_hardware_iir_filter(client: MonitorClient | DummyClient, settings: IirSettings):
+    """Build PyRPL's plot model with constants reported by the loaded FPGA."""
+
+    base = dsp_addr_base("iir")
+    return make_iir_filter(
+        settings,
+        totalbits=_read_constant(client, base + 0x200, 32),
+        shiftbits=_read_constant(client, base + 0x204, 29),
+        iirstages=_read_constant(client, base + 0x208, 14),
+    )
 
 
 def _iir_values(real_values: list[float], complex_values: list[str]) -> list[complex]:

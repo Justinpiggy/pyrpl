@@ -2967,3 +2967,37 @@ conda run -n pyrpl-env npm run test:e2e
   DAC3.
 - Browser coverage verifies all 16 sampler signals, statistics, DAC read-only
   behavior, DAC2 write/readback, and bounded panel layout.
+
+## 2026-07-13 IIR Plot And Measurement Parity
+
+- Original IIR `tf_type` selects a specific `IirFilter` calculation stage:
+  `continuous`, `discrete`, NumPy coefficients, rounded coefficients, or the
+  final FPGA response. The web plot must use that stage, not a separate Bode
+  approximation. PyRPL's stale `tf_coefficients` name maps to the implemented
+  `tf_coefficients_numpy` method.
+- `data_curve` is a CurveDB primary key. When selected, its frequencies become
+  the plot x-axis and the UI can show the curve itself plus the curve multiplied
+  by the selected IIR transfer stage. These are original IIR controls, not new
+  acquisition features.
+- `measure_transfer_function()` runs the Network Analyzer's saved
+  `iir_measurement` state. The Network Analyzer's `signal()` is its temporarily
+  owned IQ module, so the IIR input must be routed to that concrete IQ during
+  the scan, then its prior input and the IQ setup/ownership must be restored.
+- IIR measurement is a finite, potentially slow control action. FastAPI runs it
+  in a worker thread so it does not block WebSocket and event processing.
+- Hidden or unavailable graph traces cannot be returned as JSON `NaN`. Return
+  `null` and convert it to `NaN` only in the TypeScript plotting boundary;
+  converting `null` directly with `Float32Array.from` would draw a false zero
+  line.
+- IIR overflow is read-only FPGA status at DSP base `+ 0x108`. Preserve the
+  original `OverflowProperty` branch behavior exactly, even though its first
+  nonzero mask makes every nonzero value display `sum and internal saturation`.
+- PyRPL designs IIR coefficients with `inputfilter=0`, then assigns the actual
+  input filter to the model used for plotting. Omitting that second assignment
+  makes the browser accept input-filter edits while drawing the wrong response.
+- The plotted IIR stage must use `_IIRBITS`, `_IIRSHIFT`, and `_IIRSTAGES` read
+  from the loaded FPGA, just like `_setup()`, rather than assuming bitfile
+  defaults.
+- Regression coverage now checks every transfer-stage option, CurveDB overlays,
+  trace visibility, overflow decoding, finite measurement data, restored IIR
+  routing, released IQ ownership, plot navigation, and bounded plot height.

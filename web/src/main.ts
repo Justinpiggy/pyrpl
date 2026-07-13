@@ -1776,6 +1776,8 @@ interface ModuleAttribute {
   type: "select" | "bool" | "number" | "text";
   value: string | number | boolean | number[] | string[];
   options?: Array<string | number>;
+  option_labels?: Record<string, string>;
+  readonly?: boolean;
   min?: number;
   max?: number;
   step?: number;
@@ -2394,7 +2396,7 @@ function populateSelect(select: HTMLSelectElement, attribute: ModuleAttribute): 
   for (const option of attribute.options ?? []) {
     const element = document.createElement("option");
     element.value = String(option);
-    element.textContent = optionLabel(option);
+    element.textContent = attribute.option_labels?.[String(option)] ?? optionLabel(option);
     select.appendChild(element);
   }
   select.value = String(attribute.value);
@@ -2942,6 +2944,13 @@ function createGenericAttributeField(
     });
     input = text;
   }
+  if (attribute.readonly) {
+    if (input instanceof HTMLSelectElement) {
+      input.disabled = true;
+    } else {
+      input.readOnly = true;
+    }
+  }
   input.id = `${moduleName}-${attribute.name.replaceAll("_", "-")}`;
   label.appendChild(input);
   return { label, input };
@@ -3004,6 +3013,13 @@ async function setGenericModuleAttribute(
   statusOutput.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
   if (moduleName === "iir" && iirPlot) {
     await iirPlot.refresh();
+    if (attribute === "data_curve") {
+      const response = await fetch("/api/modules/iir");
+      if (response.ok) {
+        const payload = await response.json();
+        applyGenericModuleState("iir", payload.state ?? {});
+      }
+    }
   }
 }
 
@@ -3014,6 +3030,9 @@ async function callGenericModuleAction(moduleName: string, action: string, statu
   }
   const payload = await response.json();
   applyGenericModuleState(moduleName, payload.state ?? {});
+  if (moduleName === "iir" && iirPlot) {
+    await iirPlot.refresh();
+  }
   statusOutput.textContent = `${action}: ok`;
 }
 

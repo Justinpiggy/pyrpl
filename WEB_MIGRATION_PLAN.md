@@ -197,14 +197,12 @@ Sampler/AMS/status telemetry is complete. With Network Analyzer hardware
 validation deferred until the board is available, the next software-only work
 is:
 
-1. Finish IIR parity: overflow, data/product visibility, measurement plot,
-   `measure_transfer_function`, and `tf_type`.
-2. Close Scope XY/math display behavior and align Scope/Spectrum acquisition
+1. Close Scope XY/math display behavior and align Scope/Spectrum acquisition
    controls with the original PyRPL button state machines.
-3. Complete Lockbox calibration sweeps, assisted design, output transfer
+2. Complete Lockbox calibration sweeps, assisted design, output transfer
    functions, and dynamic custom actions.
-4. Add the PyRPL configuration editor and custom CurveDB backend support.
-5. Complete ARM packaging, dependency audit, security guidance, and CI.
+3. Add the PyRPL configuration editor and custom CurveDB backend support.
+4. Complete ARM packaging, dependency audit, security guidance, and CI.
 
 ## Red Pitaya ARM Deployment Constraints
 
@@ -711,6 +709,10 @@ included as package data.
 - Generic TypeScript panels now support text/list-valued attributes so cascaded
   filters and IIR pole/zero lists can round-trip through the UI.
 - IIR is now selectable from the Panels menu as a standard instrument panel.
+- IIR now includes the complete original plotting surface: selectable CurveDB
+  data and data-times-filter traces, all five `tf_type` stages, measurement
+  trace visibility, read-only overflow status, and Network Analyzer-backed
+  transfer measurement with temporary IQ ownership and full restoration.
 - Sampler and AMS are available through a compact telemetry panel. It preserves
   original signed sampler conversion, `stats()` behavior, and AMS PWM encoding;
   DAC0/DAC1 are read-only while DAC2/DAC3 are writable.

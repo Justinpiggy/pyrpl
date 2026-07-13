@@ -16,6 +16,8 @@ from .asg_registers import disable_asg, sync_asg_setting, sync_asg_settings, tri
 from .config import WebConfig
 from .curve_store import CurveStore
 from .dsp_registers import (
+    make_hardware_iir_filter,
+    read_iir_overflow,
     sync_iir_setting,
     sync_iir_settings,
     sync_iq_phases,
@@ -29,7 +31,7 @@ from .dsp_registers import (
     sync_trig_settings,
 )
 from .hk_registers import read_hk_expansion, sync_hk_setting, sync_hk_settings
-from .iir_plot import iir_plot
+from .iir_plot import iir_plot, transfer_function_by_kind
 from .lockbox import LockboxState, lockbox_actions
 from .monitor_client import DummyClient, MonitorClient
 from .modules import (
@@ -124,6 +126,7 @@ class WebSession:
         self.pid_settings = {f"pid{index}": PidSettings() for index in range(3)}
         self.iq_settings = {f"iq{index}": IqSettings() for index in range(3)}
         self.iir_settings = IirSettings()
+        self.iir_measurement: tuple[np.ndarray, np.ndarray] | None = None
         self.trig_settings = TrigSettings()
         self.pwm_settings = {f"pwm{index}": PwmSettings() for index in range(2)}
         self.spectrum_settings = SpectrumAnalyzerSettings()
@@ -273,7 +276,7 @@ class WebSession:
         if module_name in self.iq_settings:
             return iq_attribute_schema(self.iq_settings[module_name])
         if module_name == "iir":
-            return iir_attribute_schema(self.iir_settings)
+            return iir_attribute_schema(self.iir_settings, self.curves.list(1_000_000))
         if module_name == "trig":
             return trig_attribute_schema(self.trig_settings)
         if module_name in self.pwm_settings:
@@ -301,6 +304,7 @@ class WebSession:
         if module_name in self.iq_settings:
             return self._with_owner(module_name, self.iq_settings[module_name].as_dict())
         if module_name == "iir":
+            _, self.iir_settings.overflow = read_iir_overflow(self.client)
             return self._with_owner(module_name, self.iir_settings.as_dict())
         if module_name == "trig":
             return self._with_owner(module_name, self.trig_settings.as_dict())
@@ -393,6 +397,8 @@ class WebSession:
                 return normalized
             if module_name == "iir":
                 normalized = set_iir_attribute(self.iir_settings, attribute, value)
+                if attribute == "data_curve":
+                    self._select_iir_data_curve_no_lock(normalized)
                 sync_iir_setting(self.client, self.iir_settings, attribute)
                 self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
@@ -448,6 +454,8 @@ class WebSession:
             if module_name == "iir":
                 if action == "setup":
                     sync_iir_settings(self.client, self.iir_settings)
+                elif action == "measure_transfer_function":
+                    self._measure_iir_transfer_function_no_lock()
                 else:
                     raise KeyError(action)
                 return self.iir_settings.as_dict()
@@ -611,7 +619,95 @@ class WebSession:
 
     def iir_plot(self, points: int = 1000) -> dict:
         with self._lock:
-            return iir_plot(self.iir_settings, points)
+            curve = self._iir_data_curve_no_lock()
+            iir_filter = make_hardware_iir_filter(self.client, self.iir_settings)
+            return iir_plot(self.iir_settings, points, curve, self.iir_measurement, iir_filter)
+
+    def _select_iir_data_curve_no_lock(self, pk: int) -> None:
+        if pk < 0:
+            self.iir_settings.data_curve_name = ""
+            return
+        try:
+            curve = self.curves.get(pk)
+        except (OSError, EOFError, TypeError, ValueError):
+            self.iir_settings.data_curve_name = ""
+        else:
+            self.iir_settings.data_curve_name = str(curve.get("name", ""))
+
+    def _iir_data_curve_no_lock(self) -> dict | None:
+        if self.iir_settings.data_curve < 0:
+            return None
+        try:
+            curve = self.curves.get(self.iir_settings.data_curve)
+        except (OSError, EOFError, TypeError, ValueError):
+            return None
+        self.iir_settings.data_curve_name = str(curve.get("name", ""))
+        return curve
+
+    def _measure_iir_transfer_function_no_lock(self) -> None:
+        """Follow PyRPL's IIR measurement routine using the IQ-backed NA."""
+
+        saved_iir_input = self.iir_settings.input
+        saved_network_settings = deepcopy(self.network_analyzer_settings)
+        saved_network_run = deepcopy(self.network_analyzer_run)
+        saved_iq_settings = deepcopy(self.iq_settings)
+        measurement_state = self._module_states["networkanalyzer"].get("iir_measurement")
+        if measurement_state is None:
+            curve = self._iir_data_curve_no_lock()
+            if curve and curve.get("x"):
+                frequencies = [float(value) for value in curve["x"] if float(value) > 0]
+                start_freq = min(frequencies) if frequencies else 100.0
+                stop_freq = max(frequencies) if frequencies else 5e6
+            else:
+                start_freq, stop_freq = 100.0, 5e6
+            measurement_state = {
+                "start_freq": start_freq,
+                "stop_freq": stop_freq,
+                "points": 501,
+                "rbw": 500.0,
+                "average_per_point": 1,
+                "trace_average": 1,
+                "amplitude": 1.0,
+                "input": "iir",
+                "output_direct": "off",
+                "acbandwidth": 100.0,
+                "logscale": True,
+                "run_continuous": False,
+            }
+            self._module_states["networkanalyzer"]["iir_measurement"] = dict(measurement_state)
+            self._persist_saved_states()
+
+        selected_iq: str | None = None
+        try:
+            self._stop_network_analyzer_no_lock()
+            for attribute, value in measurement_state.items():
+                if attribute in NETWORK_ANALYZER_SETUP_ATTRIBUTES:
+                    set_network_analyzer_attribute(self.network_analyzer_settings, attribute, value)
+            self._call_network_analyzer_action_no_lock("single")
+            selected_iq = self.network_analyzer_settings.iq_module
+            if selected_iq is None:
+                raise ValueError("Network Analyzer did not acquire an IQ for IIR measurement")
+            self.iir_settings.input = selected_iq
+            sync_iir_setting(self.client, self.iir_settings, "input")
+            while self.network_analyzer_settings.running_state != "stopped":
+                self._acquire_network_analyzer_point_no_lock()
+            frequencies = self.network_analyzer_run.frequencies.copy()
+            values = self.network_analyzer_run.data.copy()
+            if isinstance(self.client, DummyClient):
+                values = transfer_function_by_kind(self.iir_settings, frequencies, "final")
+            self.iir_measurement = frequencies, values
+        finally:
+            self._stop_network_analyzer_no_lock()
+            self.iir_settings.input = saved_iir_input
+            sync_iir_setting(self.client, self.iir_settings, "input")
+            self.network_analyzer_settings = saved_network_settings
+            self.network_analyzer_settings.running_state = "stopped"
+            self.network_analyzer_settings.iq_module = None
+            self.network_analyzer_settings.run_continuous = False
+            self.network_analyzer_run = saved_network_run
+            if selected_iq is not None:
+                self.iq_settings[selected_iq] = saved_iq_settings[selected_iq]
+                sync_iq_settings(self.client, selected_iq, self.iq_settings[selected_iq])
 
     def sampler_stats(self, signal: str = "in1", duration: float = 1e-2) -> dict:
         with self._lock:
@@ -805,6 +901,8 @@ class WebSession:
             sync_iq_setting(self.client, module_name, settings, attribute)
         elif module_name == "iir":
             set_iir_attribute(self.iir_settings, attribute, value)
+            if attribute == "data_curve":
+                self._select_iir_data_curve_no_lock(self.iir_settings.data_curve)
             sync_iir_setting(self.client, self.iir_settings, attribute)
         elif module_name == "trig":
             set_trig_attribute(self.trig_settings, attribute, value)
@@ -1176,50 +1274,53 @@ class WebSession:
 
     def acquire_network_analyzer_point(self) -> dict | None:
         with self._lock:
-            settings = self.network_analyzer_settings
-            run = self.network_analyzer_run
-            if settings.running_state == "stopped" or settings.iq_module is None:
-                return None
-            index = run.current_point
-            frequency, value, amplitude = acquire_point(
-                self.client,
-                settings.iq_module,
-                self.iq_settings[settings.iq_module],
-                settings,
-                run,
-            )
-            if settings.start_freq == settings.stop_freq:
-                now = time.monotonic()
-                if run.time_first_point is None:
-                    run.time_first_point = now
-                x_value = now - run.time_first_point
-            else:
-                x_value = frequency
-            run.data[index] = (run.data[index] * run.current_avg + value) / (run.current_avg + 1)
-            run.amplitudes[index] = amplitude
-            run.current_point += 1
-            scan_complete = run.current_point >= settings.points
-            if scan_complete:
-                run.current_avg = min(run.current_avg + 1, settings.trace_average)
-                run.current_point = 0
-                if settings.running_state == "running_single" and run.current_avg >= settings.trace_average:
-                    self._stop_network_analyzer_no_lock()
-            settings.current_point = run.current_point
-            settings.current_avg = run.current_avg
-            return {
-                "run_id": run.run_id,
-                "index": index,
-                "x": x_value,
-                "real": float(run.data[index].real),
-                "imag": float(run.data[index].imag),
-                "points": settings.points,
-                "current_avg": run.current_avg,
-                "scan_complete": scan_complete,
-                "logscale": settings.logscale and settings.start_freq != settings.stop_freq,
-                "zero_span": settings.start_freq == settings.stop_freq,
-                "running_state": settings.running_state,
-                "time_per_point": settings.measured_time_per_point,
-            }
+            return self._acquire_network_analyzer_point_no_lock()
+
+    def _acquire_network_analyzer_point_no_lock(self) -> dict | None:
+        settings = self.network_analyzer_settings
+        run = self.network_analyzer_run
+        if settings.running_state == "stopped" or settings.iq_module is None:
+            return None
+        index = run.current_point
+        frequency, value, amplitude = acquire_point(
+            self.client,
+            settings.iq_module,
+            self.iq_settings[settings.iq_module],
+            settings,
+            run,
+        )
+        if settings.start_freq == settings.stop_freq:
+            now = time.monotonic()
+            if run.time_first_point is None:
+                run.time_first_point = now
+            x_value = now - run.time_first_point
+        else:
+            x_value = frequency
+        run.data[index] = (run.data[index] * run.current_avg + value) / (run.current_avg + 1)
+        run.amplitudes[index] = amplitude
+        run.current_point += 1
+        scan_complete = run.current_point >= settings.points
+        if scan_complete:
+            run.current_avg = min(run.current_avg + 1, settings.trace_average)
+            run.current_point = 0
+            if settings.running_state == "running_single" and run.current_avg >= settings.trace_average:
+                self._stop_network_analyzer_no_lock()
+        settings.current_point = run.current_point
+        settings.current_avg = run.current_avg
+        return {
+            "run_id": run.run_id,
+            "index": index,
+            "x": x_value,
+            "real": float(run.data[index].real),
+            "imag": float(run.data[index].imag),
+            "points": settings.points,
+            "current_avg": run.current_avg,
+            "scan_complete": scan_complete,
+            "logscale": settings.logscale and settings.start_freq != settings.stop_freq,
+            "zero_span": settings.start_freq == settings.stop_freq,
+            "running_state": settings.running_state,
+            "time_per_point": settings.measured_time_per_point,
+        }
 
     def _reserve_available_iq_no_lock(self, owner: str) -> str:
         for module_name in ("iq2", "iq1", "iq0"):

@@ -18,6 +18,14 @@ interface IirPlotPayload {
   x: number[];
   magnitude: number[];
   phase: number[];
+  data_magnitude: Array<number | null>;
+  data_phase: Array<number | null>;
+  product_magnitude: Array<number | null>;
+  product_phase: Array<number | null>;
+  measurement_magnitude: Array<number | null>;
+  measurement_phase: Array<number | null>;
+  tf_type: string;
+  data_curve_name: string;
   markers: IirMarker[];
   state: {
     real_poles: number[];
@@ -30,7 +38,13 @@ interface IirPlotPayload {
 type IirAttributeSetter = (attribute: string, value: string | number[] | string[]) => Promise<void>;
 type IirListName = "real_poles" | "real_zeros" | "complex_poles" | "complex_zeros";
 
-const EMPTY_DATA: uPlot.AlignedData = [new Float64Array(0), new Float32Array(0)];
+const EMPTY_DATA = [
+  new Float64Array(0),
+  new Float32Array(0),
+  new Float32Array(0),
+  new Float32Array(0),
+  new Float32Array(0),
+] as unknown as uPlot.AlignedData;
 const IIR_LISTS: Array<{ name: IirListName; label: string; kind: "pole" | "zero"; complex: boolean }> = [
   { name: "complex_poles", label: "Complex Poles", kind: "pole", complex: true },
   { name: "complex_zeros", label: "Complex Zeros", kind: "zero", complex: true },
@@ -112,9 +126,18 @@ export class IirPlot {
     const logX = Float64Array.from(this.latest.x, (value) => Math.log10(Math.max(value, Number.MIN_VALUE)));
     const magnitude = Float32Array.from(this.latest.magnitude);
     const phase = Float32Array.from(this.latest.phase);
+    const dataMagnitude = plotArray(this.latest.data_magnitude);
+    const dataPhase = plotArray(this.latest.data_phase);
+    const productMagnitude = plotArray(this.latest.product_magnitude);
+    const productPhase = plotArray(this.latest.product_phase);
+    const measurementMagnitude = plotArray(this.latest.measurement_magnitude);
+    const measurementPhase = plotArray(this.latest.measurement_phase);
     const shouldResetView = !this.userView || this.magnitudePlot.data[0].length === 0;
-    this.magnitudePlot.setData([logX, magnitude], false);
-    this.phasePlot.setData([logX, phase], false);
+    this.magnitudePlot.setData(
+      [logX, magnitude, dataMagnitude, productMagnitude, measurementMagnitude],
+      false,
+    );
+    this.phasePlot.setData([logX, phase, dataPhase, productPhase, measurementPhase], false);
     if (shouldResetView) {
       this.applyDefaultScales();
     } else {
@@ -122,7 +145,9 @@ export class IirPlot {
     }
     this.renderMarkers();
     this.renderListEditors();
-    this.plotStatus().textContent = `${this.latest.markers.length} pole/zero marker(s)`;
+    const curve = this.latest.data_curve_name ? ` | ${this.latest.data_curve_name}` : "";
+    this.plotStatus().textContent =
+      `${this.latest.tf_type} | ${this.latest.markers.length} pole/zero marker(s)${curve}`;
   }
 
   destroy(): void {
@@ -163,6 +188,22 @@ export class IirPlot {
           label: "Filter design",
           stroke: PLOT_COLORS.yellow,
           width: 2,
+        },
+        {
+          label: "Data curve",
+          stroke: PLOT_COLORS.green,
+          width: 1.5,
+        },
+        {
+          label: "Data x filter",
+          stroke: PLOT_COLORS.red,
+          width: 1.5,
+        },
+        {
+          label: "Measurement",
+          stroke: PLOT_COLORS.orange,
+          width: 0,
+          points: { show: true, size: 4, width: 1, stroke: PLOT_COLORS.orange },
         },
       ],
       hooks: {
@@ -796,6 +837,10 @@ function plotFrameSize(element: HTMLElement): { width: number; height: number } 
     return null;
   }
   return { width, height };
+}
+
+function plotArray(values: Array<number | null>): Float32Array {
+  return Float32Array.from(values, (value) => value === null ? Number.NaN : value);
 }
 
 function markerKey(marker: IirMarker): string {

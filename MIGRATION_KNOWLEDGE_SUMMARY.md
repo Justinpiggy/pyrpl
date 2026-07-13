@@ -68,6 +68,15 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Pole/zero/gain/loops edits must run PyRPL's IIR design routine and write the
   FPGA coefficient RAM at IIR base `+ 0x8000`; updating only the browser plot is
   not a hardware migration.
+- IIR `tf_type` must call the matching original `IirFilter` transfer stage.
+  Selected CurveDB data supplies the plot x-axis and the data/product traces.
+- Apply `inputfilter` to the plot model after coefficient design and use the
+  loaded FPGA's IIR bit/stage constants; these are part of original `_setup()`.
+- IIR transfer measurement uses the Network Analyzer's saved `iir_measurement`
+  state and routes IIR input through the IQ temporarily owned by that analyzer.
+  Always restore the prior input and release/restore the IQ afterward.
+- Send missing graph values as JSON `null`; convert them to `NaN` only at the
+  TypeScript/uPlot boundary so hidden traces remain gaps rather than zero lines.
 
 ## Acquisition/UI Event Rules
 

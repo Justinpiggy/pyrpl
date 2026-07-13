@@ -813,9 +813,22 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.client.fpgamemory[base + 0x104] & 1, 1)
             session.set_module_attribute("iir", "bypass", True)
             self.assertEqual(session.client.fpgamemory[base + 0x104] & 2, 2)
-            self.assertEqual({action["name"] for action in session.module_actions("iir")}, {"setup"})
+            self.assertEqual(
+                {action["name"] for action in session.module_actions("iir")},
+                {"setup", "measure_transfer_function"},
+            )
             with self.assertRaises(KeyError):
                 session.call_module_action("iir", "unity")
+
+            overflow_addr = base + 0x108
+            for value, expected in (
+                (0x00, "no overflow"),
+                (0x01, "sum and internal saturation"),
+                (0x40, "sum and internal saturation"),
+                (0x41, "sum and internal saturation"),
+            ):
+                session.client.fpgamemory[overflow_addr] = value
+                self.assertEqual(session.module_state("iir")["overflow"], expected)
         finally:
             session.close()
 
@@ -834,8 +847,99 @@ class WebAppTest(unittest.TestCase):
             self.assertIn(("real_poles", 0), markers)
             self.assertIn(("real_zeros", 0), markers)
             self.assertIn(("complex_poles", 0), markers)
+            before_filter = np.asarray(plot["magnitude"])
+            session.set_module_attribute("iir", "inputfilter", "1000")
+            after_filter = np.asarray(session.iir_plot(points=128)["magnitude"])
+            self.assertFalse(np.allclose(before_filter, after_filter))
+
+            attributes = {attribute["name"]: attribute for attribute in session.module_attributes("iir")}
+            self.assertTrue(attributes["overflow"]["readonly"])
+            self.assertTrue(attributes["data_curve_name"]["readonly"])
+            self.assertEqual(
+                attributes["tf_type"]["options"],
+                ["continuous", "discrete", "coefficients", "rounded", "final"],
+            )
+            for name in ("data_curve", "plot_data", "plot_data_times_filter", "plot_measurement"):
+                self.assertIn(name, attributes)
         finally:
             session.close()
+
+    def test_session_iir_curve_overlays_and_transfer_function_stages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session = WebSession(
+                ServerSettings(
+                    hostname="_FAKE_",
+                    curve_dir=directory,
+                    state_file=str(Path(directory) / "states.json"),
+                )
+            )
+            try:
+                frequencies = np.logspace(2, 5, 40)
+                response = 1.0 / (1.0 + 1j * frequencies / 2000.0)
+                curve = session.create_curve(
+                    frequencies.tolist(),
+                    response.real.tolist(),
+                    response.imag.tolist(),
+                    {"name": "reference response", "module": "networkanalyzer"},
+                )
+                session.set_module_attribute("iir", "real_poles", "-1234")
+                session.set_module_attribute("iir", "real_zeros", "-321")
+                session.set_module_attribute("iir", "data_curve", curve["pk"])
+                plot = session.iir_plot(points=128)
+                self.assertEqual(plot["x"], frequencies.tolist())
+                self.assertEqual(plot["data_curve_name"], "reference response")
+                self.assertTrue(all(value is not None for value in plot["data_magnitude"]))
+                self.assertTrue(all(value is not None for value in plot["product_magnitude"]))
+
+                final_magnitude = np.asarray(plot["magnitude"])
+                session.set_module_attribute("iir", "tf_type", "continuous")
+                continuous = np.asarray(session.iir_plot(points=128)["magnitude"])
+                self.assertFalse(np.allclose(final_magnitude, continuous))
+
+                session.set_module_attribute("iir", "plot_data", False)
+                session.set_module_attribute("iir", "plot_data_times_filter", False)
+                hidden = session.iir_plot(points=128)
+                self.assertTrue(all(value is None for value in hidden["data_magnitude"]))
+                self.assertTrue(all(value is None for value in hidden["product_magnitude"]))
+            finally:
+                session.close()
+
+    def test_session_iir_measurement_uses_and_releases_network_analyzer_iq(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session = WebSession(
+                ServerSettings(
+                    hostname="_FAKE_",
+                    curve_dir=directory,
+                    state_file=str(Path(directory) / "states.json"),
+                )
+            )
+            try:
+                session.set_module_attribute("iir", "input", "in2")
+                session._module_states["networkanalyzer"]["iir_measurement"] = {
+                    "start_freq": 100.0,
+                    "stop_freq": 1e5,
+                    "points": 24,
+                    "rbw": 500.0,
+                    "average_per_point": 1,
+                    "trace_average": 1,
+                    "amplitude": 1.0,
+                    "input": "iir",
+                    "output_direct": "off",
+                    "acbandwidth": 100.0,
+                    "logscale": True,
+                    "run_continuous": False,
+                }
+                session.call_module_action("iir", "measure_transfer_function")
+                self.assertEqual(session.iir_settings.input, "in2")
+                self.assertEqual(session.network_analyzer_settings.running_state, "stopped")
+                self.assertIsNone(session.network_analyzer_settings.iq_module)
+                self.assertFalse(any(owner == "networkanalyzer" for owner in session.module_owners.values()))
+                self.assertIsNotNone(session.iir_measurement)
+                self.assertEqual(len(session.iir_measurement[0]), 24)
+                plot = session.iir_plot(points=64)
+                self.assertTrue(any(value is not None for value in plot["measurement_magnitude"]))
+            finally:
+                session.close()
 
     def test_session_trig_and_pwm_registers_follow_pyrpl_layout(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))

@@ -84,6 +84,11 @@ async function resetServerConfig(page: Page): Promise<void> {
   await setModuleAttribute(page, "iir", "complex_poles", "");
   await setModuleAttribute(page, "iir", "complex_zeros", "");
   await setModuleAttribute(page, "iir", "inputfilter", "");
+  await setModuleAttribute(page, "iir", "data_curve", -1);
+  await setModuleAttribute(page, "iir", "plot_data", true);
+  await setModuleAttribute(page, "iir", "plot_data_times_filter", true);
+  await setModuleAttribute(page, "iir", "plot_measurement", true);
+  await setModuleAttribute(page, "iir", "tf_type", "final");
   await setModuleAttribute(page, "spectrumanalyzer", "trace_average", 1);
   await setModuleAttribute(page, "spectrumanalyzer", "baseband", true);
 }
@@ -548,6 +553,16 @@ test("PID IQ IIR trigger and PWM panels expose migrated DSP controls", async ({ 
   });
 
   await resetServerConfig(page);
+  const curveResponse = await page.request.post("/api/curves", {
+    data: {
+      x: [100, 300, 1000, 3000, 10000, 30000, 100000],
+      y: [0.999, 0.989, 0.894, 0.555, 0.196, 0.0665, 0.02],
+      y_imag: [-0.05, -0.148, -0.447, -0.832, -0.981, -0.998, -1.0],
+      params: { name: "IIR browser reference", module: "networkanalyzer" },
+    },
+  });
+  expect(curveResponse.ok()).toBe(true);
+  const curvePk = (await curveResponse.json()).curve.pk as number;
   await page.goto("/");
   for (const panelId of ["pid", "iq", "iir", "trig", "pwm"]) {
     await page.locator(".menu-dropdown summary").click();
@@ -646,6 +661,33 @@ test("PID IQ IIR trigger and PWM panels expose migrated DSP controls", async ({ 
   await page.locator("#iir-inputfilter").fill("1000, 0, -2000");
   await page.locator("#iir-inputfilter").blur();
   await expect(page.locator("#iir-status")).toContainText("inputfilter = 1000, 0, -2000");
+  await expect(page.locator("#iir-overflow")).toHaveAttribute("readonly", "");
+  await page.locator("#iir-data-curve").selectOption(String(curvePk));
+  await expect(page.locator("#iir-data-curve-name")).toHaveValue("IIR browser reference");
+  await expect(page.locator(".iir-plot-status")).toContainText("IIR browser reference");
+  const curvePlotResponse = await page.request.get("/api/modules/iir/plot?points=128");
+  expect(curvePlotResponse.ok()).toBe(true);
+  const curvePlot = await curvePlotResponse.json();
+  expect(curvePlot.x).toHaveLength(7);
+  expect(curvePlot.data_magnitude.every((value: number | null) => value !== null)).toBe(true);
+  expect(curvePlot.product_magnitude.every((value: number | null) => value !== null)).toBe(true);
+  await page.locator("#iir-tf-type").selectOption("continuous");
+  await expect(page.locator(".iir-plot-status")).toContainText("continuous");
+  await page.locator("#iir-plot-data").setChecked(false);
+  const hiddenCurveResponse = await page.request.get("/api/modules/iir/plot?points=128");
+  expect(hiddenCurveResponse.ok()).toBe(true);
+  const hiddenCurvePlot = await hiddenCurveResponse.json();
+  expect(hiddenCurvePlot.data_magnitude.every((value: number | null) => value === null)).toBe(true);
+  await page.locator("[data-module='iir']").getByRole("button", { name: "Measure Transfer Function" }).click();
+  await expect(page.locator("#iir-status")).toContainText(/measure_transfer_function: ok|iir state updated/);
+  const measuredPlotResponse = await page.request.get("/api/modules/iir/plot?points=128");
+  expect(measuredPlotResponse.ok()).toBe(true);
+  const measuredPlot = await measuredPlotResponse.json();
+  expect(measuredPlot.measurement_magnitude.some((value: number | null) => value !== null)).toBe(true);
+  const iqStates = await Promise.all(
+    ["iq0", "iq1", "iq2"].map(async (name) => (await (await page.request.get(`/api/modules/${name}`)).json()).state),
+  );
+  expect(iqStates.every((state) => state.owner === null)).toBe(true);
   await expect(page.locator("[data-module='iir']").getByRole("button", { name: "Unity" })).toHaveCount(0);
   await expect(page.locator("[data-module='iir']").getByRole("button", { name: "Zero" })).toHaveCount(0);
 
