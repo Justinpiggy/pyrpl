@@ -814,12 +814,23 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   expect(Math.abs(spanBoxAfterModeSwitch!.x - spanBoxBeforeModeSwitch!.x)).toBeLessThan(12);
   await page.locator("#spectrumanalyzer-baseband").setChecked(true);
   await expect(page.locator("#spectrumanalyzer-input")).toBeHidden();
+  await expect(page.locator("#spectrumanalyzer-rbw")).toBeVisible();
+  const rbwBeforeSpan = await page.locator("#spectrumanalyzer-rbw").inputValue();
+  const currentSpan = await page.locator("#spectrumanalyzer-span").inputValue();
+  const differentSpan = await page.locator("#spectrumanalyzer-span option").evaluateAll(
+    (options, current) => options.map((option) => (option as HTMLOptionElement).value).find((value) => value !== current),
+    currentSpan,
+  );
+  await page.locator("#spectrumanalyzer-span").selectOption(differentSpan!);
+  await expect.poll(() => page.locator("#spectrumanalyzer-rbw").inputValue()).not.toBe(rbwBeforeSpan);
   await page.locator("#spectrumanalyzer-trace-average").fill("4");
   await page.locator("#spectrumanalyzer-trace-average").blur();
   await expect(page.locator("#spectrumanalyzer-status")).toContainText("trace_average = 4");
   await expect(page.locator("#connect-scope")).toHaveText("Pause");
   await page.locator("#spectrum-run").click();
-  await expect(page.locator("#spectrum-run")).toHaveText("Stop");
+  await expect(page.locator("#spectrum-run")).toHaveText("Pause");
+  await expect(page.locator("#spectrum-single")).toBeDisabled();
+  await expect(page.locator("#spectrum-stop")).toBeEnabled();
   await expect(page.locator("#connect-scope")).toHaveText("Run continuous");
   await expect(page.locator("#status")).toContainText("Spectrum owns the scope resource");
   await expect(page.locator("#spectrum-status")).toContainText(/Spectrum frame|Spectrum stream connected/);
@@ -870,8 +881,8 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
 
   await page.getByRole("button", { name: "IQ" }).click();
   await expect(page.locator("#iq-panel")).toBeVisible();
-  await expect(page.locator("#iq2-frequency")).toBeDisabled();
-  await expect(page.locator("[data-module='iq2']")).toHaveClass(/is-owned/);
+  await expect(page.locator("#iq2-frequency")).toBeEnabled();
+  await expect(page.locator("[data-module='iq2']")).not.toHaveClass(/is-owned/);
 
   await page.getByRole("button", { name: "Scope" }).click();
   await page.locator("#connect-scope").click();
@@ -884,10 +895,26 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   await page.getByRole("button", { name: "Spectrum Analyzer" }).click();
   await expect(page.locator("#spectrumanalyzer-panel")).toBeVisible();
   await page.locator("#spectrum-run").click();
-  await expect(page.locator("#spectrum-run")).toHaveText("Stop");
+  await expect(page.locator("#spectrum-run")).toHaveText("Pause");
   await expect(page.locator("#connect-scope")).toHaveText("Run continuous");
-  await page.locator("#spectrum-run").click();
-  await expect(page.locator("#spectrum-run")).toHaveText("Run");
+  await page.locator("#spectrum-stop").click();
+  await expect(page.locator("#spectrum-run")).toHaveText("Run continuous");
+  await expect(page.locator("#spectrum-stop")).toBeDisabled();
+
+  await page.locator("#spectrumanalyzer-trace-average").fill("3");
+  await page.locator("#spectrumanalyzer-trace-average").blur();
+  await expect(page.locator("#spectrumanalyzer-status")).toContainText("trace_average = 3");
+  await page.locator("#spectrum-single").click();
+  await expect(page.locator("#spectrum-single")).toHaveText("Pause");
+  await expect.poll(async () => {
+    const response = await page.request.get("/api/modules/spectrumanalyzer");
+    const payload = await response.json();
+    return payload.state.current_avg;
+  }).toBe(3);
+  await expect(page.locator("#spectrum-status")).toContainText("Spectrum frame 2");
+  await expect(page.locator("#spectrum-current-average")).toHaveText("3 / 3");
+  await expect(page.locator("#spectrum-single")).toHaveText("Run single");
+  await expect(page.locator("#spectrum-stop")).toBeDisabled();
   await page.getByRole("button", { name: "IQ" }).click();
   await expect(page.locator("#iq2-frequency")).toBeEnabled();
 });

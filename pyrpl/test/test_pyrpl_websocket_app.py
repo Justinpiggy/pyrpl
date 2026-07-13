@@ -31,6 +31,7 @@ from pyrpl_websocket.hk_registers import (
 )
 from pyrpl_websocket.lockbox import LockboxSchemaLibrary, LockboxState
 from pyrpl_websocket.monitor_client import MonitorStats
+from pyrpl_websocket.modules import SPECTRUM_SPANS
 from pyrpl_websocket.scope import SCOPE_ADDR_BASE, SCOPE_CH1_OFFSET, SCOPE_CH2_OFFSET, SCOPE_DATA_LENGTH
 from pyrpl_websocket.session import WebSession
 from pyrpl_websocket.settings import ServerSettings
@@ -721,11 +722,16 @@ class WebAppTest(unittest.TestCase):
     def test_spectrum_analyzer_owns_and_releases_scope_and_iq2(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))
         try:
+            baseband = session.call_module_action("spectrumanalyzer", "continuous")
+            self.assertEqual(baseband["resources"], ["scope"])
+            self.assertIsNone(session.module_state("iq2")["owner"])
+            session.call_module_action("spectrumanalyzer", "stop")
+
             session.set_module_attribute("spectrumanalyzer", "baseband", False)
             self.assertIsNone(session.module_state("scope")["owner"])
             self.assertIsNone(session.module_state("iq2")["owner"])
 
-            state = session.call_module_action("spectrumanalyzer", "setup")
+            state = session.call_module_action("spectrumanalyzer", "continuous")
             self.assertEqual(state["resources"], ["iq2", "scope"])
             self.assertEqual(session.module_state("iq2")["owner"], "spectrumanalyzer")
             self.assertEqual(session.module_state("scope")["owner"], "spectrumanalyzer")
@@ -734,11 +740,49 @@ class WebAppTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 session.call_module_action("scope", "continuous")
 
-            released = session.call_module_action("spectrumanalyzer", "release")
-            self.assertEqual(released["resources"], [])
+            paused = session.call_module_action("spectrumanalyzer", "pause")
+            self.assertEqual(paused["running_state"], "paused_continuous")
+            self.assertEqual(paused["resources"], ["iq2"])
+            self.assertIsNone(session.acquire_spectrum_scope_frame(0, 1024))
+            resumed = session.call_module_action("spectrumanalyzer", "resume_continuous")
+            self.assertEqual(resumed["resources"], ["iq2", "scope"])
+
+            stopped = session.call_module_action("spectrumanalyzer", "stop")
+            self.assertEqual(stopped["resources"], [])
             self.assertIsNone(session.module_state("iq2")["owner"])
             self.assertIsNone(session.module_state("scope")["owner"])
             session.set_module_attribute("iq2", "frequency", 1e6)
+        finally:
+            session.close()
+
+    def test_spectrum_analyzer_rbw_and_single_average_follow_pyrpl(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            attributes = {item["name"]: item for item in session.module_attributes("spectrumanalyzer")}
+            self.assertIn("rbw", attributes)
+            self.assertNotIn("setup", {action["name"] for action in session.module_actions("spectrumanalyzer")})
+            self.assertNotIn("release", {action["name"] for action in session.module_actions("spectrumanalyzer")})
+            initial_rbw = session.spectrum_settings.rbw
+            session.set_module_attribute("spectrumanalyzer", "window", "flattop")
+            self.assertNotEqual(session.spectrum_settings.rbw, initial_rbw)
+            updated_attributes = {item["name"]: item for item in session.module_attributes("spectrumanalyzer")}
+            selected_rbw = updated_attributes["rbw"]["options"][5]
+            session.set_module_attribute("spectrumanalyzer", "rbw", selected_rbw)
+            self.assertEqual(session.spectrum_settings.span, SPECTRUM_SPANS[5])
+
+            session.set_module_attribute("spectrumanalyzer", "trace_average", 3)
+            started = session.call_module_action("spectrumanalyzer", "single")
+            self.assertEqual(started["running_state"], "running_single")
+            self.assertEqual(started["current_avg"], 0)
+            self.assertIsNotNone(session.acquire_spectrum_scope_frame(0, 1024))
+            self.assertIsNotNone(session.acquire_spectrum_scope_frame(1, 1024))
+            self.assertEqual(session.spectrum_settings.running_state, "running_single")
+            self.assertEqual(session.spectrum_settings.current_avg, 2)
+            self.assertIsNotNone(session.acquire_spectrum_scope_frame(2, 1024))
+            self.assertEqual(session.spectrum_settings.running_state, "stopped")
+            self.assertEqual(session.spectrum_settings.current_avg, 3)
+            self.assertEqual(session.module_state("spectrumanalyzer")["resources"], [])
+            self.assertIsNone(session.acquire_spectrum_scope_frame(3, 1024))
         finally:
             session.close()
 
@@ -758,10 +802,11 @@ class WebAppTest(unittest.TestCase):
     def test_spectrum_analyzer_control_message_reports_resource_conflict(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))
         try:
+            session.set_module_attribute("spectrumanalyzer", "baseband", False)
             setup = asyncio.run(
                 handle_control_message(
                     session,
-                    {"id": 1, "type": "module.action", "module": "spectrumanalyzer", "action": "setup"},
+                    {"id": 1, "type": "module.action", "module": "spectrumanalyzer", "action": "continuous"},
                 )
             )
             self.assertTrue(setup["ok"])
@@ -1434,16 +1479,19 @@ class WebAppTest(unittest.TestCase):
         session = WebSession(ServerSettings(hostname="_FAKE_"))
         events = EventBroker()
         queue = events.subscribe()
+        actions = []
         try:
             response = asyncio.run(
                 handle_control_message(
                     session,
                     {"id": 8, "type": "module.action", "module": "scope", "action": "continuous"},
                     events,
+                    lambda module, action: actions.append((module, action)),
                 )
             )
             self.assertTrue(response["ok"])
             self.assertEqual(response["state"]["running_state"], "running_continuous")
+            self.assertEqual(actions, [("scope", "continuous")])
 
             action_event = queue.get_nowait()
             self.assertEqual(action_event["type"], "module.action")

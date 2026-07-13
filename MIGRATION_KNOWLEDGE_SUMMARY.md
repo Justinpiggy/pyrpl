@@ -120,6 +120,21 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   gutters interfere with workspace selectors and are sized from zero geometry.
 - Do not overwrite a focused form input with an older asynchronous state event.
   Apply remote values after the user's edit has committed.
+- Spectrum Analyzer follows the shared AcquisitionModule state machine: Run
+  single collects `trace_average` frames, continuous uses a capped moving
+  average, Pause preserves the accumulated data, Resume can choose either
+  mode, and Stop is separate. Do not replace this with a timer or Run/Stop
+  toggle.
+- Spectrum RBW is `span * sum(window^2) / sum(window)^2` for the 16,384-point
+  Scope buffer. Span and RBW select the same decimation; changing the window
+  refreshes RBW. Baseband uses Scope only, while IQ mode also owns IQ2.
+- A browser WebSocket close may leave an idle server loop alive until its next
+  send. Give every shared acquisition stream, including Scope and Spectrum, a
+  server-side generation and check it before and after hardware acquisition so
+  retired loops cannot consume frames from a later run. Invalidate generations
+  for acquisition start/resume actions over REST and control WebSocket alike,
+  and explicitly reconnect the active client afterward. Client handlers must
+  likewise ignore non-current socket objects.
 - Static uPlot canvases must not intercept clicks intended for controls that
   become adjacent after responsive scrolling. Disable pointer events on the
   entire static plot subtree, and rebuild `web/dist` before Playwright tests

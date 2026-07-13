@@ -248,8 +248,9 @@ app.innerHTML = `
           </div>
           <div class="actions">
             <div class="action-row">
-              <button id="spectrum-single" type="button">Single</button>
-              <button id="spectrum-run" type="button">Run</button>
+              <button id="spectrum-single" type="button">Run single</button>
+              <button id="spectrum-run" type="button">Run continuous</button>
+              <button id="spectrum-stop" type="button" disabled>Stop</button>
               <input id="spectrum-curve-name" class="curve-name-input" type="text" value="pyrpl spectrum" aria-label="Curve Name" />
               <button id="spectrum-save-curve" type="button">Save Curve</button>
             </div>
@@ -272,7 +273,8 @@ app.innerHTML = `
           </section>
           <section class="plot-panel spectrum-plot-panel split-pane" id="spectrum-plot-pane">
             <div class="plot-toolbar">
-              <output id="spectrum-plot-hint">Drag pans. Right-drag zooms X/Y. Stop frees IQ2.</output>
+              <output id="spectrum-plot-hint">Drag pans. Right-drag zooms X/Y.</output>
+              <output id="spectrum-current-average">0 / 1</output>
               <output id="spectrum-status">Spectrum analyzer ready</output>
             </div>
             <div id="spectrum-plot"></div>
@@ -1846,6 +1848,8 @@ const spectrumPlotHost = requireElement<HTMLDivElement>("#spectrum-plot");
 const spectrumStatus = requireElement<HTMLOutputElement>("#spectrum-status");
 const spectrumSingleButton = requireElement<HTMLButtonElement>("#spectrum-single");
 const spectrumRunButton = requireElement<HTMLButtonElement>("#spectrum-run");
+const spectrumStopButton = requireElement<HTMLButtonElement>("#spectrum-stop");
+const spectrumCurrentAverage = requireElement<HTMLOutputElement>("#spectrum-current-average");
 const spectrumSaveCurveButton = requireElement<HTMLButtonElement>("#spectrum-save-curve");
 const spectrumCurveName = requireElement<HTMLInputElement>("#spectrum-curve-name");
 const spectrumZoomOutButton = requireElement<HTMLButtonElement>("#spectrum-zoom-out");
@@ -2034,11 +2038,15 @@ let stream = new ScopeStream(
 );
 let spectrumPlot = new SpectrumPlot(spectrumPlotHost, (message) => {
   spectrumStatus.textContent = message;
+}, (currentAverage) => {
+  const traceAverage = genericModuleControls.get("spectrumanalyzer")?.inputs.get("trace_average");
+  spectrumCurrentAverage.textContent = `${currentAverage} / ${traceAverage?.value || "1"}`;
 });
 let iirPlot: IirPlot | null = null;
 let eventSocket: WebSocket | null = null;
 let eventCount = 0;
 let runningState = "stopped";
+let spectrumRunningState = "stopped";
 let workspaceState = loadWorkspaceState();
 let currentSession: { fake: boolean } | null = null;
 let scopeSplit: Split.Instance | null = null;
@@ -2488,6 +2496,35 @@ function updateScopeAcquisitionButtons(state: string): void {
   }
 }
 
+function setSpectrumRunningState(state: string): void {
+  spectrumRunningState = state;
+  if (state === "running_continuous") {
+    spectrumRunButton.textContent = "Pause";
+    spectrumRunButton.disabled = false;
+    spectrumSingleButton.textContent = "Run single";
+    spectrumSingleButton.disabled = true;
+    spectrumStopButton.disabled = false;
+  } else if (state === "running_single") {
+    spectrumRunButton.textContent = "Run continuous";
+    spectrumRunButton.disabled = true;
+    spectrumSingleButton.textContent = "Pause";
+    spectrumSingleButton.disabled = false;
+    spectrumStopButton.disabled = false;
+  } else if (state === "paused_single" || state === "paused_continuous") {
+    spectrumRunButton.textContent = "Resume continuous";
+    spectrumRunButton.disabled = false;
+    spectrumSingleButton.textContent = "Resume single";
+    spectrumSingleButton.disabled = false;
+    spectrumStopButton.disabled = false;
+  } else {
+    spectrumRunButton.textContent = "Run continuous";
+    spectrumRunButton.disabled = false;
+    spectrumSingleButton.textContent = "Run single";
+    spectrumSingleButton.disabled = false;
+    spectrumStopButton.disabled = true;
+  }
+}
+
 function startStream(): void {
   if (connectButton.dataset.connected === "true") {
     return;
@@ -2519,6 +2556,9 @@ async function callScopeAction(action: string): Promise<Record<string, unknown>>
   const state = payload.state as { running_state?: string; last_action?: string };
   if (state.running_state) {
     setRunningState(state.running_state);
+  }
+  if (["single", "continuous", "resume_single", "resume_continuous"].includes(action)) {
+    stream.reconnect();
   }
   moduleStatus.textContent = `${action}: ${state.running_state ?? "ok"}`;
   return payload;
@@ -3236,6 +3276,7 @@ function orderSpectrumAttributes(attributes: ModuleAttribute[]): ModuleAttribute
     "acbandwidth",
     "display_cross_amplitude",
     "span",
+    "rbw",
     "window",
     "display_unit",
     "trace_average",
@@ -3286,6 +3327,13 @@ function applyGenericModuleState(moduleName: string, state: ModuleState): void {
   if (moduleName === "spectrumanalyzer") {
     spectrumPlot.setSettings(state);
     applySpectrumFieldVisibility(state);
+    if (typeof state.running_state === "string") {
+      setSpectrumRunningState(state.running_state);
+    }
+    if (typeof state.current_avg === "number") {
+      const traceAverage = genericModuleControls.get("spectrumanalyzer")?.inputs.get("trace_average");
+      spectrumCurrentAverage.textContent = `${state.current_avg} / ${traceAverage?.value || "1"}`;
+    }
     if (document.activeElement !== spectrumCurveName && typeof state.curve_name === "string") {
       spectrumCurveName.value = state.curve_name;
     }
@@ -3491,7 +3539,7 @@ async function callSpectrumAction(action: string): Promise<Record<string, unknow
   }
   const payload = await response.json();
   const state = payload.state as { running_state?: string; last_action?: string };
-  spectrumPlot.setSettings((payload.state ?? {}) as Record<string, unknown>);
+  applyGenericModuleState("spectrumanalyzer", (payload.state ?? {}) as ModuleState);
   spectrumStatus.textContent = `${action}: ${state.running_state ?? "ok"}`;
   return payload;
 }
@@ -3564,13 +3612,11 @@ function startSpectrumStream(): void {
   }
   spectrumPlot.connect();
   spectrumRunButton.dataset.connected = "true";
-  spectrumRunButton.textContent = "Stop";
 }
 
 function stopSpectrumStream(message = "Spectrum stopped"): void {
   spectrumPlot.close();
   spectrumRunButton.dataset.connected = "false";
-  spectrumRunButton.textContent = "Run";
   spectrumStatus.textContent = message;
 }
 
@@ -3708,15 +3754,20 @@ zoomResetButton.addEventListener("click", () => stream.resetZoom());
 spectrumSingleButton.addEventListener("click", () => {
   void (async () => {
     try {
-      await stopScopeForSpectrum();
-      await callSpectrumAction("single");
-      spectrumPlot.connect();
-      window.setTimeout(() => {
-        spectrumPlot.close();
-        callSpectrumAction("stop").catch((error: Error) => {
-          spectrumStatus.textContent = error.message;
-        });
-      }, 300);
+      if (spectrumRunningState === "running_single") {
+        await callSpectrumAction("pause");
+        stopSpectrumStream("Spectrum paused");
+      } else if (spectrumRunningState === "paused_single" || spectrumRunningState === "paused_continuous") {
+        stopSpectrumStream("Reconnecting spectrum stream");
+        await callSpectrumAction("resume_single");
+        startSpectrumStream();
+      } else {
+        await stopScopeForSpectrum();
+        stopSpectrumStream("Starting spectrum acquisition");
+        spectrumPlot.resetAveraging();
+        await callSpectrumAction("single");
+        startSpectrumStream();
+      }
     } catch (error) {
       spectrumStatus.textContent = error instanceof Error ? error.message : String(error);
     }
@@ -3726,18 +3777,32 @@ spectrumSingleButton.addEventListener("click", () => {
 spectrumRunButton.addEventListener("click", () => {
   void (async () => {
     try {
-      if (spectrumRunButton.dataset.connected === "true") {
-        await callSpectrumAction("stop");
-        stopSpectrumStream();
-        return;
+      if (spectrumRunningState === "running_continuous") {
+        await callSpectrumAction("pause");
+        stopSpectrumStream("Spectrum paused");
+      } else if (spectrumRunningState === "paused_single" || spectrumRunningState === "paused_continuous") {
+        stopSpectrumStream("Reconnecting spectrum stream");
+        await callSpectrumAction("resume_continuous");
+        startSpectrumStream();
+      } else {
+        await stopScopeForSpectrum();
+        stopSpectrumStream("Starting spectrum acquisition");
+        spectrumPlot.resetAveraging();
+        await callSpectrumAction("continuous");
+        startSpectrumStream();
       }
-      await stopScopeForSpectrum();
-      await callSpectrumAction("continuous");
-      startSpectrumStream();
     } catch (error) {
       spectrumStatus.textContent = error instanceof Error ? error.message : String(error);
     }
   })();
+});
+
+spectrumStopButton.addEventListener("click", () => {
+  callSpectrumAction("stop")
+    .then(() => stopSpectrumStream())
+    .catch((error: Error) => {
+      spectrumStatus.textContent = error.message;
+    });
 });
 
 spectrumSaveCurveButton.addEventListener("click", () => {

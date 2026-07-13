@@ -200,8 +200,9 @@ until the board is available, the next software-only work is:
 1. Complete dynamic execution of arbitrary custom Lockbox model methods. The
    original fixed actions, per-input calibration sweeps, stage execution,
    assisted design, and output transfer-function plots are migrated.
-2. Align the remaining Spectrum Analyzer acquisition controls and RBW display
-   with the original PyRPL widget.
+2. Move Spectrum Analyzer's original 16x FFT zero-padding into a browser Web
+   Worker and validate the final normalization on hardware. Acquisition controls,
+   linked RBW/span behavior, and browser-side averaging are migrated.
 3. Add the PyRPL configuration editor and custom CurveDB backend support.
 4. Complete ARM packaging, dependency audit, security guidance, and CI.
 

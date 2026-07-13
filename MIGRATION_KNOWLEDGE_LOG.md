@@ -5,6 +5,58 @@ and implementing the PyRPL web-interface migration. Future work should update
 this file whenever new architecture, protocol, performance, or tooling knowledge
 is discovered.
 
+## 2026-07-13 Spectrum Acquisition And RBW Parity
+
+### PyRPL Reference
+
+- `SpectrumAnalyzer` inherits the full `AcquisitionModule` state machine. Run
+  single collects `trace_average` frames, Run continuous performs a moving
+  average, either run can be paused, paused data can resume into either mode,
+  and Stop remains a separate button.
+- `rbw` and `span` are two views of the same Scope decimation. PyRPL computes
+  RBW as `span * sum(window**2) / sum(window)**2` for the 16,384-point Scope
+  buffer and refreshes it when the window changes.
+- Baseband mode routes two selected signals directly through Scope and does not
+  access IQ2. Non-baseband mode configures and owns the customized IQ2 path.
+- FFT, trace averaging, and display-unit conversion happen on the desktop side
+  in original PyRPL. In the web migration they belong in the browser, not on
+  the Red Pitaya ARM server.
+
+### Migration
+
+- Replaced the 300 ms single-shot timer and Run/Stop toggle with the original
+  acquisition states and button transitions. Single completion now occurs only
+  after the requested number of frames, then releases resources after sending
+  the final capture.
+- Added linked RBW/span selectors, exact window ENBW calculations, a visible
+  current-average counter, full 16,384-sample Scope frames, and exact PyRPL unit
+  conversions.
+- Baseband now owns only Scope; IQ mode additionally owns IQ2. Pause sends no
+  data and releases Scope while preserving the accumulated average.
+- Added client socket identity checks and a server stream generation so closed
+  idle WebSockets cannot consume acquisitions from a later run.
+
+### Mistake Prevention
+
+- Never implement an acquisition-module single action as an already-paused
+  state plus a timeout. Completion is determined by the original averaging
+  loop, not wall-clock guesswork.
+- Closing a browser WebSocket does not guarantee an idle FastAPI loop observes
+  the close before the hardware starts again. Invalidate old generations at
+  the action boundary and check generation before and after each blocking
+  acquisition.
+- Event and binary WebSockets have no cross-socket ordering guarantee. A
+  terminal state event must not reset or close a data stream before queued
+  final frames have been processed.
+
+### Remaining Gap
+
+Original PyRPL zero-pads Spectrum FFTs by `PADDING_FACTOR = 16`. Applying that
+to every 16,384-point browser frame would transform and plot 262,144 points on
+the UI thread. Preserve responsiveness first: migrate the padding into a
+browser Web Worker and validate its normalization on hardware rather than
+silently adding a large synchronous workload.
+
 ## 2026-07-13 Lockbox Calibration And Output-Design Parity
 
 ### PyRPL Reference
@@ -3102,3 +3154,23 @@ conda run -n pyrpl-env npm run test:e2e
   single trace averaging and latch behavior, continuous pause/resume, original
   rolling restrictions/time axis, CSV data, plot interaction, and stable
   layout.
+
+## 2026-07-13 Retired Scope Stream Consumer Regression
+
+- The full browser suite found Scope single acquisition paused at backend
+  average 3 while the active plot remained at average 2. A retired server-side
+  Scope WebSocket loop had not yet observed the browser close and consumed the
+  final frame, exactly like the earlier Spectrum failure.
+- Socket identity checks in TypeScript protect the browser from stale incoming
+  handlers, but cannot stop a stale server coroutine from reading shared
+  hardware. Scope and Spectrum now both use server generation tokens checked
+  before and after acquisition. REST or control-WebSocket start/resume actions
+  invalidate old generations, and the active browser reconnects afterward.
+- Invalidating on Pause or Stop was too broad: it retired the only active
+  transport, while later setup edits expected that transport to continue.
+  Generation changes belong to start/resume boundaries (and newly accepted
+  sockets); pause and stop only change acquisition state.
+- Apply this rule to every future stream that consumes a singleton instrument:
+  browser close is advisory, while server-side generation or cancellation is
+  the ownership boundary. Strategic multi-step browser tests must verify the
+  active plot receives every frame in a finite averaged acquisition.

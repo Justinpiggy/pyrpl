@@ -6,7 +6,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -77,6 +77,7 @@ async def handle_control_message(
     session: WebSession,
     message: dict[str, Any],
     events: EventBroker | None = None,
+    on_module_action: Callable[[str, str], None] | None = None,
 ) -> dict[str, Any]:
     """Handle one JSON control message from the browser."""
 
@@ -183,6 +184,8 @@ async def handle_control_message(
         try:
             module_name = str(message["module"])
             action = str(message["action"])
+            if on_module_action is not None:
+                on_module_action(module_name, action)
             state = await asyncio.to_thread(session.call_module_action, module_name, action)
         except KeyError as exc:
             return _control_error(message, "not_found", f"Unknown module or action {exc}")
@@ -301,7 +304,12 @@ def _lockbox_resource_event_modules() -> list[str]:
     return ["asg0", "asg1", "scope", "pid0", "pid1", "pid2", "iq0", "iq1", "iq2", "iir", "pwm0", "pwm1"]
 
 
-async def control_socket(websocket: WebSocket, session: WebSession, events: EventBroker | None = None) -> None:
+async def control_socket(
+    websocket: WebSocket,
+    session: WebSession,
+    events: EventBroker | None = None,
+    on_module_action: Callable[[str, str], None] | None = None,
+) -> None:
     await websocket.accept()
     try:
         while True:
@@ -317,7 +325,7 @@ async def control_socket(websocket: WebSocket, session: WebSession, events: Even
                     {"id": None, "ok": False, "error": {"code": "bad_json", "detail": "Expected JSON object"}}
                 )
                 continue
-            await websocket.send_json(await handle_control_message(session, message, events))
+            await websocket.send_json(await handle_control_message(session, message, events, on_module_action))
     except WebSocketDisconnect:
         return
 
@@ -366,6 +374,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         app.state.session = WebSession(settings)
         app.state.events = EventBroker()
+        app.state.scope_stream_generation = 0
+        app.state.spectrum_stream_generation = 0
         try:
             yield
         finally:
@@ -375,6 +385,21 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     if use_vite_frontend:
         app.mount("/assets", StaticFiles(directory=WEB_DIST_ASSETS_DIR), name="frontend-assets")
+
+    acquisition_start_actions = {
+        "single",
+        "continuous",
+        "resume_single",
+        "resume_continuous",
+    }
+
+    def invalidate_acquisition_stream(module_name: str, action: str) -> None:
+        if action not in acquisition_start_actions:
+            return
+        if module_name == "scope":
+            app.state.scope_stream_generation += 1
+        elif module_name == "spectrumanalyzer":
+            app.state.spectrum_stream_generation += 1
 
     @app.get("/")
     async def index():
@@ -650,6 +675,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @app.post("/api/modules/{module_name}/actions/{action}")
     async def call_module_action(module_name: str, action: str):
+        invalidate_acquisition_stream(module_name, action)
         try:
             state = await asyncio.to_thread(app.state.session.call_module_action, module_name, action)
         except KeyError as exc:
@@ -785,7 +811,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @app.websocket("/ws/control")
     async def control(websocket: WebSocket):
-        await control_socket(websocket, app.state.session, app.state.events)
+        await control_socket(websocket, app.state.session, app.state.events, invalidate_acquisition_stream)
 
     @app.websocket("/ws/events")
     async def events(websocket: WebSocket):
@@ -794,6 +820,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @app.websocket("/ws/scope")
     async def scope_stream(websocket: WebSocket):
         await websocket.accept()
+        app.state.scope_stream_generation += 1
+        generation = app.state.scope_stream_generation
         sequence = 0
         sample_count = SCOPE_DATA_LENGTH
         try:
@@ -801,11 +829,15 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             if query_count is not None:
                 sample_count = clamp_sample_count(int(query_count))
             while True:
+                if generation != app.state.scope_stream_generation:
+                    return
                 acquisition = await asyncio.to_thread(
                     app.state.session.acquire_scope_frame,
                     sequence,
                     sample_count,
                 )
+                if generation != app.state.scope_stream_generation:
+                    return
                 if acquisition.frame is not None:
                     await websocket.send_bytes(acquisition.frame.to_bytes())
                     sequence += 1
@@ -818,6 +850,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @app.websocket("/ws/spectrumanalyzer")
     async def spectrum_stream(websocket: WebSocket):
         await websocket.accept()
+        app.state.spectrum_stream_generation += 1
+        generation = app.state.spectrum_stream_generation
         sequence = 0
         sample_count = 4096
         try:
@@ -825,14 +859,25 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             if query_count is not None:
                 sample_count = clamp_sample_count(int(query_count))
             while True:
+                if generation != app.state.spectrum_stream_generation:
+                    return
                 frame = await asyncio.to_thread(
                     app.state.session.acquire_spectrum_scope_frame,
                     sequence,
                     sample_count,
                 )
+                if generation != app.state.spectrum_stream_generation:
+                    return
                 if frame is not None:
                     await websocket.send_bytes(frame.to_bytes())
                     sequence += 1
+                    state = app.state.session.module_state("spectrumanalyzer")
+                    if state.get("running_state") == "stopped":
+                        await app.state.events.publish(module_state_event("spectrumanalyzer", state))
+                        for resource_module in _resource_event_modules("spectrumanalyzer", state):
+                            await app.state.events.publish(
+                                module_state_event(resource_module, app.state.session.module_state(resource_module))
+                            )
                 await asyncio.sleep(settings.scope_interval)
         except WebSocketDisconnect:
             return

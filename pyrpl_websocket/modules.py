@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field
+from functools import lru_cache
 from typing import Any
 
 
@@ -260,15 +262,15 @@ SPECTRUM_SETUP_ATTRIBUTES = [
     "trace_average",
     "curve_name",
     "curve_unit",
+    "run_continuous",
 ]
 SPECTRUM_ACTIONS = [
-    {"name": "setup", "label": "Setup", "description": "Reserve resources and configure spectrum acquisition."},
-    {"name": "single", "label": "Single", "description": "Acquire one spectrum frame."},
-    {"name": "continuous", "label": "Continuous", "description": "Start continuous spectrum polling."},
-    {"name": "pause", "label": "Pause", "description": "Pause continuous spectrum polling."},
-    {"name": "resume", "label": "Resume", "description": "Resume continuous spectrum polling."},
+    {"name": "single", "label": "Run single", "description": "Acquire trace_average spectrum frames."},
+    {"name": "continuous", "label": "Run continuous", "description": "Start continuous spectrum acquisition."},
+    {"name": "pause", "label": "Pause", "description": "Pause the active spectrum acquisition."},
+    {"name": "resume_single", "label": "Resume single", "description": "Resume averaging in single mode."},
+    {"name": "resume_continuous", "label": "Resume continuous", "description": "Resume averaging in continuous mode."},
     {"name": "stop", "label": "Stop", "description": "Stop spectrum acquisition and release resources."},
-    {"name": "release", "label": "Release", "description": "Release spectrum analyzer resources."},
 ]
 
 NETWORK_ANALYZER_SETUP_ATTRIBUTES = [
@@ -518,12 +520,18 @@ class SpectrumAnalyzerSettings:
     display_input1_baseband: bool = True
     display_input2_baseband: bool = True
     display_cross_amplitude: bool = True
+    rbw: float = 0.0
     trace_average: int = 1
     curve_name: str = "pyrpl spectrum"
     curve_unit: str = "Vpk^2"
+    run_continuous: bool = False
     running_state: str = "stopped"
+    current_avg: int = 0
     last_action: str | None = None
     iq_module: str = "iq2"
+
+    def __post_init__(self) -> None:
+        self.rbw = spectrum_rbw(self.window, self.span)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -863,6 +871,7 @@ def spectrum_attribute_schema(settings: SpectrumAnalyzerSettings) -> list[dict[s
         _number("center", "Center", settings.center, -62.5e6, 62.5e6),
         _boolean("baseband", "Baseband", settings.baseband),
         _select("span", "Span", settings.span, SPECTRUM_SPANS),
+        _select("rbw", "RBW", settings.rbw, spectrum_rbw_options(settings.window)),
         _select("window", "Window", settings.window, SPECTRUM_WINDOWS),
         _number("acbandwidth", "AC BW", settings.acbandwidth, 0.0, 62.5e6),
         _select("display_unit", "Unit", settings.display_unit, SPECTRUM_DISPLAY_UNITS),
@@ -1139,8 +1148,15 @@ def set_spectrum_attribute(settings: SpectrumAnalyzerSettings, name: str, value:
         normalized = bool(value)
     elif name == "span":
         normalized = _nearest_span(float(value))
+    elif name == "rbw":
+        options = spectrum_rbw_options(settings.window)
+        index = min(range(len(options)), key=lambda option_index: abs(options[option_index] - float(value)))
+        settings.span = SPECTRUM_SPANS[index]
+        normalized = options[index]
     elif name == "center":
         normalized = _clamp(float(value), -62.5e6, 62.5e6)
+        if normalized != 0.0 and settings.baseband:
+            settings.baseband = False
     elif name == "acbandwidth":
         normalized = _clamp(float(value), 0.0, 62.5e6)
     elif name == "trace_average":
@@ -1149,12 +1165,58 @@ def set_spectrum_attribute(settings: SpectrumAnalyzerSettings, name: str, value:
         normalized = str(value)
     elif name == "curve_unit":
         normalized = _require_option(name, str(value), ["Vpk^2"])
+    elif name == "run_continuous":
+        normalized = bool(value)
     elif name in {"running_state", "last_action"}:
         normalized = str(value) if value is not None else None
     else:
         raise KeyError(name)
     setattr(settings, name, normalized)
+    if name in {"span", "window"}:
+        settings.rbw = spectrum_rbw(settings.window, settings.span)
     return normalized
+
+
+def spectrum_rbw_options(window: str) -> list[float]:
+    return [spectrum_rbw(window, span) for span in SPECTRUM_SPANS]
+
+
+def spectrum_rbw(window: str, span: float, count: int = 2**14) -> float:
+    return float(span) * _spectrum_enbw(window, count)
+
+
+@lru_cache(maxsize=None)
+def _spectrum_enbw(window: str, count: int) -> float:
+    values = _spectrum_window_values(window, count)
+    total = sum(values)
+    if total == 0.0:
+        return 0.0
+    return sum(value * value for value in values) / (total * total)
+
+
+def _spectrum_window_values(window: str, count: int) -> list[float]:
+    values: list[float] = []
+    center = (count - 1) / 2.0
+    for index in range(count):
+        phase = 2.0 * math.pi * index / max(1, count - 1)
+        if window == "boxcar":
+            value = 1.0
+        elif window == "hamming":
+            value = 0.54 - 0.46 * math.cos(phase)
+        elif window == "flattop":
+            value = (
+                1.0
+                - 1.93 * math.cos(phase)
+                + 1.29 * math.cos(2.0 * phase)
+                - 0.388 * math.cos(3.0 * phase)
+                + 0.032 * math.cos(4.0 * phase)
+            )
+        elif window == "gaussian":
+            value = math.exp(-0.5 * ((index - center) / (count / 10.0)) ** 2)
+        else:
+            value = 0.42 - 0.5 * math.cos(phase) + 0.08 * math.cos(2.0 * phase)
+        values.append(value)
+    return values
 
 
 def _select(name: str, label: str, value: Any, options: list[Any]) -> dict[str, Any]:

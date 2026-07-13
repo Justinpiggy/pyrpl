@@ -88,6 +88,7 @@ from .modules import (
     set_trig_attribute,
     spectrum_actions,
     spectrum_attribute_schema,
+    spectrum_rbw,
     trig_actions,
     trig_attribute_schema,
 )
@@ -450,8 +451,25 @@ class WebSession:
                 return normalized
             if module_name == "spectrumanalyzer":
                 normalized = set_spectrum_attribute(self.spectrum_settings, attribute, value)
-                if attribute not in {"trace_average", "curve_name", "curve_unit"} and self.spectrum_settings.running_state == "running_continuous":
-                    self._configure_spectrum_no_lock()
+                call_setup = attribute in {
+                    "input",
+                    "center",
+                    "baseband",
+                    "span",
+                    "rbw",
+                    "window",
+                    "acbandwidth",
+                    "input1_baseband",
+                    "input2_baseband",
+                    "run_continuous",
+                }
+                if call_setup:
+                    should_continue = self.spectrum_settings.run_continuous
+                    self._stop_spectrum_no_lock(reset_average=True)
+                    if should_continue:
+                        self._configure_spectrum_no_lock()
+                        self.spectrum_settings.run_continuous = True
+                        self.spectrum_settings.running_state = "running_continuous"
                 self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name == "networkanalyzer":
@@ -668,11 +686,21 @@ class WebSession:
 
     def acquire_spectrum_frame(self, sequence: int, sample_count: int = 4096) -> dict:
         with self._lock:
-            return _spectrum_arrays_to_jsonable(self._acquire_spectrum_arrays_no_lock(sequence, sample_count))
+            temporary = self.spectrum_settings.running_state == "stopped"
+            try:
+                return _spectrum_arrays_to_jsonable(self._acquire_spectrum_arrays_no_lock(sequence, sample_count))
+            finally:
+                if temporary:
+                    self._stop_spectrum_no_lock(reset_average=False)
 
     def acquire_spectrum_frame_bytes(self, sequence: int, sample_count: int = 4096) -> bytes:
         with self._lock:
-            return _spectrum_arrays_to_bytes(self._acquire_spectrum_arrays_no_lock(sequence, sample_count))
+            temporary = self.spectrum_settings.running_state == "stopped"
+            try:
+                return _spectrum_arrays_to_bytes(self._acquire_spectrum_arrays_no_lock(sequence, sample_count))
+            finally:
+                if temporary:
+                    self._stop_spectrum_no_lock(reset_average=False)
 
     def iir_plot(self, points: int = 1000) -> dict:
         with self._lock:
@@ -786,18 +814,25 @@ class WebSession:
     def acquire_spectrum_scope_frame(self, sequence: int, sample_count: int = 4096) -> ScopeFrame | None:
         with self._lock:
             sample_count = max(256, min(SCOPE_DATA_LENGTH, int(sample_count)))
-            if self.spectrum_settings.running_state == "stopped":
+            settings = self.spectrum_settings
+            if settings.running_state in {"stopped", "paused_single", "paused_continuous"}:
                 return None
             self._configure_spectrum_no_lock()
             if isinstance(self.client, DummyClient):
                 frame = self._fake_scope_frame(sequence, self._fake_scope_clock, sample_count)
                 self._fake_scope_clock += sample_count
-                return frame
-            previous_state = self.scope_settings.running_state
-            self.scope_settings.running_state = "running_continuous"
-            acquisition = self._acquire_hardware_scope_frame(sequence, sample_count)
-            self.scope_settings.running_state = previous_state
-            return acquisition.frame
+            else:
+                previous_state = self.scope_settings.running_state
+                self.scope_settings.running_state = "running_continuous"
+                acquisition = self._acquire_hardware_scope_frame(sequence, sample_count)
+                self.scope_settings.running_state = previous_state
+                frame = acquisition.frame
+            if frame is None:
+                return None
+            settings.current_avg = min(settings.current_avg + 1, settings.trace_average)
+            if settings.running_state == "running_single" and settings.current_avg >= settings.trace_average:
+                self._stop_spectrum_no_lock(reset_average=False)
+            return frame
 
     def acquire_scope_frame(self, sequence: int, sample_count: int) -> ScopeAcquisition:
         """Acquire one display frame according to current run/trigger state."""
@@ -985,7 +1020,10 @@ class WebSession:
             sync_pwm_setting(self.client, module_name, settings, attribute)
         elif module_name == "spectrumanalyzer":
             set_spectrum_attribute(self.spectrum_settings, attribute, value)
-            self._configure_spectrum_no_lock()
+            if self.spectrum_settings.run_continuous:
+                self._call_spectrum_action_no_lock("continuous")
+            else:
+                self._stop_spectrum_no_lock(reset_average=False)
         elif module_name == "networkanalyzer":
             set_network_analyzer_attribute(self.network_analyzer_settings, attribute, value)
         else:
@@ -1404,29 +1442,50 @@ class WebSession:
 
     def _call_spectrum_action_no_lock(self, action: str) -> dict:
         settings = self.spectrum_settings
-        if action == "setup":
+        if action == "single":
+            self._stop_spectrum_no_lock(reset_average=True)
             self._configure_spectrum_no_lock()
-            settings.running_state = "stopped"
-        elif action == "single":
-            self._configure_spectrum_no_lock()
-            settings.running_state = "paused_single"
+            settings.run_continuous = False
+            settings.running_state = "running_single"
         elif action == "continuous":
+            self._stop_spectrum_no_lock(reset_average=True)
             self._configure_spectrum_no_lock()
+            settings.run_continuous = True
             settings.running_state = "running_continuous"
         elif action == "pause":
-            if settings.running_state == "running_continuous":
+            if settings.running_state == "running_single":
+                settings.running_state = "paused_single"
+            elif settings.running_state == "running_continuous":
                 settings.running_state = "paused_continuous"
-        elif action == "resume":
-            if settings.running_state == "paused_continuous":
-                settings.running_state = "running_continuous"
-        elif action in {"stop", "release"}:
-            settings.running_state = "stopped"
-            self._release_module_no_lock(settings.iq_module, "spectrumanalyzer")
+            settings.run_continuous = False
             self._release_module_no_lock("scope", "spectrumanalyzer")
+        elif action == "resume_single":
+            if settings.running_state not in {"paused_single", "paused_continuous"}:
+                raise ValueError("resume_single can only be called in a paused state")
+            self._configure_spectrum_no_lock()
+            settings.run_continuous = False
+            settings.running_state = "running_single"
+        elif action == "resume_continuous":
+            if settings.running_state not in {"paused_single", "paused_continuous"}:
+                raise ValueError("resume_continuous can only be called in a paused state")
+            self._configure_spectrum_no_lock()
+            settings.run_continuous = True
+            settings.running_state = "running_continuous"
+        elif action == "stop":
+            self._stop_spectrum_no_lock(reset_average=False)
         else:
             raise KeyError(action)
         settings.last_action = action
         return self.module_state("spectrumanalyzer")
+
+    def _stop_spectrum_no_lock(self, reset_average: bool) -> None:
+        settings = self.spectrum_settings
+        settings.running_state = "stopped"
+        settings.run_continuous = False
+        if reset_average:
+            settings.current_avg = 0
+        self._release_module_no_lock(settings.iq_module, "spectrumanalyzer")
+        self._release_module_no_lock("scope", "spectrumanalyzer")
 
     def _call_network_analyzer_action_no_lock(self, action: str) -> dict:
         settings = self.network_analyzer_settings
@@ -1535,14 +1594,15 @@ class WebSession:
 
     def _configure_spectrum_no_lock(self) -> None:
         settings = self.spectrum_settings
-        self._reserve_module_no_lock(settings.iq_module, "spectrumanalyzer")
         self._reserve_module_no_lock("scope", "spectrumanalyzer")
         self.scope_settings.running_state = "stopped"
         self._hardware_rolling_started = False
         if settings.baseband:
+            self._release_module_no_lock(settings.iq_module, "spectrumanalyzer")
             self.scope_settings.input1 = settings.input1_baseband
             self.scope_settings.input2 = settings.input2_baseband
         else:
+            self._reserve_module_no_lock(settings.iq_module, "spectrumanalyzer")
             iq_settings = self.iq_settings[settings.iq_module]
             iq_settings.input = settings.input
             iq_settings.output_direct = "off"
@@ -1571,31 +1631,31 @@ class WebSession:
             return self._empty_spectrum_arrays(sequence)
         sample_rate = max(settings.span, 1.0)
         window = _spectrum_window(settings.window, samples.shape[0])
-        norm = max(float(np.sum(window * window)), 1e-12)
+        rbw = spectrum_rbw(settings.window, sample_rate, samples.shape[0])
         if settings.baseband:
             ch1_fft = np.fft.rfft(samples[:, 0] * window)
             ch2_fft = np.fft.rfft(samples[:, 1] * window)
             freqs = np.fft.rfftfreq(samples.shape[0], d=1.0 / sample_rate)
             series = []
             if settings.display_input1_baseband:
-                series.append({"label": "Input 1", "values": _convert_spectrum_power(np.abs(ch1_fft) ** 2 / norm, settings.display_unit)})
+                series.append({"label": "Input 1", "values": _convert_spectrum_power(np.abs(ch1_fft) ** 2, settings.display_unit, rbw)})
             if settings.display_input2_baseband:
-                series.append({"label": "Input 2", "values": _convert_spectrum_power(np.abs(ch2_fft) ** 2 / norm, settings.display_unit)})
+                series.append({"label": "Input 2", "values": _convert_spectrum_power(np.abs(ch2_fft) ** 2, settings.display_unit, rbw)})
             if settings.display_cross_amplitude:
-                cross = np.abs(np.conjugate(ch1_fft) * ch2_fft) / norm
-                series.append({"label": "Cross", "values": _convert_spectrum_power(cross, settings.display_unit)})
+                cross = np.abs(np.conjugate(ch1_fft) * ch2_fft)
+                series.append({"label": "Cross", "values": _convert_spectrum_power(cross, settings.display_unit, rbw)})
         else:
             complex_data = samples[:, 0] + 1j * samples[:, 1]
             spectrum = np.fft.fftshift(np.fft.fft(complex_data * window))
             freqs = np.fft.fftshift(np.fft.fftfreq(samples.shape[0], d=1.0 / sample_rate)) + settings.center
-            series = [{"label": settings.input, "values": _convert_spectrum_power(np.abs(spectrum) ** 2 / norm, settings.display_unit)}]
+            series = [{"label": settings.input, "values": _convert_spectrum_power(np.abs(spectrum) ** 2, settings.display_unit, rbw)}]
         return {
             "sequence": sequence,
             "x": freqs.astype(np.float64, copy=False),
             "series": series,
             "span": settings.span,
             "center": settings.center,
-            "rbw": _spectrum_enbw(settings.window) * sample_rate / max(1, samples.shape[0]),
+            "rbw": rbw,
             "unit": settings.display_unit,
             "running_state": settings.running_state,
         }
@@ -1841,52 +1901,52 @@ def _spectrum_window(name: str, count: int) -> np.ndarray:
     if count <= 0:
         return np.asarray([], dtype=np.float32)
     if name == "boxcar":
-        return np.ones(count, dtype=np.float32)
-    if name == "hamming":
-        return np.hamming(count).astype(np.float32)
-    if name == "blackman":
-        return np.blackman(count).astype(np.float32)
-    if name == "flattop":
+        window = np.ones(count, dtype=np.float64)
+    elif name == "hamming":
+        window = np.hamming(count)
+    elif name == "blackman":
+        window = np.blackman(count)
+    elif name == "flattop":
         index = np.arange(count, dtype=np.float64)
         phase = 2.0 * np.pi * index / max(1, count - 1)
         window = (
-            0.21557895
-            - 0.41663158 * np.cos(phase)
-            + 0.277263158 * np.cos(2.0 * phase)
-            - 0.083578947 * np.cos(3.0 * phase)
-            + 0.006947368 * np.cos(4.0 * phase)
+            1.0
+            - 1.93 * np.cos(phase)
+            + 1.29 * np.cos(2.0 * phase)
+            - 0.388 * np.cos(3.0 * phase)
+            + 0.032 * np.cos(4.0 * phase)
         )
-        return window.astype(np.float32)
-    if name == "gaussian":
+    elif name == "gaussian":
         index = np.arange(count, dtype=np.float64)
         center = (count - 1) / 2.0
-        sigma = 0.4 * center if center else 1.0
-        return np.exp(-0.5 * ((index - center) / sigma) ** 2).astype(np.float32)
-    return np.blackman(count).astype(np.float32)
+        sigma = count / 10.0
+        window = np.exp(-0.5 * ((index - center) / sigma) ** 2)
+    else:
+        window = np.blackman(count)
+    total = float(np.sum(window))
+    if total != 0.0:
+        window = window / (total / 2.0)
+    return window.astype(np.float32)
 
 
-def _spectrum_enbw(name: str) -> float:
-    # Equivalent noise bandwidth in bins, matching the browser-visible RBW scale.
-    windows = {
-        "boxcar": 1.0,
-        "hamming": 1.36,
-        "blackman": 1.73,
-        "flattop": 3.77,
-        "gaussian": 1.45,
-    }
-    return windows.get(name, windows["blackman"])
-
-
-def _convert_spectrum_power(power: np.ndarray, unit: str) -> np.ndarray:
+def _convert_spectrum_power(power: np.ndarray, unit: str, rbw: float) -> np.ndarray:
     safe_power = np.maximum(power.astype(np.float64), 1e-30)
-    if unit.startswith("dB("):
+    if unit == "dB(Vpk^2)":
         values = 10.0 * np.log10(safe_power)
-    elif unit in {"Vpk", "Vrms", "Vrms/sqrt(Hz)"}:
+    elif unit == "Vpk":
         values = np.sqrt(safe_power)
-        if unit.startswith("Vrms"):
-            values = values / np.sqrt(2.0)
-    elif unit in {"Vrms^2", "Vrms^2/Hz"}:
+    elif unit == "Vrms^2":
         values = safe_power / 2.0
+    elif unit == "dB(Vrms^2)":
+        values = 10.0 * np.log10(safe_power / 2.0 + np.finfo(float).eps)
+    elif unit == "Vrms":
+        values = np.sqrt(safe_power) / np.sqrt(2.0)
+    elif unit == "Vrms^2/Hz":
+        values = safe_power / 2.0 / max(rbw, np.finfo(float).eps)
+    elif unit == "dB(Vrms^2/Hz)":
+        values = 10.0 * np.log10(safe_power / 2.0 / max(rbw, np.finfo(float).eps) + np.finfo(float).eps)
+    elif unit == "Vrms/sqrt(Hz)":
+        values = np.sqrt(safe_power) / np.sqrt(2.0) / max(rbw, np.finfo(float).eps)
     else:
         values = safe_power
     return values.astype(np.float32, copy=False)

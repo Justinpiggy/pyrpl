@@ -36,17 +36,9 @@ export interface SpectrumSettings {
 }
 
 const EMPTY_DATA: uPlot.AlignedData = [new Float64Array(0), new Float32Array(0)];
-const WINDOW_ENBW: Record<string, number> = {
-  boxcar: 1.0,
-  hamming: 1.36,
-  blackman: 1.73,
-  flattop: 3.77,
-  gaussian: 1.45,
-};
-
 export class SpectrumPlot {
   private socket: WebSocket | null = null;
-  private intentionalClose = false;
+  private retiredSockets = new WeakSet<WebSocket>();
   private plot: uPlot;
   private latestFrame: SpectrumFrame | null = null;
   private latestCurveFrame: SpectrumFrame | null = null;
@@ -81,7 +73,8 @@ export class SpectrumPlot {
   constructor(
     private host: HTMLElement,
     private setStatus: StatusCallback,
-    private sampleCount = 4096,
+    private setCurrentAverage: (currentAverage: number) => void = () => undefined,
+    private sampleCount = 16_384,
   ) {
     this.plot = new uPlot(this.options("", this.labels), EMPTY_DATA, this.host);
     window.addEventListener("resize", this.resizeListener);
@@ -103,7 +96,8 @@ export class SpectrumPlot {
       traceAverage: Math.max(1, Math.floor(Number(state.trace_average ?? this.settings.traceAverage))),
       runningState: String(state.running_state ?? this.settings.runningState),
     };
-    if (spectrumAveragingKey(nextSettings) !== spectrumAveragingKey(this.settings)) {
+    const completingSingle = this.settings.runningState === "running_single" && nextSettings.runningState === "stopped";
+    if (!completingSingle && spectrumAveragingKey(nextSettings) !== spectrumAveragingKey(this.settings)) {
       this.resetAveraging();
     }
     this.settings = nextSettings;
@@ -111,7 +105,9 @@ export class SpectrumPlot {
 
   resetAveraging(): void {
     this.averagedFrame = null;
+    this.pendingFrame = null;
     this.currentAverage = 0;
+    this.setCurrentAverage(0);
   }
 
   getAverageCount(): number {
@@ -124,18 +120,23 @@ export class SpectrumPlot {
     }
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const host = window.location.host || "127.0.0.1:8000";
-    this.socket = new WebSocket(`${protocol}://${host}/ws/spectrumanalyzer?samples=${this.sampleCount}`);
-    this.socket.binaryType = "arraybuffer";
-    this.socket.onopen = () => this.setStatus("Spectrum stream connected");
-    this.socket.onclose = () => {
-      this.socket = null;
-      if (!this.intentionalClose) {
+    const socket = new WebSocket(`${protocol}://${host}/ws/spectrumanalyzer?samples=${this.sampleCount}`);
+    this.socket = socket;
+    socket.binaryType = "arraybuffer";
+    socket.onopen = () => {
+      if (this.socket === socket) this.setStatus("Spectrum stream connected");
+    };
+    socket.onclose = () => {
+      if (this.socket === socket) this.socket = null;
+      if (!this.retiredSockets.has(socket)) {
         this.setStatus("Spectrum stream closed");
       }
-      this.intentionalClose = false;
     };
-    this.socket.onerror = () => this.setStatus("Spectrum stream error");
-    this.socket.onmessage = (event) => {
+    socket.onerror = () => {
+      if (this.socket === socket) this.setStatus("Spectrum stream error");
+    };
+    socket.onmessage = (event) => {
+      if (this.socket !== socket) return;
       if (event.data instanceof ArrayBuffer) {
         this.showScopeBuffer(event.data);
       }
@@ -143,9 +144,12 @@ export class SpectrumPlot {
   }
 
   close(): void {
-    this.intentionalClose = true;
-    this.socket?.close();
+    const socket = this.socket;
     this.socket = null;
+    if (socket) {
+      this.retiredSockets.add(socket);
+      socket.close();
+    }
   }
 
   isConnected(): boolean {
@@ -161,6 +165,7 @@ export class SpectrumPlot {
       return;
     }
     const averaged = this.averageFrame(frame);
+    this.setCurrentAverage(this.currentAverage);
     this.latestCurveFrame = averaged;
     this.pendingFrame = displaySpectrumFrame(averaged, this.settings.displayUnit);
     this.scheduleRender();
@@ -559,7 +564,9 @@ function spectrumFromScopeBuffer(buffer: ArrayBuffer, settings: SpectrumSettings
     ch1[index] = (frame.samples[index * frame.channelCount] ?? 0) * window[index];
     ch2[index] = (frame.samples[index * frame.channelCount + 1] ?? 0) * window[index];
   }
-  const rbw = (WINDOW_ENBW[settings.window] ?? WINDOW_ENBW.blackman) * settings.span / Math.max(1, count);
+  const windowSum = window.reduce((total, value) => total + value, 0);
+  const windowSquareSum = window.reduce((total, value) => total + value * value, 0);
+  const rbw = windowSum === 0 ? 0 : settings.span * windowSquareSum / (windowSum * windowSum);
   if (settings.baseband) {
     const fft1 = realFft(ch1);
     const fft2 = realFft(ch2);
@@ -712,7 +719,7 @@ function convertPower(power: Float64Array, unit: string, rbw: number): Float64Ar
     } else if (unit === "dB(Vrms^2/Hz)") {
       values[index] = 10 * Math.log10(safe / 2 / Math.max(rbw, Number.EPSILON) + Number.EPSILON);
     } else if (unit === "Vrms/sqrt(Hz)") {
-      values[index] = Math.sqrt(safe / 2 / Math.max(rbw, Number.EPSILON));
+      values[index] = Math.sqrt(safe) / Math.SQRT2 / Math.max(rbw, Number.EPSILON);
     } else {
       values[index] = safe;
     }
