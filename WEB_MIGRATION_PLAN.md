@@ -193,12 +193,13 @@ panel restores its saved panel state.
 
 ### Remaining Migration Batches
 
-Sampler/AMS/status telemetry and the Scope XY/math/acquisition-control pass are
-complete. The remaining software-only migration batch is:
-
-1. Complete dynamic execution of arbitrary custom Lockbox model methods. The
-   original fixed actions, per-input calibration sweeps, stage execution,
-   assisted design, and output transfer-function plots are migrated.
+Sampler/AMS/status telemetry, the Scope XY/math/acquisition-control pass, and
+trusted custom Lockbox execution are complete. Server-local custom models now
+run through a Qt-free runtime with dynamic methods/actions, formulas,
+calibration, stage callbacks, live hardware/session proxies, Scope capture,
+module managers, sibling imports, and persistent loops. See
+`TRUSTED_LOCKBOX_MODELS.md` for the supported contract and the deliberate
+external-device/desktop-Qt boundaries.
 
 Hardware validation remains deferred until the board is available: final Scope
 behavior, Network Analyzer normalization/transfer correction, and Spectrum

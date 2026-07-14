@@ -35,6 +35,7 @@ export interface LockboxSchema {
   outputs: LockboxNode[];
   sequence: LockboxStage[];
   state: { current_state?: string; lock_status?: boolean };
+  actions?: Array<{ name: string; label: string }>;
 }
 
 interface LockboxPanelElements {
@@ -93,6 +94,7 @@ export class LockboxPanel {
 
   async applySchema(schema: LockboxSchema): Promise<void> {
     this.schema = schema;
+    if (schema.actions) this.renderActions(schema.actions);
     this.populateClassSelect(schema);
     this.renderLockboxAttributes(schema.attributes);
     this.renderInputs(schema.inputs);

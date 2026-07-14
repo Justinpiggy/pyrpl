@@ -4,6 +4,7 @@ import os
 import pickle
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from threading import Event
@@ -36,6 +37,7 @@ from pyrpl_websocket.hk_registers import (
     HK_P_WRITE_ADDR,
 )
 from pyrpl_websocket.lockbox import LockboxSchemaLibrary, LockboxState
+from pyrpl_websocket.lockbox_runtime import TrustedLockboxRuntime
 from pyrpl_websocket.monitor_client import MonitorStats
 from pyrpl_websocket.modules import SPECTRUM_SPANS
 from pyrpl_websocket.scope import SCOPE_ADDR_BASE, SCOPE_CH1_OFFSET, SCOPE_CH2_OFFSET, SCOPE_DATA_LENGTH
@@ -531,6 +533,147 @@ class WebAppTest(unittest.TestCase):
     def test_lockbox_schema_inherits_default_lock_status_input(self):
         state = LockboxState("HighFinesseFabryPerot")
         self.assertEqual(state.spec.default_is_locked_input, "reflection")
+
+    def test_trusted_user_lockbox_executes_methods_against_live_session(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            user_lockbox_dir = Path(dirname) / "lockbox"
+            user_lockbox_dir.mkdir()
+            (user_lockbox_dir / "trusted_helper.py").write_text(
+                "from pyrpl.software_modules.lockbox import *\n"
+                "def apply_gain(gain, value):\n"
+                "    return gain * value\n",
+                encoding="utf-8",
+            )
+            (user_lockbox_dir / "trusted_model.py").write_text(
+                "\n".join(
+                    [
+                        "from pyrpl.software_modules.lockbox import *",
+                        "from trusted_helper import apply_gain",
+                        "",
+                        "class TrustedInput(InputSignal):",
+                        "    _gui_attributes = ['sensor_gain']",
+                        "    sensor_gain = FloatProperty(default=2.0, min=-10, max=10)",
+                        "    def expected_signal(self, variable):",
+                        "        return apply_gain(self.sensor_gain * self.lockbox.model_gain, variable) + self.calibration_data.offset",
+                        "    def expected_slope(self, variable):",
+                        "        return self.sensor_gain * self.lockbox.model_gain",
+                        "    def calibrate(self):",
+                        "        self.calibration_data.min = -3.0",
+                        "        self.calibration_data.max = 5.0",
+                        "        self.calibration_data.offset = 1.0",
+                        "        self.lockbox.calibration_count = self.lockbox.calibration_count + 1",
+                        "",
+                        "class TrustedBase(Lockbox):",
+                        "    def custom_action(self):",
+                        "        self.action_count = self.action_count + 1",
+                        "",
+                        "class TrustedUserLockbox(TrustedBase):",
+                        "    inputs = LockboxModuleDictProperty(sensor=TrustedInput)",
+                        "    outputs = LockboxModuleDictProperty(actuator=OutputSignal)",
+                        "    _gui_attributes = ['model_gain', 'calibration_count', 'action_count', 'loop_count', 'custom_action', 'scope_capture', 'start_loop', 'stop_loop', 'start_descriptor_loop']",
+                        "    model_gain = FloatProperty(default=3.0, min=-10, max=10)",
+                        "    calibration_count = IntProperty(default=0, min=0)",
+                        "    action_count = IntProperty(default=0, min=0)",
+                        "    loop_count = IntProperty(default=0, min=0)",
+                        "    def descriptor_tick(lockbox_self, loop_self):",
+                        "        lockbox_self.loop_count = lockbox_self.loop_count + 1",
+                        "    descriptor_loop = ModuleProperty(LockboxLoop, interval=0.01, autostart=False, loop_function=descriptor_tick)",
+                        "    def custom_action(self):",
+                        "        super().custom_action()",
+                        "        self.outputs.actuator.pid.ival = 0.375",
+                        "    def scope_capture(self):",
+                        "        with self.pyrpl.scopes.pop(self.name) as scope:",
+                        "            scope.setup(input1='in1', ch1_active=True, ch2_active=False)",
+                        "            scope.save_state('trusted_capture')",
+                        "            curve, = scope.single()",
+                        "            self.capture_points = len(curve)",
+                        "        self.outputs.actuator.pid.input = self.pyrpl.rp.asg0",
+                        "    def loop_tick(self):",
+                        "        self.loop_count = self.loop_count + 1",
+                        "    def start_loop(self):",
+                        "        self.stop_loop()",
+                        "        self.worker = LockboxLoop(parent=self, name='trusted_worker', interval=0.01, loop_function=self.loop_tick)",
+                        "    def stop_loop(self):",
+                        "        if getattr(self, 'worker', None) is not None:",
+                        "            self.worker._clear()",
+                        "        self.worker = None",
+                        "    def start_descriptor_loop(self):",
+                        "        self.descriptor_loop.start_loop()",
+                        "    def stage_method(self, stage):",
+                        "        self.stage_gain_seen = stage.gain_factor",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (user_lockbox_dir / "broken_model.py").write_text(
+                "\n".join(
+                    [
+                        "from pyrpl.software_modules.lockbox import *",
+                        "class BrokenTrustedLockbox(Lockbox):",
+                        "    pass",
+                        "raise RuntimeError('broken trusted plugin')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            library = LockboxSchemaLibrary(user_lockbox_dir=user_lockbox_dir)
+            session = WebSession(ServerSettings(hostname="_FAKE_"))
+            try:
+                with session._lock:
+                    session.lockbox_runtime.close()
+                    session.lockbox = LockboxState("TrustedUserLockbox", library=library)
+                    session.lockbox_runtime = TrustedLockboxRuntime(session, session.lockbox)
+
+                self.assertAlmostEqual(session._lockbox_expected_signal_no_lock("sensor", 0.5), 3.0)
+                self.assertAlmostEqual(session._lockbox_expected_slope_no_lock("sensor", 0.5), 6.0)
+                plot = session.lockbox_input_plot("sensor", points=17)
+                self.assertEqual(len(plot["x"]), 17)
+                self.assertAlmostEqual(plot["series"][0]["values"][-1], 6.0)
+
+                calibrated = session.call_lockbox_input_action("sensor", "calibrate")
+                self.assertEqual(calibrated["inputs"][0]["calibration"]["min"], -3.0)
+                self.assertEqual(session.lockbox.calibration_count, 1)
+
+                action_names = {action["name"] for action in session.lockbox_actions()}
+                self.assertIn("custom_action", action_names)
+                session.call_lockbox_action("custom_action")
+                self.assertEqual(session.lockbox.action_count, 1)
+                self.assertEqual(session.pid_settings["pid0"].ival, 0.375)
+
+                session.call_lockbox_action("scope_capture")
+                self.assertEqual(session.lockbox.values["capture_points"], SCOPE_DATA_LENGTH)
+                self.assertEqual(session.pid_settings["pid0"].input, "asg0")
+                self.assertIn(
+                    "trusted_capture",
+                    {state["name"] for state in session.module_states("scope")},
+                )
+
+                session.call_lockbox_action("start_loop")
+                deadline = time.monotonic() + 1.0
+                while session.lockbox.loop_count < 2 and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                session.call_lockbox_action("stop_loop")
+                explicit_count = session.lockbox.loop_count
+                self.assertGreaterEqual(explicit_count, 2)
+
+                session.call_lockbox_action("start_descriptor_loop")
+                deadline = time.monotonic() + 1.0
+                while session.lockbox.loop_count == explicit_count and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertGreater(session.lockbox.loop_count, explicit_count)
+
+                session.set_lockbox_stage_attribute(0, "gain_factor", 4.5)
+                session.set_lockbox_stage_attribute(0, "function_call", "stage_method")
+                session.call_lockbox_stage_action(0, "execute")
+                self.assertEqual(session.lockbox.values["stage_gain_seen"], 4.5)
+
+                with self.assertRaisesRegex(RuntimeError, "broken trusted plugin"):
+                    session.set_lockbox_class("BrokenTrustedLockbox")
+                self.assertEqual(session.lockbox.classname, "TrustedUserLockbox")
+                session.call_lockbox_action("custom_action")
+                self.assertEqual(session.lockbox.action_count, 2)
+            finally:
+                session.close()
 
     def test_session_lockbox_status_uses_sampler_and_pid_saturation(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))

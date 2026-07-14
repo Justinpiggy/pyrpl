@@ -36,6 +36,7 @@ from .dsp_registers import (
 from .hk_registers import read_hk_expansion, sync_hk_setting, sync_hk_settings
 from .iir_plot import iir_plot, transfer_function_by_kind
 from .lockbox import LockboxState, lockbox_actions
+from .lockbox_runtime import TrustedLockboxRuntime
 from .monitor_client import DummyClient, MonitorClient
 from .modules import (
     ASG_SETUP_ATTRIBUTES,
@@ -149,6 +150,7 @@ class WebSession:
         self.network_analyzer_run = NetworkAnalyzerRun()
         self.curves = configured_curve_store(settings.curve_dir)
         self.lockbox = LockboxState()
+        self.lockbox_runtime = TrustedLockboxRuntime(self, self.lockbox)
         config_enabled = settings.config is not None or settings.source is not None
         self.config = None if settings.state_file or not config_enabled else WebConfig(settings.config, settings.source)
         self.module_owners: dict[str, str | None] = {
@@ -238,8 +240,22 @@ class WebSession:
 
     def set_lockbox_class(self, classname: str) -> dict:
         with self._lock:
+            candidate = LockboxState(classname, library=self.lockbox.library)
+            runtime = TrustedLockboxRuntime(self, candidate, autoload=False)
+            previous_state = self.lockbox
+            previous_runtime = self.lockbox_runtime
             self._release_lockbox_iq_inputs_no_lock()
-            schema = self.lockbox.set_class(classname)
+            self.lockbox = candidate
+            self.lockbox_runtime = runtime
+            try:
+                runtime.activate()
+            except Exception:
+                runtime.close()
+                self.lockbox = previous_state
+                self.lockbox_runtime = previous_runtime
+                raise
+            previous_runtime.close()
+            schema = self.lockbox.schema()
         self._wake_lockbox_monitor()
         return schema
 
@@ -275,12 +291,14 @@ class WebSession:
     def append_lockbox_stage(self) -> dict:
         with self._lock:
             schema = self.lockbox.append_stage()
+            self.lockbox_runtime.refresh_stages()
         self._wake_lockbox_monitor()
         return schema
 
     def delete_lockbox_stage(self, index: int) -> dict:
         with self._lock:
             schema = self.lockbox.delete_stage(index)
+            self.lockbox_runtime.refresh_stages()
         self._wake_lockbox_monitor()
         return schema
 
@@ -315,10 +333,22 @@ class WebSession:
         return schema
 
     def lockbox_actions(self) -> list[dict]:
-        return lockbox_actions()
+        return lockbox_actions(self.lockbox)
 
     def lockbox_input_plot(self, input_name: str, points: int = 200) -> dict:
         with self._lock:
+            if self.lockbox_runtime.has_input_method(input_name, "expected_signal"):
+                point_count = max(8, min(2000, int(points)))
+                x = np.linspace(-1.0, 1.0, point_count)
+                values = self.lockbox_runtime.expected_signal(input_name, x)
+                y = np.broadcast_to(np.asarray(values, dtype=np.float64), x.shape)
+                return {
+                    "input": input_name,
+                    "x": x.tolist(),
+                    "series": [{"label": input_name, "values": y.tolist()}],
+                    "x_label": f"setpoint ({self.lockbox.setpoint_unit})",
+                    "y_label": "signal (V)",
+                }
             return self.lockbox.input_plot(input_name, points)
 
     def lockbox_output_transfer_function(self, output_name: str, points: int = 200) -> dict:
@@ -422,7 +452,7 @@ class WebSession:
         if module_name == "networkanalyzer":
             return network_analyzer_actions()
         if module_name == "lockbox":
-            return lockbox_actions()
+            return lockbox_actions(self.lockbox)
         raise KeyError(module_name)
 
     def get_module_attribute(self, module_name: str, attribute: str):
@@ -976,6 +1006,7 @@ class WebSession:
         self._lockbox_monitor_wakeup.set()
         if self._lockbox_monitor_thread is not current_thread():
             self._lockbox_monitor_thread.join(timeout=2.0)
+        self.lockbox_runtime.close()
         self.client.close()
 
     def _wake_lockbox_monitor(self) -> None:
@@ -1019,10 +1050,12 @@ class WebSession:
             self._configure_lockbox_lock_no_lock()
         return previous_status != new_status
 
-    def _lockbox_is_locked_no_lock(self) -> bool:
+    def _lockbox_is_locked_no_lock(self, allow_custom: bool = True) -> bool:
         stage = self.lockbox.current_stage()
         if stage is None:
             return False
+        if allow_custom and self.lockbox_runtime.has_lockbox_method("is_locked"):
+            return bool(self.lockbox_runtime.call_lockbox("is_locked"))
         if any(self._lockbox_output_is_saturated_no_lock(output) for output in self.lockbox.outputs.values()):
             return False
 
@@ -1045,7 +1078,11 @@ class WebSession:
             and (sample > output.max_voltage or sample < output.min_voltage)
         )
 
-    def _lockbox_input_is_locked_no_lock(self, input_model, stage) -> bool:
+    def _lockbox_input_is_locked_no_lock(self, input_model, stage, allow_custom: bool = True) -> bool:
+        if stage is None:
+            return False
+        if allow_custom and self.lockbox_runtime.has_input_method(input_model.name, "is_locked"):
+            return bool(self.lockbox_runtime.call_input(input_model.name, "is_locked"))
         if "InputFromOutput" in self.lockbox.library.resolve_mro(input_model.class_name):
             forwarded = self._forwarded_lockbox_input_no_lock(input_model)
             if forwarded is None:
@@ -1059,10 +1096,10 @@ class WebSession:
         threshold = float(self.lockbox.is_locked_threshold)
         lower_setpoint = float(stage.setpoint) - threshold
         upper_setpoint = float(stage.setpoint) + threshold
-        minimum = self.lockbox.expected_signal(input_model.name, lower_setpoint)
-        maximum = self.lockbox.expected_signal(input_model.name, upper_setpoint)
-        start_slope = self.lockbox.expected_slope(input_model.name, lower_setpoint)
-        stop_slope = self.lockbox.expected_slope(input_model.name, upper_setpoint)
+        minimum = self._lockbox_expected_signal_no_lock(input_model.name, lower_setpoint)
+        maximum = self._lockbox_expected_signal_no_lock(input_model.name, upper_setpoint)
+        start_slope = self._lockbox_expected_slope_no_lock(input_model.name, lower_setpoint)
+        stop_slope = self._lockbox_expected_slope_no_lock(input_model.name, upper_setpoint)
         if maximum < minimum:
             minimum, maximum = maximum, minimum
         if start_slope * stop_slope <= 0:
@@ -1071,6 +1108,16 @@ class WebSession:
             elif start_slope < stop_slope:
                 minimum = -float("inf")
         return minimum <= actual_mean <= maximum
+
+    def _lockbox_expected_signal_no_lock(self, input_name: str, setpoint):
+        if self.lockbox_runtime.has_input_method(input_name, "expected_signal"):
+            return self.lockbox_runtime.expected_signal(input_name, setpoint)
+        return self.lockbox.expected_signal(input_name, setpoint)
+
+    def _lockbox_expected_slope_no_lock(self, input_name: str, setpoint: float) -> float:
+        if self.lockbox_runtime.has_input_method(input_name, "expected_signal"):
+            return self.lockbox_runtime.expected_slope(input_name, setpoint)
+        return self.lockbox.expected_slope(input_name, setpoint)
 
     def _forwarded_lockbox_input_no_lock(self, input_model):
         output_name = str(input_model.input_signal).split(".")[-1]
@@ -1273,6 +1320,8 @@ class WebSession:
             self.lockbox.lock_status = False
         elif action == "get_analog_offsets":
             self._measure_lockbox_offsets_no_lock()
+        elif self.lockbox_runtime.has_lockbox_method(action):
+            self.lockbox_runtime.call_lockbox(action)
         else:
             raise KeyError(action)
         return self.lockbox.schema()
@@ -1349,7 +1398,7 @@ class WebSession:
                     stage.gain_factor,
                 )
 
-        self._call_lockbox_stage_function_no_lock(stage.function_call)
+        self._call_lockbox_stage_function_no_lock(stage.function_call, stage)
         self.lockbox.current_state = stage.name
         if stage.duration > 0:
             if self._lockbox_monitor_stop.wait(stage.duration):
@@ -1357,12 +1406,17 @@ class WebSession:
         if self.lockbox.sequence[-1] is stage:
             self.lockbox.current_state = "lock_on"
 
-    def _call_lockbox_stage_function_no_lock(self, function_call: str) -> None:
+    def _call_lockbox_stage_function_no_lock(self, function_call: str, stage=None) -> None:
         if not function_call:
             return
-        if function_call == "custom_function":
-            self._calibrate_lockbox_inputs_no_lock()
-            self._unlock_lockbox_outputs_no_lock(reset_offset=True)
+        if self.lockbox_runtime.has_lockbox_method(function_call):
+            try:
+                self.lockbox_runtime.call_lockbox(function_call)
+            except TypeError:
+                self.lockbox_runtime.call_lockbox(
+                    function_call,
+                    self.lockbox_runtime.stage_for(stage) if stage is not None else None,
+                )
         elif function_call == "increment":
             current = float(self.lockbox.values.get("first_stage_counter", 0.0))
             self.lockbox.values["first_stage_counter"] = current + 1.0
@@ -1393,7 +1447,7 @@ class WebSession:
         output = self.lockbox.outputs[output_name]
         input_model = self.lockbox.inputs[input_name]
         self._configure_pid_output_no_lock(output_name, reset_offset=False)
-        external_gain = output.dc_gain * self.lockbox.expected_slope(input_name, setpoint)
+        external_gain = output.dc_gain * self._lockbox_expected_slope_no_lock(input_name, setpoint)
         if abs(external_gain) < 1e-15:
             p_gain = 0.0
             i_gain = 0.0
@@ -1404,7 +1458,7 @@ class WebSession:
         pid.p = 0.0
         pid.i = 0.0
         pid.input = self._lockbox_input_signal_no_lock(input_model)
-        pid.setpoint = self.lockbox.expected_signal(input_name, setpoint) + input_model.calibration.analog_offset
+        pid.setpoint = self._lockbox_expected_signal_no_lock(input_name, setpoint) + input_model.calibration.analog_offset
         if offset is not None:
             pid.ival = offset
         sync_pid_settings(self.client, output.pid, pid)
@@ -1494,18 +1548,45 @@ class WebSession:
             return self._configure_lockbox_iq_input_no_lock(input_model)
         return self._resolve_lockbox_dsp_signal_no_lock(input_model.input_signal)
 
-    def _calibrate_lockbox_inputs_no_lock(self, input_names: list[str] | None = None) -> None:
+    def _calibrate_lockbox_inputs_no_lock(
+        self,
+        input_names: list[str] | None = None,
+        *,
+        allow_custom: bool = True,
+    ) -> None:
+        names = input_names if input_names is not None else list(self.lockbox.inputs)
+        generic_names = []
+        for input_name in names:
+            if allow_custom and self.lockbox_runtime.has_input_method(input_name, "calibrate"):
+                self._run_custom_lockbox_calibration_no_lock(input_name)
+            else:
+                generic_names.append(input_name)
+        if not generic_names:
+            return
         self._reserve_module_no_lock("scope", "lockbox")
         saved_scope = deepcopy(self.scope_settings)
         self._begin_scope_calibration()
         try:
-            names = input_names if input_names is not None else list(self.lockbox.inputs)
-            for input_name in names:
+            for input_name in generic_names:
                 input_model = self.lockbox.inputs[input_name]
                 self._configure_lockbox_sweep_no_lock()
                 self.lockbox.current_state = "sweep"
                 samples = self._acquire_lockbox_sweep_no_lock(input_model)
                 self._update_lockbox_calibration_from_samples(input_model, samples)
+        finally:
+            self.scope_settings = saved_scope
+            if not isinstance(self.client, DummyClient):
+                sync_scope_settings(self.client, self.scope_settings)
+            self._hardware_rolling_started = False
+            self._end_scope_calibration()
+            self._release_module_no_lock("scope", "lockbox")
+
+    def _run_custom_lockbox_calibration_no_lock(self, input_name: str) -> None:
+        self._reserve_module_no_lock("scope", "lockbox")
+        saved_scope = deepcopy(self.scope_settings)
+        self._begin_scope_calibration()
+        try:
+            self.lockbox_runtime.call_input(input_name, "calibrate")
         finally:
             self.scope_settings = saved_scope
             if not isinstance(self.client, DummyClient):

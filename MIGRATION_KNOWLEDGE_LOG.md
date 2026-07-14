@@ -3322,3 +3322,34 @@ control.
 - Verification after this change: all 67 backend migration tests pass,
   including inherited lock-input metadata, sampler/saturation lock status, and
   browser-independent auto relock.
+
+## 2026-07-13 Trusted Custom Lockbox Execution
+
+- Descriptor discovery alone cannot migrate custom Lockbox behavior. Trusted
+  server-local files now execute through a Qt-free runtime that preserves class
+  inheritance, `super()`, custom formulas/slopes/calibration/lock checks, stage
+  callbacks, and `_gui_attributes` methods exposed as browser actions.
+- Runtime proxies connect inputs, outputs, stages, calibration data, sampler,
+  `self.pyrpl.rp`, hardware modules, module managers, Scope captures/states, and
+  hardware assignments to the live `WebSession`; those assignments use the
+  existing register writers instead of a parallel invented control path.
+- PyRPL's Qt timer loops must become server-owned loops so they survive browser
+  disconnection. Explicit loops and descriptor-created `ModuleProperty` loops
+  use serialized daemon threads and are stopped on model replacement/session
+  close. Headless PlotLoop data is buffered without creating a Qt window.
+- A regression test found supplied `loop_function` callbacks were initially
+  stored only in the runtime adapter. Python resolved the class's default
+  `loop()` first, so the callback never ran. Callback functions must be assigned
+  as real instance attributes to preserve PyRPL's override behavior.
+- Broken plugin activation is transactional at the model level: report a clear
+  trusted-model error and restore the prior state/runtime. Plugin side effects
+  before a load exception cannot generally be undone because this is trusted,
+  unrestricted Python.
+- Sibling helper modules execute through the same legacy import shim. Nested
+  `Pyrpl(...)` construction is deliberately rejected; a second instrument must
+  be represented by an explicit server service.
+- Testing mistake: `npm test` was first launched from the repository root,
+  which has no `package.json`. All frontend npm commands must run from `web/`.
+- Verification at this point: all 68 backend migration tests pass, including
+  formulas, Scope manager capture, saved states, module-to-module routing,
+  loops, sibling imports, and rollback after a broken plugin.

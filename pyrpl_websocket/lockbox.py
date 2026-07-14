@@ -113,6 +113,7 @@ class LockboxClassSpec:
     setpoint_units: list[str]
     output_units: list[str]
     function_calls: list[str]
+    action_methods: list[str]
     default_is_locked_input: str | None = None
     description: str = ""
 
@@ -297,6 +298,11 @@ class LockboxSchemaLibrary:
                     for fn in self.resolve_functions(name)
                     if not fn.startswith("_") and fn not in _BASE_LOCKBOX_FUNCTIONS
                 ]
+                action_methods = [
+                    function
+                    for function in functions
+                    if function in gui_attributes and function not in properties
+                ]
                 description = _first_doc_sentence(self.classes[name].source, name)
                 specs[name] = LockboxClassSpec(
                     name=name,
@@ -308,6 +314,7 @@ class LockboxSchemaLibrary:
                     setpoint_units=setpoint_units,
                     output_units=output_units,
                     function_calls=functions,
+                    action_methods=action_methods,
                     default_is_locked_input=self.resolve_class_value(
                         name,
                         "_default_is_locked_input",
@@ -681,6 +688,7 @@ class LockboxState:
             "inputs": [input_model.as_dict(self) for input_model in self.inputs.values()],
             "outputs": [output.as_dict(self) for output in self.outputs.values()],
             "sequence": [stage.as_dict(self) for stage in self.sequence],
+            "actions": lockbox_actions(self),
         }
 
     def _lockbox_attribute_controls(self) -> list[dict[str, Any]]:
@@ -941,14 +949,24 @@ class LockboxState:
         )
 
 
-def lockbox_actions() -> list[dict[str, str]]:
-    return [
+def lockbox_actions(state: LockboxState | None = None) -> list[dict[str, str]]:
+    actions = [
         {"name": "is_locked", "label": "is_locked?", "description": "Evaluate the current lock status."},
         {"name": "unlock", "label": "Unlock", "description": "Unlock all lockbox outputs."},
         {"name": "sweep", "label": "Sweep", "description": "Sweep the default output."},
         {"name": "lock", "label": "Lock", "description": "Execute the configured stage sequence."},
         {"name": "calibrate_all", "label": "Calibrate All", "description": "Calibrate all lockbox inputs."},
     ]
+    if state is not None:
+        actions.extend(
+            {
+                "name": name,
+                "label": _label_from_name(name),
+                "description": f"Run trusted custom Lockbox method {name}.",
+            }
+            for name in state.spec.action_methods
+        )
+    return actions
 
 
 def _filter_values(value: Any) -> list[float]:

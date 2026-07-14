@@ -22,6 +22,7 @@ from .events import (
     module_state_event,
     module_states_event,
 )
+from .lockbox_runtime import TrustedModelError
 from .scope import SCOPE_DATA_LENGTH, clamp_sample_count
 from .session import WebSession
 from .settings import ServerSettings
@@ -531,7 +532,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     async def set_lockbox_class(request: LockboxClassRequest):
         try:
             schema = app.state.session.set_lockbox_class(request.classname)
-        except ValueError as exc:
+        except (ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
         for resource_module in _lockbox_resource_event_modules():
@@ -544,7 +545,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             schema = app.state.session.set_lockbox_attribute(attribute, request.value)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox attribute") from exc
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
         return schema
@@ -555,7 +556,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             schema = app.state.session.set_lockbox_input_attribute(input_name, attribute, request.value)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox input or attribute") from exc
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
         for resource_module in _lockbox_resource_event_modules():
@@ -571,7 +572,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             schema = await asyncio.to_thread(app.state.session.call_lockbox_input_action, input_name, action)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox input or action") from exc
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         finally:
             await app.state.events.publish(module_state_event("scope", app.state.session.module_state("scope")))
@@ -586,7 +587,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             schema = app.state.session.set_lockbox_output_attribute(output_name, attribute, request.value)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox output or attribute") from exc
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
         return schema
@@ -612,7 +613,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             schema = app.state.session.set_lockbox_stage_attribute(index, attribute, request.value)
         except (IndexError, KeyError) as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox stage or attribute") from exc
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
         return schema
@@ -628,7 +629,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             schema = app.state.session.set_lockbox_stage_output_attribute(index, output_name, attribute, request.value)
         except (IndexError, KeyError) as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox stage output or attribute") from exc
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
         return schema
@@ -639,7 +640,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             schema = await asyncio.to_thread(app.state.session.call_lockbox_stage_action, index, action)
         except (IndexError, KeyError) as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox stage or action") from exc
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
         for resource_module in _lockbox_resource_event_modules():
@@ -661,7 +662,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             schema = await asyncio.to_thread(app.state.session.call_lockbox_action, action)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox action") from exc
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         finally:
             if lockbox_uses_scope:
@@ -678,6 +679,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             return app.state.session.lockbox_input_plot(input_name, points)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox input") from exc
+        except (TypeError, ValueError, TrustedModelError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/lockbox/outputs/{output_name}/transfer_function")
     async def lockbox_output_transfer_function(output_name: str, points: int = 200):

@@ -186,10 +186,16 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   Original desktop `configfile` can create another `MemoryTree`, but accepting
   arbitrary browser paths would expose server filesystem writes; alternate
   files remain a CLI/startup choice.
-- Custom Lockbox methods are unrestricted trusted Python, not metadata. Do not
-  claim arbitrary-method parity by inventing an AST subset; a future solution
-  needs an explicit headless plugin API that provides the real hardware/session
-  object graph.
+- Custom Lockbox methods are unrestricted trusted Python, not metadata. Execute
+  server-local models through `TrustedLockboxRuntime`, whose Qt-free proxies
+  connect formulas, calibration, stages, sampler, hardware, module managers,
+  Scope capture/state, and server-owned loops to the live session. Never use an
+  AST behavior subset or permit browser-uploaded plugin code. Reject a nested
+  `Pyrpl(...)` explicitly; external devices need configured server services.
+- Legacy loop callback arguments must become real instance attributes. Storing
+  `loop_function` only in a fallback adapter leaves the class's default
+  `loop()` method ahead of it in Python attribute resolution and silently runs
+  the wrong callback.
 
 ## ARM Packaging And Security Rules
 
@@ -218,3 +224,5 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Never spread acquisition-sized arrays into `Math.min`, `Math.max`, or another
   variadic function; a 131,073-bin spectrum exceeds the JavaScript argument
   stack. Iterate, reduce, or use `every` instead.
+- Run frontend npm commands with `web/` as the working directory; the repository
+  root intentionally has no `package.json`.
