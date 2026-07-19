@@ -23,6 +23,16 @@ unless they appear in the original user workflow. Do not omit original controls;
 if a control cannot be completed immediately, record it here as an explicit
 gap.
 
+## Ownership Parity
+
+Hardware resource allocation follows PyRPL's `ModuleManager`: compatible
+resources are selected in reverse order, acquiring a resource applies its
+ownership hook, and releasing it restores its persisted setup. The browser
+continues to receive `owner` state for disabled controls, but it does not own
+the resource policy. Scope follows its normal stop-on-ownership hook except for
+the required Lockbox calibration path, which locks controls while forwarding
+the temporary calibration capture through the live Scope stream.
+
 ## Current Panels
 
 | Web panel | Original PyRPL source | Current parity status |

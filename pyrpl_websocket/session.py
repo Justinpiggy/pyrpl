@@ -37,6 +37,7 @@ from .hk_registers import read_hk_expansion, sync_hk_setting, sync_hk_settings
 from .iir_plot import iir_plot, transfer_function_by_kind
 from .lockbox import LockboxState, lockbox_actions
 from .lockbox_runtime import TrustedLockboxRuntime
+from .module_manager import ModuleManager
 from .monitor_client import DummyClient, MonitorClient
 from .modules import (
     ASG_SETUP_ATTRIBUTES,
@@ -153,16 +154,22 @@ class WebSession:
         self.lockbox_runtime = TrustedLockboxRuntime(self, self.lockbox)
         config_enabled = settings.config is not None or settings.source is not None
         self.config = None if settings.state_file or not config_enabled else WebConfig(settings.config, settings.source)
-        self.module_owners: dict[str, str | None] = {
-            "scope": None,
-            "asg0": None,
-            "asg1": None,
-            "trig": None,
-            **{f"pid{index}": None for index in range(3)},
-            **{f"iq{index}": None for index in range(3)},
-            "iir": None,
-            **{f"pwm{index}": None for index in range(2)},
-        }
+        self.module_manager = ModuleManager(
+            [
+                "scope",
+                "asg0",
+                "asg1",
+                "trig",
+                *[f"pid{index}" for index in range(3)],
+                *[f"iq{index}" for index in range(3)],
+                "iir",
+                *[f"pwm{index}" for index in range(2)],
+            ],
+            self._module_ownership_changed_no_lock,
+        )
+        # Keep this read-only-by-convention alias for API payloads and trusted
+        # compatibility proxies. Reservations must use ``module_manager``.
+        self.module_owners = self.module_manager.owners
         self._load_config_setup_attributes()
         self._module_states: dict[str, dict[str, dict]] = self._load_saved_states()
         self._fake_scope_clock = 0
@@ -1142,16 +1149,7 @@ class WebSession:
         if self.config is None:
             return
         for module_name in _empty_saved_states():
-            setup = self.config.module_setup(module_name)
-            if not setup:
-                continue
-            for attribute, value in setup.items():
-                if attribute not in _setup_attributes(module_name):
-                    continue
-                try:
-                    self._set_module_attribute_no_lock(module_name, attribute, value)
-                except (KeyError, TypeError, ValueError):
-                    continue
+            self._restore_module_setup_no_lock(module_name)
 
     def _load_saved_states(self) -> dict[str, dict[str, dict]]:
         if self.config is not None:
@@ -1278,22 +1276,49 @@ class WebSession:
             raise ValueError(f"{module_name} is occupied by {owner}")
 
     def _reserve_module_no_lock(self, module_name: str, owner: str) -> None:
-        if module_name not in self.module_owners:
-            raise KeyError(module_name)
-        current = self.module_owners[module_name]
-        if current not in {None, owner}:
-            raise ValueError(f"{module_name} is occupied by {current}")
-        self.module_owners[module_name] = owner
+        self.module_manager.reserve(module_name, owner)
 
     def _release_module_no_lock(self, module_name: str, owner: str | None = None) -> None:
-        if module_name not in self.module_owners:
-            raise KeyError(module_name)
-        current = self.module_owners[module_name]
-        if owner is None or current == owner:
-            self.module_owners[module_name] = None
+        self.module_manager.free(module_name, owner)
+
+    def _pop_module_no_lock(self, module_names: tuple[str, ...] | list[str], owner: str) -> str:
+        return self.module_manager.pop(owner, module_names)
 
     def _resources_owned_by(self, owner: str) -> list[str]:
-        return [module_name for module_name, current in sorted(self.module_owners.items()) if current == owner]
+        return self.module_manager.resources_owned_by(owner)
+
+    def _module_ownership_changed_no_lock(
+        self,
+        module_name: str,
+        old_owner: str | None,
+        new_owner: str | None,
+    ) -> None:
+        """Apply the ownership hooks performed by PyRPL's Module.owner setter."""
+
+        if module_name == "scope" and new_owner not in {None, "lockbox"}:
+            # Scope._ownership_changed() stops any user acquisition before an
+            # analyzer repurposes its capture settings. Lockbox calibration is
+            # the deliberate web exception: it forwards its temporary frame to
+            # the live Scope stream while the controls are locked.
+            self.scope_settings.run_continuous = False
+            self.scope_settings.current_avg = 0
+            self.scope_settings.running_state = "stopped"
+            self._hardware_rolling_started = False
+        if new_owner is None:
+            self._restore_module_setup_no_lock(module_name)
+
+    def _restore_module_setup_no_lock(self, module_name: str) -> None:
+        """Reload persisted setup attributes after a PyRPL-style release."""
+
+        if self.config is None:
+            return
+        for attribute, value in self.config.module_setup(module_name).items():
+            if attribute not in _setup_attributes(module_name):
+                continue
+            try:
+                self._set_module_attribute_no_lock(module_name, attribute, value)
+            except (KeyError, TypeError, ValueError):
+                continue
 
     def _with_owner(self, module_name: str, state: dict) -> dict:
         state["owner"] = self.module_owners.get(module_name)
@@ -1843,11 +1868,7 @@ class WebSession:
         }
 
     def _reserve_available_iq_no_lock(self, owner: str) -> str:
-        for module_name in ("iq2", "iq1", "iq0"):
-            if self.module_owners[module_name] is None:
-                self._reserve_module_no_lock(module_name, owner)
-                return module_name
-        raise ValueError("No more iqs left.")
+        return self._pop_module_no_lock(("iq0", "iq1", "iq2"), owner)
 
     def _stop_network_analyzer_no_lock(self) -> None:
         settings = self.network_analyzer_settings

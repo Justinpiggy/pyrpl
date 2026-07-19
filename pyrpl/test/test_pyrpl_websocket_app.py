@@ -1220,6 +1220,25 @@ class WebAppTest(unittest.TestCase):
         finally:
             session.close()
 
+    def test_module_manager_uses_reverse_order_and_restores_released_setup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "manager.yml"
+            config_path.write_text("iq2:\n  frequency: 1000000.0\n", encoding="utf-8")
+            session = WebSession(ServerSettings(hostname="_FAKE_", config=str(config_path)))
+            try:
+                self.assertEqual(session._pop_module_no_lock(("iq0", "iq1", "iq2"), "test"), "iq2")
+                self.assertEqual(session.module_state("iq2")["owner"], "test")
+                session._set_module_attribute_no_lock("iq2", "frequency", 2e6)
+                self.assertEqual(session.iq_settings["iq2"].frequency, 2e6)
+                session._release_module_no_lock("iq2", "test")
+                self.assertIsNone(session.module_state("iq2")["owner"])
+                self.assertEqual(session.iq_settings["iq2"].frequency, 1e6)
+
+                session._reserve_module_no_lock("iq2", "occupied")
+                self.assertEqual(session._pop_module_no_lock(("iq0", "iq1", "iq2"), "test"), "iq1")
+            finally:
+                session.close()
+
     def test_network_analyzer_auto_amplitude_follows_legacy_twofold_steps(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))
         try:

@@ -591,6 +591,9 @@ Implemented policy:
 - Scope, Spectrum Analyzer, and Network Analyzer use one acquisition producer
   with fan-out queues, preventing observers from consuming separate hardware
   frames or interrupting another browser's stream.
+- A Qt-free `ModuleManager` preserves PyRPL resource behavior beneath browser
+  control leases: reverse-order allocation, ownership-change hooks, setup
+  reload on release, and Spectrum Analyzer's direct `iq2` special case.
 - The header shows controller/observer/shared state. `/api/control/audit` and
   `/ws/events` expose a bounded in-memory mutation log.
 

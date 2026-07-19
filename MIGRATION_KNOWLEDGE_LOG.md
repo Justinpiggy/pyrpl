@@ -3502,3 +3502,21 @@ control.
   wheel contain both old and new scripts. Run `rm -rf build` before each wheel
   build and require the wheel verifier to find exactly one main frontend
   bundle and one Spectrum worker.
+
+## 2026-07-19 Qt-Free Module Manager Parity
+
+- The former `module_owners` dictionary was only a status table. A shared
+  Qt-free `ModuleManager` now performs every reservation/release, selects the
+  last free resource as PyRPL's `ModuleManager.pop()` does, exposes owned
+  resources, and invokes ownership transitions exactly once.
+- Releasing a resource now reloads its saved setup branch through the existing
+  compatibility setters and register synchronization path, matching PyRPL's
+  `Module.owner = None` behavior. Do not clear an owner flag directly.
+- Trusted Lockbox runtime manager proxies must use this same manager, including
+  ASG, PID, IQ, Scope, PWM, IIR, and Trigger managers. Do not add bespoke
+  allocation loops for a new trusted model feature.
+- PyRPL Scope ownership normally stops acquisition. The web calibration path
+  deliberately exempts Lockbox because calibration must lock Scope controls,
+  publish its temporary capture to the running Scope stream, and restore the
+  previous setup afterward. Preserve this documented exception rather than
+  treating it as a generic resource rule.

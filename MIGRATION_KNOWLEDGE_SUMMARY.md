@@ -35,8 +35,14 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 
 - PyRPL ownership is `Module.owner` plus `ModuleManager.pop(owner)` /
   `free(module)`. Releasing ownership reloads setup attributes from config.
-- Current web `module_owners` is only an approximation. Replace it with a
-  Qt-free manager abstraction before relying on complex resource arbitration.
+- The web server uses a Qt-free `ModuleManager` for reservations: it allocates
+  the last free compatible module, runs ownership hooks, and reloads persisted
+  setup on release. `module_owners` is now a read-only-by-convention API view,
+  not the allocation mechanism.
+- Scope ownership stops normal user acquisition before an analyzer repurposes
+  capture settings. Lockbox calibration is the required exception: it locks
+  Scope controls, forwards the temporary capture to the stream, and restores
+  the prior Scope setup without stopping the visible stream.
 - Preserve PyRPL special cases such as spectrum analyzer directly owning `iq2`.
 - Lockbox should not unnecessarily stop scope or spectrum analyzer except when
   the original routine temporarily owns scope for calibration/acquisition.

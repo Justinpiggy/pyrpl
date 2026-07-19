@@ -528,13 +528,11 @@ class _ModuleManagerProxy:
         self.names = names
 
     def pop(self, owner=None):
-        for name in self.names:
-            current = self.runtime.session.module_owners.get(name)
-            if current in {None, "lockbox"}:
-                if name in self.runtime.session.module_owners:
-                    self.runtime.session._reserve_module_no_lock(name, "lockbox")
-                return self.runtime.hardware(name)
-        raise TrustedModelError(f"No free module among {self.names}")
+        try:
+            name = self.runtime.session._pop_module_no_lock(self.names, "lockbox")
+        except ValueError as exc:
+            raise TrustedModelError(f"No free module among {self.names}") from exc
+        return self.runtime.hardware(name)
 
 
 class _RedPitayaProxy:
@@ -558,6 +556,9 @@ class _PyrplProxy:
         self.pids = _ModuleManagerProxy(runtime, ["pid0", "pid1", "pid2"])
         self.iqs = _ModuleManagerProxy(runtime, ["iq0", "iq1", "iq2"])
         self.scopes = _ModuleManagerProxy(runtime, ["scope"])
+        self.pwms = _ModuleManagerProxy(runtime, ["pwm0", "pwm1"])
+        self.iirs = _ModuleManagerProxy(runtime, ["iir"])
+        self.trigs = _ModuleManagerProxy(runtime, ["trig"])
 
 
 class _ObjectAdapter:
