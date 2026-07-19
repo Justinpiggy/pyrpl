@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .assets import WEB_DIST_ASSETS_DIR, WEB_DIST_DIR, asset_info
+from .control import ControlConflict, ControlCoordinator, normalize_client_id
 from .events import (
     EventBroker,
     module_action_event,
@@ -26,6 +27,7 @@ from .lockbox_runtime import TrustedModelError
 from .scope import SCOPE_DATA_LENGTH, clamp_sample_count
 from .session import WebSession
 from .settings import ServerSettings
+from .streams import StreamFailure, StreamFanout
 
 
 class RegisterReadRequest(BaseModel):
@@ -70,6 +72,48 @@ class ConfigBranchWriteRequest(BaseModel):
     text: str
 
 
+class ControlClaimRequest(BaseModel):
+    label: str | None = None
+    force: bool = False
+
+
+_CONTROL_WRITE_MESSAGES = {
+    "workspace.set",
+    "module.set",
+    "module.action",
+    "module.state.save",
+    "module.state.load",
+    "module.state.delete",
+    "register.write",
+}
+
+
+def _request_client_identity(request: Request) -> tuple[str, str | None]:
+    host = request.client.host if request.client is not None else "unknown"
+    client_id = request.headers.get("x-pyrpl-client-id") or request.cookies.get("pyrpl_control_client")
+    return normalize_client_id(client_id or f"legacy:{host}"), request.headers.get("x-pyrpl-client-label")
+
+
+def _websocket_client_identity(websocket: WebSocket) -> tuple[str, str | None]:
+    host = websocket.client.host if websocket.client is not None else "unknown"
+    client_id = (
+        websocket.headers.get("x-pyrpl-client-id")
+        or websocket.cookies.get("pyrpl_control_client")
+        or websocket.query_params.get("client_id")
+    )
+    label = websocket.headers.get("x-pyrpl-client-label") or websocket.query_params.get("client_label")
+    return normalize_client_id(client_id or f"legacy:{host}"), label
+
+
+def _request_requires_control(request: Request) -> bool:
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return False
+    path = request.url.path
+    if path.startswith("/api/control"):
+        return False
+    return path not in {"/api/sampler/stats", "/api/register/read"}
+
+
 def _message_id(message: dict[str, Any]) -> Any:
     return message.get("id")
 
@@ -82,7 +126,7 @@ async def handle_control_message(
     session: WebSession,
     message: dict[str, Any],
     events: EventBroker | None = None,
-    on_module_action: Callable[[str, str], None] | None = None,
+    on_module_action: Callable[[str, str], Callable[[], None] | None] | None = None,
 ) -> dict[str, Any]:
     """Handle one JSON control message from the browser."""
 
@@ -186,16 +230,20 @@ async def handle_control_message(
         }
 
     if command == "module.action":
+        complete_action = None
         try:
             module_name = str(message["module"])
             action = str(message["action"])
             if on_module_action is not None:
-                on_module_action(module_name, action)
+                complete_action = on_module_action(module_name, action)
             state = await asyncio.to_thread(session.call_module_action, module_name, action)
         except KeyError as exc:
             return _control_error(message, "not_found", f"Unknown module or action {exc}")
         except (TypeError, ValueError) as exc:
             return _control_error(message, "bad_request", str(exc))
+        finally:
+            if complete_action is not None:
+                complete_action()
         if events is not None:
             await events.publish(module_action_event(module_name, action, state))
             await events.publish(module_state_event(module_name, state))
@@ -313,7 +361,10 @@ async def control_socket(
     websocket: WebSocket,
     session: WebSession,
     events: EventBroker | None = None,
-    on_module_action: Callable[[str, str], None] | None = None,
+    on_module_action: Callable[[str, str], Callable[[], None] | None] | None = None,
+    coordinator: ControlCoordinator | None = None,
+    client_id: str = "legacy:websocket",
+    client_label: str | None = None,
 ) -> None:
     await websocket.accept()
     try:
@@ -330,7 +381,35 @@ async def control_socket(
                     {"id": None, "ok": False, "error": {"code": "bad_json", "detail": "Expected JSON object"}}
                 )
                 continue
-            await websocket.send_json(await handle_control_message(session, message, events, on_module_action))
+            command = message.get("type")
+            if coordinator is not None and command in _CONTROL_WRITE_MESSAGES:
+                try:
+                    coordinator.require(client_id, client_label)
+                except ControlConflict as exc:
+                    record = coordinator.record(
+                        client_id,
+                        "websocket.control",
+                        str(command),
+                        {"error": str(exc)},
+                        False,
+                    )
+                    if events is not None:
+                        await events.publish({"type": "control.audit", "record": record})
+                    await websocket.send_json(_control_error(message, "control_conflict", str(exc)))
+                    continue
+            response = await handle_control_message(session, message, events, on_module_action)
+            if coordinator is not None and command in _CONTROL_WRITE_MESSAGES:
+                record = coordinator.record(
+                    client_id,
+                    "websocket.control",
+                    str(command),
+                    {"response_type": response.get("type")},
+                    bool(response.get("ok")),
+                )
+                if events is not None:
+                    await events.publish({"type": "control.audit", "record": record})
+                    await events.publish({"type": "control.changed", "control": coordinator.status(client_id)})
+            await websocket.send_json(response)
     except WebSocketDisconnect:
         return
 
@@ -378,6 +457,10 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.events = EventBroker()
+        app.state.control = ControlCoordinator(
+            settings.control_policy,
+            settings.control_lease_seconds,
+        )
         loop = asyncio.get_running_loop()
 
         def publish_lockbox_state(schema: dict) -> None:
@@ -390,11 +473,19 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             settings,
             lockbox_state_callback=publish_lockbox_state,
         )
-        app.state.scope_stream_generation = 0
-        app.state.spectrum_stream_generation = 0
+        app.state.scope_streams = {}
+        app.state.spectrum_streams = {}
+        app.state.network_analyzer_stream = None
         try:
             yield
         finally:
+            streams = [
+                *app.state.scope_streams.values(),
+                *app.state.spectrum_streams.values(),
+            ]
+            if app.state.network_analyzer_stream is not None:
+                streams.append(app.state.network_analyzer_stream)
+            await asyncio.gather(*(stream.close() for stream in streams))
             app.state.session.close()
 
     app = FastAPI(title="PyRPL WebSocket Prototype", version="0.1.0", lifespan=lifespan)
@@ -414,7 +505,37 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         query_token = request.query_params.get("token")
         if not valid_token([bearer, request.cookies.get("pyrpl_web_token"), query_token]):
             return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+        client_id, client_label = _request_client_identity(request)
+        request.state.control_client_id = client_id
+        if _request_requires_control(request):
+            try:
+                app.state.control.require(client_id, client_label)
+            except ControlConflict as exc:
+                record = app.state.control.record(
+                    client_id,
+                    f"http.{request.method.lower()}",
+                    request.url.path,
+                    {"error": str(exc)},
+                    False,
+                )
+                await app.state.events.publish({"type": "control.audit", "record": record})
+                return JSONResponse(
+                    status_code=409,
+                    content={"detail": str(exc), "control": app.state.control.status(client_id)},
+                )
         response = await call_next(request)
+        if _request_requires_control(request):
+            record = app.state.control.record(
+                client_id,
+                f"http.{request.method.lower()}",
+                request.url.path,
+                {"status_code": response.status_code},
+                response.status_code < 400,
+            )
+            await app.state.events.publish({"type": "control.audit", "record": record})
+            await app.state.events.publish(
+                {"type": "control.changed", "control": app.state.control.status(client_id)}
+            )
         if settings.auth_token and query_token and secrets.compare_digest(query_token, settings.auth_token):
             response.set_cookie(
                 "pyrpl_web_token",
@@ -442,20 +563,25 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     if use_vite_frontend:
         app.mount("/assets", StaticFiles(directory=WEB_DIST_ASSETS_DIR), name="frontend-assets")
 
-    acquisition_start_actions = {
-        "single",
-        "continuous",
-        "resume_single",
-        "resume_continuous",
-    }
+    acquisition_start_actions = {"single", "continuous", "resume_single", "resume_continuous"}
 
-    def invalidate_acquisition_stream(module_name: str, action: str) -> None:
+    def prepare_acquisition_restart(module_name: str, action: str) -> Callable[[], None] | None:
         if action not in acquisition_start_actions:
-            return
+            return None
         if module_name == "scope":
-            app.state.scope_stream_generation += 1
+            fanouts = list(app.state.scope_streams.values())
         elif module_name == "spectrumanalyzer":
-            app.state.spectrum_stream_generation += 1
+            fanouts = list(app.state.spectrum_streams.values())
+        else:
+            return None
+        for fanout in fanouts:
+            fanout.suspend()
+
+        def resume() -> None:
+            for fanout in fanouts:
+                fanout.resume()
+
+        return resume
 
     @app.get("/")
     async def index():
@@ -466,8 +592,41 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         return {"ok": True, "settings": settings.public_dict()}
 
     @app.get("/api/session")
-    async def session_info():
-        return app.state.session.info()
+    async def session_info(request: Request):
+        info = app.state.session.info()
+        info["control"] = app.state.control.status(request.state.control_client_id)
+        return info
+
+    @app.get("/api/control")
+    async def control_status(request: Request):
+        return app.state.control.status(request.state.control_client_id)
+
+    @app.get("/api/control/audit")
+    async def control_audit(limit: int = 100):
+        return {"records": app.state.control.audit(limit)}
+
+    @app.post("/api/control/claim")
+    async def claim_control(request: Request, claim: ControlClaimRequest):
+        try:
+            control = app.state.control.claim(
+                request.state.control_client_id,
+                claim.label,
+                force=claim.force,
+            )
+        except ControlConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await app.state.events.publish({"type": "control.changed", "control": control})
+        return control
+
+    @app.post("/api/control/heartbeat")
+    async def heartbeat_control(request: Request):
+        return app.state.control.heartbeat(request.state.control_client_id)
+
+    @app.post("/api/control/release")
+    async def release_control(request: Request):
+        control = app.state.control.release(request.state.control_client_id)
+        await app.state.events.publish({"type": "control.changed", "control": control})
+        return control
 
     @app.get("/api/config")
     async def config_info(module: str | None = None):
@@ -747,13 +906,16 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @app.post("/api/modules/{module_name}/actions/{action}")
     async def call_module_action(module_name: str, action: str):
-        invalidate_acquisition_stream(module_name, action)
+        complete_action = prepare_acquisition_restart(module_name, action)
         try:
             state = await asyncio.to_thread(app.state.session.call_module_action, module_name, action)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown module or action") from exc
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        finally:
+            if complete_action is not None:
+                complete_action()
         await app.state.events.publish(module_action_event(module_name, action, state))
         await app.state.events.publish(module_state_event(module_name, state))
         for resource_module in _resource_event_modules(module_name, state):
@@ -885,7 +1047,16 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     async def control(websocket: WebSocket):
         if not await authenticate_websocket(websocket):
             return
-        await control_socket(websocket, app.state.session, app.state.events, invalidate_acquisition_stream)
+        client_id, client_label = _websocket_client_identity(websocket)
+        await control_socket(
+            websocket,
+            app.state.session,
+            app.state.events,
+            prepare_acquisition_restart,
+            app.state.control,
+            client_id,
+            client_label,
+        )
 
     @app.websocket("/ws/events")
     async def events(websocket: WebSocket):
@@ -897,59 +1068,71 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     async def scope_stream(websocket: WebSocket):
         if not await authenticate_websocket(websocket):
             return
-        await websocket.accept()
-        app.state.scope_stream_generation += 1
-        generation = app.state.scope_stream_generation
-        sequence = 0
         sample_count = SCOPE_DATA_LENGTH
         try:
             query_count = websocket.query_params.get("samples")
             if query_count is not None:
                 sample_count = clamp_sample_count(int(query_count))
-            while True:
-                if generation != app.state.scope_stream_generation:
-                    return
+        except ValueError:
+            await websocket.close(code=1008, reason="Invalid sample count")
+            return
+
+        async def produce_scope(publish, active) -> None:
+            sequence = 0
+            while active():
                 acquisition = await asyncio.to_thread(
                     app.state.session.acquire_scope_frame,
                     sequence,
                     sample_count,
                 )
-                if generation != app.state.scope_stream_generation:
-                    return
                 if acquisition.frame is not None:
-                    await websocket.send_bytes(acquisition.frame.to_bytes())
+                    publish(acquisition.frame.to_bytes())
                     sequence += 1
                 if acquisition.state_changed:
                     await app.state.events.publish(module_state_event("scope", app.state.session.module_state("scope")))
                 await asyncio.sleep(settings.scope_interval)
+
+        fanout = app.state.scope_streams.get(sample_count)
+        if fanout is None:
+            fanout = StreamFanout(produce_scope)
+            app.state.scope_streams[sample_count] = fanout
+        queue = fanout.subscribe()
+        await websocket.accept()
+        try:
+            while True:
+                item = await queue.get()
+                if isinstance(item, StreamFailure):
+                    await websocket.close(code=1011, reason="Scope acquisition failed")
+                    return
+                await websocket.send_bytes(item)
         except WebSocketDisconnect:
             return
+        finally:
+            fanout.unsubscribe(queue)
 
     @app.websocket("/ws/spectrumanalyzer")
     async def spectrum_stream(websocket: WebSocket):
         if not await authenticate_websocket(websocket):
             return
-        await websocket.accept()
-        app.state.spectrum_stream_generation += 1
-        generation = app.state.spectrum_stream_generation
-        sequence = 0
         sample_count = 4096
         try:
             query_count = websocket.query_params.get("samples")
             if query_count is not None:
                 sample_count = clamp_sample_count(int(query_count))
-            while True:
-                if generation != app.state.spectrum_stream_generation:
-                    return
+        except ValueError:
+            await websocket.close(code=1008, reason="Invalid sample count")
+            return
+
+        async def produce_spectrum(publish, active) -> None:
+            sequence = 0
+            while active():
                 frame = await asyncio.to_thread(
                     app.state.session.acquire_spectrum_scope_frame,
                     sequence,
                     sample_count,
                 )
-                if generation != app.state.spectrum_stream_generation:
-                    return
                 if frame is not None:
-                    await websocket.send_bytes(frame.to_bytes())
+                    publish(frame.to_bytes())
                     sequence += 1
                     state = app.state.session.module_state("spectrumanalyzer")
                     if state.get("running_state") == "stopped":
@@ -959,19 +1142,34 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                                 module_state_event(resource_module, app.state.session.module_state(resource_module))
                             )
                 await asyncio.sleep(settings.scope_interval)
+
+        fanout = app.state.spectrum_streams.get(sample_count)
+        if fanout is None:
+            fanout = StreamFanout(produce_spectrum)
+            app.state.spectrum_streams[sample_count] = fanout
+        queue = fanout.subscribe()
+        await websocket.accept()
+        try:
+            while True:
+                item = await queue.get()
+                if isinstance(item, StreamFailure):
+                    await websocket.close(code=1011, reason="Spectrum acquisition failed")
+                    return
+                await websocket.send_bytes(item)
         except WebSocketDisconnect:
             return
+        finally:
+            fanout.unsubscribe(queue)
 
     @app.websocket("/ws/networkanalyzer")
     async def network_analyzer_stream(websocket: WebSocket):
         if not await authenticate_websocket(websocket):
             return
-        await websocket.accept()
-        try:
-            while True:
+        async def produce_network_analyzer(publish, active) -> None:
+            while active():
                 point = await asyncio.to_thread(app.state.session.acquire_network_analyzer_point)
                 if point is not None:
-                    await websocket.send_json(point)
+                    publish(point)
                     if point["running_state"] == "stopped":
                         state = app.state.session.module_state("networkanalyzer")
                         await app.state.events.publish(module_state_event("networkanalyzer", state))
@@ -981,8 +1179,24 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                             )
                 else:
                     await asyncio.sleep(0.05)
+
+        fanout = app.state.network_analyzer_stream
+        if fanout is None:
+            fanout = StreamFanout(produce_network_analyzer, queue_size=8)
+            app.state.network_analyzer_stream = fanout
+        queue = fanout.subscribe()
+        await websocket.accept()
+        try:
+            while True:
+                item = await queue.get()
+                if isinstance(item, StreamFailure):
+                    await websocket.close(code=1011, reason="Network Analyzer acquisition failed")
+                    return
+                await websocket.send_json(item)
         except WebSocketDisconnect:
             return
+        finally:
+            fanout.unsubscribe(queue)
 
     return app
 

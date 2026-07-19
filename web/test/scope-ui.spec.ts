@@ -121,6 +121,7 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
 
   await resetServerConfig(page);
   await page.goto("/");
+  await expect(page.locator("#control-status")).toHaveText("Shared control");
   await expect(page.locator("#scope-panel")).toBeVisible();
   await expect(page.locator("#empty-workspace")).toBeHidden();
   expect(await page.evaluate(() => window.pyrplScope?.isPanelEnabled("scope"))).toBe(true);

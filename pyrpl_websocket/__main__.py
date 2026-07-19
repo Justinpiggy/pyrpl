@@ -53,6 +53,18 @@ def main() -> None:
         default=os.environ.get("PYRPL_WEB_TOKEN"),
         help="Optional HTTP/WebSocket token. Prefer PYRPL_WEB_TOKEN to avoid shell history.",
     )
+    parser.add_argument(
+        "--control-policy",
+        choices=("single-writer", "shared"),
+        default="single-writer",
+        help="Browser/API write policy. Production defaults to one renewable controller lease.",
+    )
+    parser.add_argument(
+        "--control-lease-seconds",
+        type=float,
+        default=30.0,
+        help="Seconds without a controller heartbeat before another client may claim control.",
+    )
     args = parser.parse_args()
     settings = ServerSettings(
         hostname=args.hostname,
@@ -65,6 +77,8 @@ def main() -> None:
         source=args.source,
         curve_dir=args.curve_dir,
         auth_token=args.auth_token,
+        control_policy=args.control_policy,
+        control_lease_seconds=args.control_lease_seconds,
     )
     if settings.bind_host not in {"127.0.0.1", "::1", "localhost"} and not settings.auth_token:
         LOGGER.warning(

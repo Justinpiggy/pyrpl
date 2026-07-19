@@ -17,7 +17,7 @@ export default defineConfig({
   ],
   webServer: {
     command:
-      "python -m pyrpl_websocket --hostname _FAKE_ --bind-host 127.0.0.1 --bind-port 8765 --scope-interval 0.2",
+      "python -m pyrpl_websocket --hostname _FAKE_ --bind-host 127.0.0.1 --bind-port 8765 --scope-interval 0.2 --control-policy shared",
     cwd: "..",
     env: {
       PYRPL_USER_DIR: "/tmp/pyrpl-websocket-e2e-user-dir",

@@ -3353,3 +3353,41 @@ control.
 - Verification at this point: all 68 backend migration tests pass, including
   formulas, Scope manager capture, saved states, module-to-module routing,
   loops, sibling imports, and rollback after a broken plugin.
+
+## 2026-07-19 Multi-Client Control And Acquisition Fan-Out
+
+- Phase 6 cannot be satisfied by module resource ownership alone. Without a
+  browser/API lease, unrelated clients can issue valid but conflicting hardware
+  writes. Production now defaults to one renewable writer lease, while
+  observers receive HTTP 409 for mutations and may explicitly take control.
+- Browser requests carry a stable per-tab client id and label. API clients can
+  send the same headers; unidentified legacy clients are grouped by remote
+  address for compatibility. `shared` remains an explicit automation/testing
+  policy rather than an accidental default.
+- Authentication and control ownership are independent. Authentication decides
+  who may reach the instrument; the control lease decides which authenticated
+  client may mutate it.
+- Accepted and denied REST writes plus JSON control-WebSocket writes are stored
+  in a bounded in-memory audit log and broadcast through the event stream.
+  Heartbeats are not audited because they would bury meaningful controls.
+- A second browser previously incremented the global Scope/Spectrum stream
+  generation and retired the first browser. Multiple Network Analyzer sockets
+  could also consume alternating points from one sweep. All three instruments
+  now use one server acquisition producer and bounded fan-out queues, so every
+  observer receives the same item and slow clients drop old display data rather
+  than blocking hardware acquisition.
+- A persistent fan-out producer must still restart at acquisition run
+  boundaries. The first version kept Spectrum's sequence across a new single
+  run, producing frame 14 where a fresh run expected frame 0. Suspend the shared
+  producer before start/resume actions and resume it afterward; do not solve
+  sequence reset by returning to per-browser producers.
+- Verification mistake: Playwright was initially run before rebuilding Vite,
+  so the server correctly served the old packaged bundle and the new control
+  header was absent. Build `web/` into `pyrpl_websocket/frontend` before every
+  browser run that follows frontend changes.
+- Environment mistake: direct system `python3 -m py_compile` attempted to write
+  bytecode cache outside the workspace. Use `conda run -n pyrpl-env python` for
+  all project Python checks, as required by this migration.
+- Final verification: all 72 backend migration tests, 16 frontend unit tests,
+  the production Vite build, and all 9 Playwright workflows pass. Hardware
+  timing and normalization validation remains deferred until the board returns.

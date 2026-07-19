@@ -5,6 +5,7 @@ import { LockboxPanel, type LockboxSchema } from "./lockbox-panel";
 import { NetworkAnalyzerPanel } from "./network-analyzer-panel";
 import { CurveViewerPanel } from "./curve-viewer-panel";
 import { ConfigPanel } from "./config-panel";
+import { ControlClient, type ControlStatus } from "./control-client";
 import Split from "split.js";
 import { PANEL_DEFINITIONS, type PanelId } from "./panel-registry";
 import { createRegisterPanel } from "./register-panel";
@@ -19,6 +20,9 @@ import {
   type WorkspaceState,
   type WorkspaceLayoutMode,
 } from "./workspace";
+
+const controlClient = new ControlClient();
+controlClient.installFetchHeaders();
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -38,6 +42,10 @@ app.innerHTML = `
         <p id="session-line">TypeScript oscilloscope frontend</p>
       </div>
       <nav class="menubar" aria-label="Workspace menu">
+        <div class="control-strip">
+          <output id="control-status">Control connecting...</output>
+          <button id="take-control" type="button" hidden>Take Control</button>
+        </div>
         <details class="menu-dropdown">
           <summary>Panels</summary>
           <div class="menu-content" id="panel-menu"></div>
@@ -586,6 +594,31 @@ style.textContent = `
     align-items: center;
     gap: 8px;
     margin-left: auto;
+  }
+
+  .control-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .control-strip output {
+    max-width: 260px;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .control-strip.is-controller output,
+  .control-strip.is-shared output {
+    color: #63d98d;
+  }
+
+  .control-strip.is-observer output {
+    color: #f0c15a;
   }
 
   .menu-dropdown {
@@ -1971,6 +2004,9 @@ const configPanel = new ConfigPanel({
   status: requireElement<HTMLOutputElement>("#config-status"),
 });
 const sessionLine = requireElement<HTMLParagraphElement>("#session-line");
+const controlStatus = requireElement<HTMLOutputElement>("#control-status");
+const takeControlButton = requireElement<HTMLButtonElement>("#take-control");
+const controlStrip = controlStatus.parentElement as HTMLElement;
 createRegisterPanel({
   readAddr: requireElement<HTMLInputElement>("#register-read-addr"),
   readLength: requireElement<HTMLInputElement>("#register-read-length"),
@@ -3527,6 +3563,10 @@ function connectEvents(): void {
   eventSocket = new WebSocket(`${protocol}//${window.location.host}/ws/events`);
   eventSocket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
+    if (message.type === "control.changed") {
+      void refreshControlStatus();
+      return;
+    }
     if (message.type === "module.attribute.changed") {
       eventCount += 1;
       if (message.module === "scope") {
@@ -3586,6 +3626,31 @@ function connectEvents(): void {
   eventSocket.addEventListener("close", () => {
     eventSocket = null;
   });
+}
+
+function applyControlStatus(control: ControlStatus): void {
+  controlStrip.classList.remove("is-controller", "is-observer", "is-shared");
+  controlStrip.classList.add(`is-${control.role}`);
+  if (control.role === "shared") {
+    controlStatus.value = "Shared control";
+    takeControlButton.hidden = true;
+  } else if (control.role === "controller") {
+    controlStatus.value = "You have control";
+    takeControlButton.hidden = true;
+  } else {
+    controlStatus.value = control.controller?.label
+      ? `Observer: ${control.controller.label} has control`
+      : "Observer: control is available";
+    takeControlButton.hidden = false;
+  }
+}
+
+async function refreshControlStatus(): Promise<void> {
+  try {
+    applyControlStatus(await controlClient.refresh());
+  } catch (error) {
+    controlStatus.value = error instanceof Error ? error.message : "Control unavailable";
+  }
 }
 
 async function fetchSingleFrame(): Promise<void> {
@@ -4128,6 +4193,11 @@ amsInputs[3].addEventListener("change", () => {
 });
 
 async function startup(): Promise<void> {
+  try {
+    applyControlStatus(await controlClient.initialize());
+  } catch {
+    await refreshControlStatus();
+  }
   currentSession = await refreshSession();
   buildHkExpansionGrid();
   await loadScopeControls();
@@ -4159,6 +4229,14 @@ async function startup(): Promise<void> {
   }
   await activateScopePanel();
 }
+
+takeControlButton.addEventListener("click", () => {
+  controlClient.claim(true).then(applyControlStatus).catch((error: Error) => {
+    controlStatus.value = error.message;
+  });
+});
+
+window.addEventListener("pagehide", () => controlClient.release());
 
 exposeDebugState();
 startup().catch((error: Error) => {

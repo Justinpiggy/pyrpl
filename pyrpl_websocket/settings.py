@@ -19,6 +19,8 @@ class ServerSettings:
     source: str | None = None
     curve_dir: str | None = None
     auth_token: str | None = None
+    control_policy: str = "single-writer"
+    control_lease_seconds: float = 30.0
 
     @property
     def fake(self) -> bool:

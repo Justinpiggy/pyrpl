@@ -49,6 +49,28 @@ Open `http://REDPITAYA_HOST:8000/?token=YOUR_TOKEN` once. The server stores the
 validated token in an HttpOnly, SameSite cookie for HTTP and WebSocket access.
 Scripts may instead send `Authorization: Bearer YOUR_TOKEN`.
 
+## Multi-Client Control
+
+The production default is `--control-policy single-writer`. The first browser
+or API client that writes receives a renewable 30-second controller lease.
+Other browsers remain observers: they can read state and receive the same
+Scope, Spectrum Analyzer, and Network Analyzer stream, but mutation requests
+return HTTP 409 until the user presses **Take Control** or the old lease
+expires. Browser heartbeats renew the lease; closing the page releases it when
+the browser can deliver its final request.
+
+Automation clients should send stable `X-PyRPL-Client-ID` and optional
+`X-PyRPL-Client-Label` headers. Legacy clients without those headers are
+identified by remote address for compatibility. Use
+`--control-lease-seconds SECONDS` to change the timeout. A deliberately shared
+test or automation server can use `--control-policy shared`.
+
+`GET /api/control` reports the caller's role, `GET /api/control/audit` returns
+the newest bounded in-memory mutation records, and control/audit changes are
+also published on `/ws/events`. The audit buffer resets when the server
+restarts. Control ownership does not replace authentication: use both token
+authentication and the single-writer policy on a LAN-facing instrument.
+
 The files in `deploy/` provide a systemd unit and environment-file template.
 The environment file contains a hardware-control credential and must be mode
 `0600`.
@@ -75,8 +97,11 @@ responses expose only `auth_enabled`, never the token.
 ## Verification
 
 ```bash
-python3 -m unittest pyrpl.test.test_pyrpl_websocket_app
-cd web && npm test && npm run test:e2e
+conda run -n pyrpl-env python -m unittest pyrpl.test.test_pyrpl_websocket_app
+cd web
+conda run -n pyrpl-env npm test
+conda run -n pyrpl-env npm run build
+conda run -n pyrpl-env npm run test:e2e
 ```
 
 Hardware normalization and final Scope/Network Analyzer behavior still require

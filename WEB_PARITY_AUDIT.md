@@ -51,6 +51,10 @@ gap.
 - Optional bearer/cookie authentication protects both REST and WebSocket
   control paths. It is a LAN access guard, not transport encryption; SSH
   tunneling or an HTTPS reverse proxy remains required on untrusted networks.
+- Production uses one renewable writer lease with visible observer/takeover
+  state. REST and control-WebSocket mutations are centrally enforced and
+  audited. Scope, Spectrum, and Network Analyzer streams use single-producer
+  fan-out so additional observers cannot interrupt or divide an acquisition.
 - Actual installation and acquisition validation on the Zynq-7000 board is
   deferred until hardware is available.
 

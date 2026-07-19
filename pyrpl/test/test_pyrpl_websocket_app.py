@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import json
 import os
 import pickle
 import sys
@@ -15,6 +16,7 @@ import yaml
 
 from pyrpl_websocket.app import create_app, handle_control_message
 from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
+from pyrpl_websocket.control import ControlConflict, ControlCoordinator
 from pyrpl_websocket.curve_store import CurveStore, configured_curve_store
 from pyrpl_websocket.dependency_audit import audit_report
 from pyrpl_websocket.assets import asset_info
@@ -43,6 +45,7 @@ from pyrpl_websocket.modules import SPECTRUM_SPANS
 from pyrpl_websocket.scope import SCOPE_ADDR_BASE, SCOPE_CH1_OFFSET, SCOPE_CH2_OFFSET, SCOPE_DATA_LENGTH
 from pyrpl_websocket.session import WebSession
 from pyrpl_websocket.settings import ServerSettings
+from pyrpl_websocket.streams import StreamFanout
 from pyrpl_websocket.telemetry import (
     AMS_DAC_ADDRESSES,
     DSP_INPUTS,
@@ -53,7 +56,14 @@ from pyrpl_websocket.telemetry import (
 )
 
 
-async def asgi_http_request(app, path: str, headers=None, query: str = ""):
+async def asgi_http_request(
+    app,
+    path: str,
+    headers=None,
+    query: str = "",
+    method: str = "GET",
+    body: bytes = b"",
+):
     sent = []
     requested = False
 
@@ -61,7 +71,7 @@ async def asgi_http_request(app, path: str, headers=None, query: str = ""):
         nonlocal requested
         if not requested:
             requested = True
-            return {"type": "http.request", "body": b"", "more_body": False}
+            return {"type": "http.request", "body": body, "more_body": False}
         return {"type": "http.disconnect"}
 
     async def send(message):
@@ -71,7 +81,7 @@ async def asgi_http_request(app, path: str, headers=None, query: str = ""):
         "type": "http",
         "asgi": {"version": "3.0"},
         "http_version": "1.1",
-        "method": "GET",
+        "method": method,
         "scheme": "http",
         "path": path,
         "raw_path": path.encode(),
@@ -187,6 +197,9 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("/api/lockbox/stages/{index}/actions/{action}", paths)
         self.assertIn("/api/lockbox/inputs/{input_name}/plot", paths)
         self.assertIn("/api/lockbox/outputs/{output_name}/transfer_function", paths)
+        self.assertIn("/api/control", paths)
+        self.assertIn("/api/control/claim", paths)
+        self.assertIn("/api/control/audit", paths)
         self.assertIn("/ws/control", paths)
         self.assertIn("/ws/scope", paths)
         self.assertIn("/ws/networkanalyzer", paths)
@@ -211,6 +224,129 @@ class WebAppTest(unittest.TestCase):
         cookie_login = asyncio.run(asgi_http_request(app, "/api/health", query="token=lab-secret"))
         headers = dict(cookie_login[0]["headers"])
         self.assertIn(b"pyrpl_web_token=lab-secret", headers[b"set-cookie"])
+
+    def test_control_coordinator_enforces_takeover_expiry_and_audit(self):
+        coordinator = ControlCoordinator(lease_seconds=5.0, audit_size=20)
+        with mock.patch("pyrpl_websocket.control.time.monotonic", return_value=10.0):
+            first = coordinator.claim("browser-a", "Alignment station")
+            self.assertEqual(first["role"], "controller")
+            with self.assertRaisesRegex(ControlConflict, "Alignment station"):
+                coordinator.require("browser-b", "Observer")
+            second = coordinator.claim("browser-b", "Lock station", force=True)
+            self.assertEqual(second["controller"]["id"], "browser-b")
+
+        with mock.patch("pyrpl_websocket.control.time.monotonic", return_value=16.0):
+            expired = coordinator.status("browser-a")
+        self.assertIsNone(expired["controller"])
+        self.assertEqual(expired["role"], "observer")
+        self.assertEqual(
+            [record["operation"] for record in coordinator.audit()],
+            ["control.claim", "control.takeover", "control.expired"],
+        )
+
+    def test_http_control_lease_blocks_observer_and_records_mutations(self):
+        app = create_app(ServerSettings(hostname="_FAKE_"))
+        headers_a = [
+            (b"content-type", b"application/json"),
+            (b"x-pyrpl-client-id", b"browser-a"),
+            (b"x-pyrpl-client-label", b"Controller A"),
+        ]
+        headers_b = [
+            (b"content-type", b"application/json"),
+            (b"x-pyrpl-client-id", b"browser-b"),
+            (b"x-pyrpl-client-label", b"Controller B"),
+        ]
+
+        async def scenario():
+            async with app.router.lifespan_context(app):
+                first = await asgi_http_request(
+                    app,
+                    "/api/workspace",
+                    headers=headers_a,
+                    method="POST",
+                    body=json.dumps({"workspace": {}}).encode(),
+                )
+                denied = await asgi_http_request(
+                    app,
+                    "/api/workspace",
+                    headers=headers_b,
+                    method="POST",
+                    body=json.dumps({"workspace": {}}).encode(),
+                )
+                takeover = await asgi_http_request(
+                    app,
+                    "/api/control/claim",
+                    headers=headers_b,
+                    method="POST",
+                    body=json.dumps({"label": "Controller B", "force": True}).encode(),
+                )
+                accepted = await asgi_http_request(
+                    app,
+                    "/api/workspace",
+                    headers=headers_b,
+                    method="POST",
+                    body=json.dumps({"workspace": {}}).encode(),
+                )
+                audit = await asgi_http_request(app, "/api/control/audit", headers=headers_b)
+                return first, denied, takeover, accepted, audit
+
+        first, denied, takeover, accepted, audit = asyncio.run(scenario())
+        self.assertEqual(first[0]["status"], 200)
+        self.assertEqual(denied[0]["status"], 409)
+        self.assertEqual(takeover[0]["status"], 200)
+        self.assertEqual(accepted[0]["status"], 200)
+        audit_body = json.loads(next(item["body"] for item in audit if item["type"] == "http.response.body"))
+        mutation_records = [
+            record for record in audit_body["records"] if record["target"] == "/api/workspace"
+        ]
+        self.assertEqual([record["ok"] for record in mutation_records], [True, False, True])
+
+    def test_stream_fanout_uses_one_producer_for_multiple_observers(self):
+        async def scenario():
+            produced = 0
+
+            async def producer(publish, active):
+                nonlocal produced
+                while active() and produced < 2:
+                    produced += 1
+                    publish({"sequence": produced})
+                    await asyncio.sleep(0)
+
+            fanout = StreamFanout(producer)
+            first = fanout.subscribe()
+            second = fanout.subscribe()
+            first_item, second_item = await asyncio.gather(first.get(), second.get())
+            fanout.unsubscribe(first)
+            fanout.unsubscribe(second)
+            await fanout.close()
+            return produced, first_item, second_item
+
+        produced, first_item, second_item = asyncio.run(scenario())
+        self.assertGreaterEqual(produced, 1)
+        self.assertEqual(first_item, second_item)
+
+    def test_stream_fanout_restart_creates_a_fresh_run_for_existing_observers(self):
+        async def scenario():
+            run_count = 0
+
+            async def producer(publish, active):
+                nonlocal run_count
+                run_count += 1
+                publish(run_count)
+                while active():
+                    await asyncio.sleep(0)
+
+            fanout = StreamFanout(producer)
+            queue = fanout.subscribe()
+            first_run = await queue.get()
+            fanout.suspend()
+            fanout.resume()
+            second_run = await asyncio.wait_for(queue.get(), timeout=1.0)
+            fanout.unsubscribe(queue)
+            await fanout.close()
+            return first_run, second_run
+
+        self.assertEqual(asyncio.run(scenario()), (1, 2))
 
     def test_dependency_audit_enforces_armv7_pure_python_stack(self):
         versions = {

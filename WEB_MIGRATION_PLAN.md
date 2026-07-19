@@ -208,6 +208,13 @@ zero-padding now runs in a browser Web Worker, including normalized windows,
 baseband complex cross spectra, scope/IQ transfer correction, and linear
 browser-side averaging.
 
+Multi-client semantics are complete for the initial production policy. One
+renewable browser/API lease owns all mutations, observers receive state and
+fan-out acquisition data without starting competing hardware loops, explicit
+takeover is visible in the thin header, and a bounded audit stream records REST
+and control-WebSocket writes. Shared last-writer behavior remains an explicit
+startup option for tests and controlled automation.
+
 ARM packaging, dependency audit, security guidance, and CI are complete. The
 headless wheel now contains the compiled frontend, the Red Pitaya extra pins a
 pure-Python Python 3.10 ASGI stack, token authentication covers HTTP and
@@ -573,6 +580,19 @@ Tasks:
   - per-module locks matching existing ownership semantics
 - Surface module ownership in the UI.
 - Add audit/log stream for control changes.
+
+Implemented policy:
+
+- `single-writer` is the production default with a renewable lease and explicit
+  takeover; `shared` is an opt-in startup policy.
+- REST mutations and JSON control-WebSocket mutations use one central
+  coordinator. Read-only telemetry and acquisition remain available to
+  observers.
+- Scope, Spectrum Analyzer, and Network Analyzer use one acquisition producer
+  with fan-out queues, preventing observers from consuming separate hardware
+  frames or interrupting another browser's stream.
+- The header shows controller/observer/shared state. `/api/control/audit` and
+  `/ws/events` expose a bounded in-memory mutation log.
 
 Recommended initial policy:
 

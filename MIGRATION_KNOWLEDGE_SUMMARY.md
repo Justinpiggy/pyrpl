@@ -144,17 +144,16 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Average baseband cross spectra as separate real and imaginary arrays, then
   take magnitude only for display. Save both components to CurveDB. Display
   unit and show/hide changes must not reset the linear `Vpk^2` average.
-- A browser WebSocket close may leave an idle server loop alive until its next
-  send. Give every shared acquisition stream, including Scope and Spectrum, a
-  server-side generation and check it before and after hardware acquisition so
-  retired loops cannot consume frames from a later run. Invalidate generations
-  for acquisition start/resume actions over REST and control WebSocket alike,
-  and explicitly reconnect the active client afterward. Client handlers must
-  likewise ignore non-current socket objects.
+- A browser WebSocket close may leave its handler alive briefly. Do not give
+  each browser its own singleton-instrument acquisition loop: use one server
+  producer per instrument/sample size and fan out each result to bounded client
+  queues. Stop naturally after the last subscriber leaves so an in-flight
+  blocking read finishes before a later producer starts. Client handlers must
+  still ignore non-current socket objects.
 - Static uPlot canvases must not intercept clicks intended for controls that
   become adjacent after responsive scrolling. Disable pointer events on the
-  entire static plot subtree, and rebuild `web/dist` before Playwright tests
-  because the FastAPI test server serves compiled assets.
+  entire static plot subtree, and rebuild `pyrpl_websocket/frontend` before
+  Playwright tests because the FastAPI test server serves compiled assets.
 
 ## Curve Rules
 
@@ -226,3 +225,19 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   stack. Iterate, reduce, or use `every` instead.
 - Run frontend npm commands with `web/` as the working directory; the repository
   root intentionally has no `package.json`.
+- Playwright serves `pyrpl_websocket/frontend`, not TypeScript source. Run the
+  production frontend build before browser tests whenever frontend code changes,
+  or Playwright will correctly test stale packaged assets.
+- Use the requested `pyrpl-env` for Python verification. The host system Python
+  may use cache paths outside the writable workspace and is not the deployment
+  interpreter.
+- Multi-client acquisition must use one producer with fan-out queues. Per-socket
+  Scope/Spectrum loops let observers consume extra hardware frames, while a
+  second Network Analyzer loop divides one sweep between browsers. Stream
+  ownership is separate from write-lease ownership. Suspend and restart the
+  shared producer at acquisition start/resume boundaries so sequence counters
+  and finite averaging runs begin fresh.
+- The production control policy is one renewable writer lease. Enforce REST and
+  JSON control-WebSocket mutations centrally, keep observer telemetry readable,
+  expose explicit takeover, and audit both accepted and denied writes. A shared
+  policy must be an explicit startup choice.
