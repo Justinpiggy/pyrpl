@@ -3,6 +3,7 @@ import Split from "split.js";
 import "uplot/dist/uPlot.min.css";
 
 import { PLOT_COLORS, plotAxis } from "./plot-theme";
+import { ReconnectScheduler } from "./websocket-reconnect";
 
 interface AttributeSchema {
   name: string;
@@ -34,6 +35,8 @@ export class NetworkAnalyzerPanel {
   private magnitudePlot: uPlot;
   private phasePlot: uPlot;
   private socket: WebSocket | null = null;
+  private wantsConnection = false;
+  private reconnectScheduler: ReconnectScheduler;
   private runId = -1;
   private x: number[] = [];
   private magnitude: number[] = [];
@@ -61,6 +64,7 @@ export class NetworkAnalyzerPanel {
     private saveButton: HTMLButtonElement,
     private resetButton: HTMLButtonElement,
   ) {
+    this.reconnectScheduler = new ReconnectScheduler(() => this.openSocket());
     this.magnitudePlot = this.createPlot(this.magnitudeHost, "Magnitude (dB)", "dB", true);
     this.phasePlot = this.createPlot(this.phaseHost, "Phase (deg)", "deg", false);
     this.resizeObserver = new ResizeObserver(() => this.scheduleResize());
@@ -160,16 +164,39 @@ export class NetworkAnalyzerPanel {
   }
 
   private connectSocket(): void {
+    this.wantsConnection = true;
     if (this.socket && this.socket.readyState <= WebSocket.OPEN) return;
+    this.reconnectScheduler.cancel(false);
+    this.openSocket();
+  }
+
+  private openSocket(): void {
+    if (!this.wantsConnection || (this.socket && this.socket.readyState <= WebSocket.OPEN)) return;
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    this.socket = new WebSocket(`${protocol}://${window.location.host}/ws/networkanalyzer`);
-    this.socket.addEventListener("message", (event) => this.showPoint(JSON.parse(String(event.data)) as PointMessage));
-    this.socket.addEventListener("close", () => { this.socket = null; });
+    const socket = new WebSocket(`${protocol}://${window.location.host}/ws/networkanalyzer`);
+    this.socket = socket;
+    socket.addEventListener("open", () => {
+      if (this.socket === socket) this.reconnectScheduler.connected();
+    });
+    socket.addEventListener("message", (event) => {
+      if (this.socket === socket) this.showPoint(JSON.parse(String(event.data)) as PointMessage);
+    });
+    socket.addEventListener("close", () => {
+      if (this.socket !== socket) return;
+      this.socket = null;
+      if (this.wantsConnection) {
+        const delay = this.reconnectScheduler.schedule();
+        this.status.textContent = `Network Analyzer stream closed; reconnecting${delay === null ? "" : ` in ${delay} ms`}`;
+      }
+    });
   }
 
   private closeSocket(): void {
-    this.socket?.close();
+    this.wantsConnection = false;
+    this.reconnectScheduler.cancel();
+    const socket = this.socket;
     this.socket = null;
+    socket?.close();
   }
 
   private showPoint(point: PointMessage): void {

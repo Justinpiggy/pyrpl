@@ -71,6 +71,11 @@ also published on `/ws/events`. The audit buffer resets when the server
 restarts. Control ownership does not replace authentication: use both token
 authentication and the single-writer policy on a LAN-facing instrument.
 
+Scope, Spectrum Analyzer, Network Analyzer, and event WebSockets reconnect
+automatically after transient network loss using bounded backoff. A user Stop,
+completed single sweep, or panel teardown cancels reconnection, so transport
+recovery cannot restart an instrument the user intentionally stopped.
+
 The files in `deploy/` provide a systemd unit and environment-file template.
 The environment file contains a hardware-control credential and must be mode
 `0600`.

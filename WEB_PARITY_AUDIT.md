@@ -55,6 +55,9 @@ gap.
   state. REST and control-WebSocket mutations are centrally enforced and
   audited. Scope, Spectrum, and Network Analyzer streams use single-producer
   fan-out so additional observers cannot interrupt or divide an acquisition.
+- Long-lived event and acquisition WebSockets retry unexpected network loss
+  with bounded backoff. Explicit Stop/Close paths cancel retries, and browser
+  coverage verifies Scope data resumes after an offline/online transition.
 - Actual installation and acquisition validation on the Zynq-7000 board is
   deferred until hardware is available.
 

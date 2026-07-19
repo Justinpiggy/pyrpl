@@ -3,6 +3,7 @@ import "uplot/dist/uPlot.min.css";
 
 import { PLOT_COLORS, plotAxis } from "./plot-theme";
 import { evaluateScopeMath } from "./scope-math";
+import { ReconnectScheduler } from "./websocket-reconnect";
 import {
   averageFrameData,
   clampXRange,
@@ -22,6 +23,8 @@ type AverageCallback = (current: number) => void;
 
 export class ScopeStream {
   private socket: WebSocket | null = null;
+  private wantsConnection = false;
+  private reconnectScheduler: ReconnectScheduler;
   private plot: uPlot;
   private latestFrame: ScopeFrame | null = null;
   private receivedFrameCount = 0;
@@ -52,6 +55,7 @@ export class ScopeStream {
     private setCurrentAverage: AverageCallback = () => undefined,
     private sampleCount = DEFAULT_SAMPLES,
   ) {
+    this.reconnectScheduler = new ReconnectScheduler(() => this.openSocket());
     this.plot = new uPlot(this.options(), this.emptyData(), this.plotHost);
     window.addEventListener("resize", this.resizeListener);
     this.bindInteractions();
@@ -59,9 +63,16 @@ export class ScopeStream {
   }
 
   connect(): void {
+    this.wantsConnection = true;
     if (this.socket && this.socket.readyState <= WebSocket.OPEN) {
       return;
     }
+    this.reconnectScheduler.cancel(false);
+    this.openSocket();
+  }
+
+  private openSocket(): void {
+    if (!this.wantsConnection || (this.socket && this.socket.readyState <= WebSocket.OPEN)) return;
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const host = window.location.host || "127.0.0.1:8000";
     const socket = new WebSocket(`${protocol}://${host}/ws/scope?samples=${this.sampleCount}`);
@@ -69,13 +80,19 @@ export class ScopeStream {
     socket.binaryType = "arraybuffer";
     socket.onopen = () => {
       if (this.socket === socket) {
+        this.reconnectScheduler.connected();
         this.setStatus("Scope stream connected");
       }
     };
     socket.onclose = () => {
       if (this.socket === socket) {
         this.socket = null;
-        this.setStatus("Scope stream closed");
+        if (this.wantsConnection) {
+          const delay = this.reconnectScheduler.schedule();
+          this.setStatus(`Scope stream closed; reconnecting${delay === null ? "" : ` in ${delay} ms`}`);
+        } else {
+          this.setStatus("Scope stream closed");
+        }
       }
     };
     socket.onerror = () => {
@@ -91,18 +108,21 @@ export class ScopeStream {
   }
 
   close(): void {
+    this.wantsConnection = false;
+    this.reconnectScheduler.cancel();
     const socket = this.socket;
     this.socket = null;
     socket?.close();
   }
 
   reconnect(): void {
-    if (!this.isConnected()) {
-      return;
-    }
-    this.close();
+    if (!this.wantsConnection) return;
+    this.reconnectScheduler.cancel();
+    const socket = this.socket;
+    this.socket = null;
+    socket?.close();
     this.resetTraceAveraging();
-    this.connect();
+    this.openSocket();
   }
 
   isConnected(): boolean {

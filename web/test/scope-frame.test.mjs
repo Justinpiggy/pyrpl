@@ -64,6 +64,24 @@ test("frameToData splits interleaved channel samples", () => {
   assert.deepEqual(Array.from(data.ch2), [0.5, 1]);
 });
 
+test("frame decoding and channel splitting handles 65,536 samples", () => {
+  const sampleCount = 65_536;
+  const samples = new Float32Array(sampleCount * 2);
+  for (let index = 0; index < sampleCount; index += 1) {
+    samples[index * 2] = index / sampleCount;
+    samples[index * 2 + 1] = -index / sampleCount;
+  }
+  const frame = parseScopeFrame(makeFrame({ sequence: 19, samples }));
+  const data = frameToData(frame);
+  assert.equal(frame.sequence, 19);
+  assert.equal(frame.sampleCount, sampleCount);
+  assert.equal(data.x.length, sampleCount);
+  assert.equal(data.ch1.length, sampleCount);
+  assert.equal(data.ch2.length, sampleCount);
+  assert.equal(data.ch1[sampleCount - 1], samples[samples.length - 2]);
+  assert.equal(data.ch2[sampleCount - 1], samples[samples.length - 1]);
+});
+
 test("frameToData can use PyRPL scope time settings", () => {
   const data = frameToData(parseScopeFrame(makeFrame()), {
     duration: 0.25,

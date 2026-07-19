@@ -13,8 +13,9 @@ from unittest import mock
 
 import numpy as np
 import yaml
+from fastapi import WebSocketDisconnect
 
-from pyrpl_websocket.app import create_app, handle_control_message
+from pyrpl_websocket.app import control_socket, create_app, handle_control_message
 from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
 from pyrpl_websocket.control import ControlConflict, ControlCoordinator
 from pyrpl_websocket.curve_store import CurveStore, configured_curve_store
@@ -159,6 +160,24 @@ class SimulatedRollingHardwareScopeClient(SimulatedHardwareScopeClient):
         return super().writes(addr, values)
 
 
+class FakeControlWebSocket:
+    def __init__(self, messages):
+        self.messages = list(messages)
+        self.sent = []
+        self.accepted = False
+
+    async def accept(self):
+        self.accepted = True
+
+    async def receive_json(self):
+        if self.messages:
+            return self.messages.pop(0)
+        raise WebSocketDisconnect()
+
+    async def send_json(self, message):
+        self.sent.append(message)
+
+
 class WebAppTest(unittest.TestCase):
     def test_app_exposes_expected_routes(self):
         app = create_app(ServerSettings(hostname="_FAKE_"))
@@ -300,6 +319,27 @@ class WebAppTest(unittest.TestCase):
             record for record in audit_body["records"] if record["target"] == "/api/workspace"
         ]
         self.assertEqual([record["ok"] for record in mutation_records], [True, False, True])
+
+    def test_control_websocket_uses_same_single_writer_identity(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        coordinator = ControlCoordinator(lease_seconds=30)
+        coordinator.claim("browser-a", "Browser A")
+        owner = FakeControlWebSocket(
+            [{"id": 1, "type": "module.set", "module": "scope", "attribute": "threshold", "value": 0.25}]
+        )
+        observer = FakeControlWebSocket(
+            [{"id": 2, "type": "module.set", "module": "scope", "attribute": "threshold", "value": 0.5}]
+        )
+        try:
+            asyncio.run(control_socket(owner, session, coordinator=coordinator, client_id="browser-a"))
+            asyncio.run(control_socket(observer, session, coordinator=coordinator, client_id="browser-b"))
+            self.assertTrue(owner.accepted)
+            self.assertTrue(owner.sent[0]["ok"])
+            self.assertEqual(session.scope_settings.threshold, 0.25)
+            self.assertEqual(observer.sent[0]["error"]["code"], "control_conflict")
+            self.assertEqual(session.scope_settings.threshold, 0.25)
+        finally:
+            session.close()
 
     def test_stream_fanout_uses_one_producer_for_multiple_observers(self):
         async def scenario():

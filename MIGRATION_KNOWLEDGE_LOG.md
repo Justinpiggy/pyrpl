@@ -3391,3 +3391,31 @@ control.
 - Final verification: all 72 backend migration tests, 16 frontend unit tests,
   the production Vite build, and all 9 Playwright workflows pass. Hardware
   timing and normalization validation remains deferred until the board returns.
+
+## 2026-07-19 WebSocket Transport Resilience
+
+- Phase 7 explicitly requires reconnect behavior; a socket that only reports
+  `close` leaves a running instrument invisible after a temporary Wi-Fi, proxy,
+  or server interruption. Scope, Spectrum Analyzer, Network Analyzer, and the
+  event channel now share bounded exponential retry timing.
+- Reconnection must preserve acquisition intent. Each socket owner tracks
+  whether a connection is desired; unexpected closure schedules retry, while
+  Stop, a completed single Network Analyzer sweep, and panel teardown cancel
+  pending retry timers. Transport recovery must never invent a Run action.
+- Timer-unit coverage is insufficient for browser networking. Playwright now
+  takes Chromium offline during a live fake Scope run, restores connectivity,
+  and verifies the frame sequence advances again.
+- Renderer framing is tested with 65,536 interleaved samples in addition to the
+  normal 16,384-point Scope path. Keep parsing and channel splitting independent
+  of the current FPGA capture depth.
+- The single-writer policy now has direct JSON control-WebSocket regression
+  coverage: the lease owner's mutation succeeds and an observer's equivalent
+  mutation is rejected without changing module state.
+- Verification mistake: I assumed the Conda environment contained the optional
+  `build` module. It does not. Check the environment before choosing a wheel
+  command; in `pyrpl-env`, use `python -m pip wheel --no-build-isolation` with
+  the existing setuptools toolchain, or ask before installing a missing tool.
+- Verification: all 73 backend migration tests, 19 frontend unit tests, the
+  production Vite build, all 10 Playwright workflows, and packaged-wheel asset
+  verification pass. Hardware timing and normalization validation remains
+  deferred until the board returns.

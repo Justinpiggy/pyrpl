@@ -3,6 +3,7 @@ import "uplot/dist/uPlot.min.css";
 
 import { PLOT_COLORS, plotAxis } from "./plot-theme";
 import type { SpectrumFrame, SpectrumSeries, SpectrumSettings } from "./spectrum-fft";
+import { ReconnectScheduler } from "./websocket-reconnect";
 
 type StatusCallback = (message: string) => void;
 
@@ -18,6 +19,8 @@ interface SpectrumWorkerResponse {
 const EMPTY_DATA: uPlot.AlignedData = [new Float64Array(0), new Float32Array(0)];
 export class SpectrumPlot {
   private socket: WebSocket | null = null;
+  private wantsConnection = false;
+  private reconnectScheduler: ReconnectScheduler;
   private retiredSockets = new WeakSet<WebSocket>();
   private plot: uPlot;
   private latestFrame: SpectrumFrame | null = null;
@@ -60,6 +63,7 @@ export class SpectrumPlot {
     private setCurrentAverage: (currentAverage: number) => void = () => undefined,
     private sampleCount = 16_384,
   ) {
+    this.reconnectScheduler = new ReconnectScheduler(() => this.openSocket());
     this.plot = new uPlot(this.options("", this.labels), EMPTY_DATA, this.host);
     this.fftWorker.onmessage = (event: MessageEvent<SpectrumWorkerResponse>) => this.handleWorkerResponse(event.data);
     this.fftWorker.onerror = () => this.setStatus("Spectrum FFT worker error");
@@ -114,21 +118,36 @@ export class SpectrumPlot {
   }
 
   connect(): void {
+    this.wantsConnection = true;
     if (this.socket && this.socket.readyState <= WebSocket.OPEN) {
       return;
     }
+    this.reconnectScheduler.cancel(false);
+    this.openSocket();
+  }
+
+  private openSocket(): void {
+    if (!this.wantsConnection || (this.socket && this.socket.readyState <= WebSocket.OPEN)) return;
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const host = window.location.host || "127.0.0.1:8000";
     const socket = new WebSocket(`${protocol}://${host}/ws/spectrumanalyzer?samples=${this.sampleCount}`);
     this.socket = socket;
     socket.binaryType = "arraybuffer";
     socket.onopen = () => {
-      if (this.socket === socket) this.setStatus("Spectrum stream connected");
+      if (this.socket === socket) {
+        this.reconnectScheduler.connected();
+        this.setStatus("Spectrum stream connected");
+      }
     };
     socket.onclose = () => {
-      if (this.socket === socket) this.socket = null;
-      if (!this.retiredSockets.has(socket)) {
-        this.setStatus("Spectrum stream closed");
+      if (this.socket === socket) {
+        this.socket = null;
+        if (this.wantsConnection) {
+          const delay = this.reconnectScheduler.schedule();
+          this.setStatus(`Spectrum stream closed; reconnecting${delay === null ? "" : ` in ${delay} ms`}`);
+        } else if (!this.retiredSockets.has(socket)) {
+          this.setStatus("Spectrum stream closed");
+        }
       }
     };
     socket.onerror = () => {
@@ -143,6 +162,8 @@ export class SpectrumPlot {
   }
 
   close(): void {
+    this.wantsConnection = false;
+    this.reconnectScheduler.cancel();
     const socket = this.socket;
     this.socket = null;
     if (socket) {

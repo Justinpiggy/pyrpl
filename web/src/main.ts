@@ -6,6 +6,7 @@ import { NetworkAnalyzerPanel } from "./network-analyzer-panel";
 import { CurveViewerPanel } from "./curve-viewer-panel";
 import { ConfigPanel } from "./config-panel";
 import { ControlClient, type ControlStatus } from "./control-client";
+import { ReconnectScheduler } from "./websocket-reconnect";
 import Split from "split.js";
 import { PANEL_DEFINITIONS, type PanelId } from "./panel-registry";
 import { createRegisterPanel } from "./register-panel";
@@ -2151,6 +2152,7 @@ let spectrumPlot = new SpectrumPlot(spectrumPlotHost, (message) => {
 });
 let iirPlot: IirPlot | null = null;
 let eventSocket: WebSocket | null = null;
+const eventReconnect = new ReconnectScheduler(() => connectEvents());
 let eventCount = 0;
 let runningState = "stopped";
 let spectrumRunningState = "stopped";
@@ -3560,8 +3562,12 @@ function connectEvents(): void {
     return;
   }
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  eventSocket = new WebSocket(`${protocol}//${window.location.host}/ws/events`);
-  eventSocket.addEventListener("message", (event) => {
+  const socket = new WebSocket(`${protocol}//${window.location.host}/ws/events`);
+  eventSocket = socket;
+  socket.addEventListener("open", () => {
+    if (eventSocket === socket) eventReconnect.connected();
+  });
+  socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     if (message.type === "control.changed") {
       void refreshControlStatus();
@@ -3623,8 +3629,10 @@ function connectEvents(): void {
       return;
     }
   });
-  eventSocket.addEventListener("close", () => {
+  socket.addEventListener("close", () => {
+    if (eventSocket !== socket) return;
     eventSocket = null;
+    eventReconnect.schedule();
   });
 }
 

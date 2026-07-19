@@ -528,6 +528,26 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   expect(browserMessages.filter((message) => message.includes("ResizeObserver loop"))).toEqual([]);
 });
 
+test("scope stream reconnects after a browser network interruption", async ({ page, context }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+  });
+  await resetServerConfig(page);
+  await page.goto("/");
+  await expect(page.locator("#status")).toContainText(/Frame [1-9]/);
+  const sequence = await page.evaluate(() => window.pyrplScope?.getFrameSequence());
+
+  await context.setOffline(true);
+  await page.waitForTimeout(400);
+  await context.setOffline(false);
+
+  await expect.poll(
+    () => page.evaluate(() => window.pyrplScope?.getFrameSequence()),
+    { timeout: 10_000 },
+  ).toBeGreaterThan(sequence ?? -1);
+  await expect(page.locator("#status")).toContainText(/Frame \d+/);
+});
+
 test("sampler and AMS panel refreshes, measures statistics, and writes DAC2", async ({ page }) => {
   await resetServerConfig(page);
   await page.goto("/");

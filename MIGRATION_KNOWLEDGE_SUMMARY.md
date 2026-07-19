@@ -241,3 +241,11 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   JSON control-WebSocket mutations centrally, keep observer telemetry readable,
   expose explicit takeover, and audit both accepted and denied writes. A shared
   policy must be an explicit startup choice.
+- Long-lived browser sockets need one shared bounded reconnect policy. Track
+  whether each connection is still desired, retry only unexpected closure, and
+  cancel pending retries on Stop, completed single acquisitions, and teardown.
+  Verify this with a real browser offline/online transition, not only a timer
+  unit test.
+- Keep binary frame parsing independent of the FPGA's current 16k capture size.
+  Synthetic frontend tests should include 65,536 samples so future streamed or
+  composed traces cannot reintroduce argument-stack or allocation assumptions.

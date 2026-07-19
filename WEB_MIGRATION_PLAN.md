@@ -638,6 +638,21 @@ Frontend tests:
 - plot renderer handles 16k, 64k, and dropped-frame scenarios
 - mobile/tablet layout if needed
 
+Implemented software-only coverage:
+
+- Scope, Spectrum Analyzer, Network Analyzer, and event WebSockets retry
+  unexpected disconnects with bounded exponential backoff. Intentional Stop,
+  completed single sweeps, and panel teardown cancel retries.
+- Playwright verifies a live Scope stream resumes after Chromium is taken
+  offline and brought online again.
+- Synthetic binary tests cover normal 16k Scope frames and 65,536-sample
+  renderer input. Bounded fan-out queues and animation-frame coalescing cover
+  dropped display frames without blocking acquisition.
+- Production single-writer tests cover REST takeover/audit and accepted versus
+  rejected JSON control-WebSocket mutations.
+- Hardware smoke and normalization tests remain deferred until the board is
+  available.
+
 Recommended tools:
 
 - pytest for backend
