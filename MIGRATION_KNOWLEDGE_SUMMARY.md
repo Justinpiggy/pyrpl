@@ -257,3 +257,11 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - A scaled full-page screenshot is not proof of responsive containment. Pair
   visual inspection with CSS-pixel bounds for headers, menus, action rows,
   plots, and sequential panel columns.
+- CSS source order can silently override a specialized layout when two
+  single-class selectors have equal specificity. Use a scoped selector such as
+  `.panel-content.curve-viewer-content` when a panel intentionally differs from
+  the shared container direction, and verify the actual computed geometry.
+- Segmented controls need reserved legend space with an explicit top/left
+  anchor and line height. Cross-panel browser tests should compare visible
+  label/legend rectangles against visible controls at both wide and compact PC
+  sizes; visual checks of Scope alone will miss failures in dynamic panels.

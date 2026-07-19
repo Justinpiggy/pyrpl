@@ -111,6 +111,55 @@ async function countPaintedPixels(canvas: HTMLCanvasElement): Promise<number> {
   return painted;
 }
 
+interface ControlOverlap {
+  label: string;
+  control: string;
+  overlapX: number;
+  overlapY: number;
+}
+
+async function visibleControlOverlaps(page: Page, panelId: string): Promise<ControlOverlap[]> {
+  return page.evaluate((activePanelId) => {
+    const panel = document.querySelector<HTMLElement>(`#${activePanelId}-panel`);
+    if (!panel) throw new Error(`Missing panel ${activePanelId}`);
+    const visible = (element: Element): element is HTMLElement => {
+      if (!(element instanceof HTMLElement)) return false;
+      const style = getComputedStyle(element);
+      const bounds = element.getBoundingClientRect();
+      return (
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        Number(style.opacity) > 0 &&
+        bounds.width > 0 &&
+        bounds.height > 0
+      );
+    };
+    const labels = Array.from(panel.querySelectorAll("label > span, fieldset > legend")).filter(visible);
+    const controls = Array.from(panel.querySelectorAll("input, select, textarea, button")).filter(visible);
+    const overlaps: ControlOverlap[] = [];
+    for (const label of labels) {
+      const labelBounds = label.getBoundingClientRect();
+      for (const control of controls) {
+        if (label.closest("button") === control || control.contains(label)) continue;
+        const controlBounds = control.getBoundingClientRect();
+        const overlapX = Math.min(labelBounds.right, controlBounds.right) -
+          Math.max(labelBounds.left, controlBounds.left);
+        const overlapY = Math.min(labelBounds.bottom, controlBounds.bottom) -
+          Math.max(labelBounds.top, controlBounds.top);
+        if (overlapX > 0.5 && overlapY > 0.5) {
+          overlaps.push({
+            label: label.textContent?.trim() || label.tagName,
+            control: control.getAttribute("aria-label") || control.textContent?.trim() || control.id || control.tagName,
+            overlapX,
+            overlapY,
+          });
+        }
+      }
+    }
+    return overlaps;
+  }, panelId);
+}
+
 test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) => {
   const browserMessages: string[] = [];
   page.on("pageerror", (error) => browserMessages.push(error.message));
@@ -370,9 +419,9 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   expect(csvLines[1].split(",").length).toBe(3);
 
   await page.locator("#show-ch2").setChecked(false);
-  expect(await page.evaluate(() => window.pyrplScope?.isChannelVisible(2))).toBe(false);
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.isChannelVisible(2))).toBe(false);
   await page.locator("#show-ch2").setChecked(true);
-  expect(await page.evaluate(() => window.pyrplScope?.isChannelVisible(2))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.isChannelVisible(2))).toBe(true);
 
   await page.locator("#zoom-reset").click();
   await page.locator("#show-ch2").setChecked(false);
@@ -634,6 +683,58 @@ test("phone and tablet workspaces contain controls and plots without overlap", a
   expect(tablet.scrollWidth).toBeLessThanOrEqual(tablet.innerWidth);
   expect(tablet.plotWidth).toBeGreaterThan(760);
   expect(tablet.plotHeight).toBeGreaterThan(500);
+});
+
+test("desktop module labels do not overlap controls", async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+  });
+  await resetServerConfig(page);
+  await page.goto("/");
+  await page.locator(".menu-dropdown summary").click();
+
+  const panels = [
+    ["scope", "Scope"],
+    ["asg", "ASG"],
+    ["pid", "PID"],
+    ["iq", "IQ"],
+    ["iir", "IIR"],
+    ["trig", "Trigger"],
+    ["pwm", "PWM"],
+    ["spectrumanalyzer", "Spectrum Analyzer"],
+    ["networkanalyzer", "Network Analyzer"],
+    ["curveviewer", "Curve Viewer"],
+    ["pyrplconfig", "Configuration"],
+    ["lockbox", "Lockbox"],
+    ["housekeeping", "Housekeeping"],
+    ["telemetry", "Sampler & AMS"],
+    ["registers", "Register Debug"],
+  ] as const;
+  for (const [panelId] of panels) {
+    const checkbox = page.locator(`#panel-${panelId}-enabled`);
+    await checkbox.evaluate((input: HTMLInputElement) => {
+      if (!input.checked) input.click();
+    });
+  }
+  if (await page.locator(".menu-dropdown").getAttribute("open") !== null) {
+    await page.locator(".menu-dropdown summary").click();
+  }
+
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }]) {
+    await page.setViewportSize(viewport);
+    for (const [panelId, panelTitle] of panels) {
+      await page.getByRole("button", { name: panelTitle, exact: true })
+        .evaluate((button: HTMLButtonElement) => button.click());
+      await expect(page.locator(`#${panelId}-panel`)).toBeVisible();
+      await page.waitForTimeout(60);
+      expect(
+        await visibleControlOverlaps(page, panelId),
+        `${panelTitle} label/control overlaps at ${viewport.width}x${viewport.height}`,
+      ).toEqual([]);
+    }
+  }
 });
 
 test("sampler and AMS panel refreshes, measures statistics, and writes DAC2", async ({ page }) => {

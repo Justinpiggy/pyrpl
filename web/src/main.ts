@@ -768,10 +768,10 @@ style.textContent = `
     position: relative;
     display: flex;
     align-items: end;
-    height: 45px;
+    height: 48px;
     min-width: 230px;
     margin: 0;
-    padding: 16px 0 0;
+    padding: 19px 0 0;
     border: 0;
   }
 
@@ -781,6 +781,7 @@ style.textContent = `
     left: 0;
     color: var(--muted);
     font-size: 11px;
+    line-height: 14px;
   }
 
   .segmented-control label {
@@ -976,7 +977,7 @@ style.textContent = `
     background: var(--plot-bg);
   }
 
-  .curve-viewer-content {
+  .panel-content.curve-viewer-content {
     display: flex;
     flex-direction: row;
   }
@@ -1015,7 +1016,8 @@ style.textContent = `
   }
 
   .curve-viewer-params-pane {
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(96px, 1fr) auto;
+    overflow: auto;
   }
 
   .curve-viewer-plot-pane {

@@ -3447,3 +3447,37 @@ control.
 - Verification: 19 frontend unit tests, the production build, and all 11
   Playwright workflows pass, including 390x844 phone and 820x1180 tablet Scope
   plus mobile Lockbox ordering. Backend behavior is unchanged.
+
+## 2026-07-19 Cross-Panel Label And Control Containment
+
+- Scope's Normal/Untriggered selector uses a fieldset legend. Reserve vertical
+  space in the segmented control and anchor the legend at `top: 0; left: 0`
+  with an explicit line height; relying on browser fieldset positioning lets
+  the label drift into the selector faces.
+- Do not validate only the reported panel. A geometry regression now enables
+  all 15 workspace panels at 1440x900 and 1024x768, activates each tab, and
+  rejects intersections between visible label/legend text and visible inputs,
+  selects, textareas, or buttons. Transparent segmented-radio hit areas are
+  deliberately excluded.
+- That audit found Curve Viewer was also broken: `.panel-content` appeared later
+  with equal specificity and changed its intended horizontal flex direction to
+  a vertical column. Split.js then assigned horizontal widths to vertically
+  stacked panes, collapsing the Parameters row over the Name input. Scope the
+  exception as `.panel-content.curve-viewer-content` and keep a minimum editor
+  row with scroll fallback.
+- Diagnosis mistake: I first increased only the Parameters row minimum. The
+  overlap became larger because the parent flow direction was still wrong.
+  Inspect the complete computed parent layout before patching a colliding child;
+  do not treat a local bounding-box symptom as the root cause.
+- Test-setup lesson: toggling a workspace panel can rerender and close the
+  Panels details menu. A comprehensive audit should dispatch each checkbox's
+  existing click handler or reopen the menu, rather than waiting on a now-hidden
+  next checkbox.
+- Full-suite timing mistake: the existing CH2 visibility check read renderer
+  state immediately after `setChecked()`, before its asynchronous server write
+  and event handler completed. Wait on the observable renderer state with
+  `expect.poll`; a DOM input action finishing does not prove application state
+  has propagated.
+- Verification target after this change: 73 backend tests, 19 frontend unit
+  tests, the production build, and 12 Playwright workflows, including the
+  cross-panel geometry audit.

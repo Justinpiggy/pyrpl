@@ -61,6 +61,10 @@ gap.
 - Narrow screens use document scrolling and stacked instrument panes instead of
   percentage-height Split.js tracks. Automated phone/tablet checks cover Scope
   plot size, Lockbox ordering, menu containment, and horizontal overflow.
+- Desktop checks activate every panel at wide and compact PC resolutions and
+  reject label/control intersections. Scope trigger-mode legends have reserved
+  vertical space, while Curve Viewer explicitly preserves its horizontal
+  three-pane Split.js direction.
 - Actual installation and acquisition validation on the Zynq-7000 board is
   deferred until hardware is available.
 

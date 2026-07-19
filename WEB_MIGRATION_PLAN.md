@@ -652,6 +652,10 @@ Implemented software-only coverage:
   Phone panels use natural document scrolling and stacked fixed-height plots;
   desktop/tablet layouts retain Split.js. Scope and Lockbox checks reject
   horizontal overflow and overlapping panel columns.
+- Desktop geometry tests activate all 15 panels at 1440x900 and 1024x768 and
+  reject intersections between visible labels/legends and form controls. This
+  covers shared segmented selectors as well as dynamically generated module and
+  Lockbox controls.
 - Production single-writer tests cover REST takeover/audit and accepted versus
   rejected JSON control-WebSocket mutations.
 - Hardware smoke and normalization tests remain deferred until the board is
