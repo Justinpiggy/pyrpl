@@ -832,23 +832,17 @@ The web server now uses a PyRPL-compatible YAML config by default:
 legacy PyRPL layout. Web-only workspace layout is kept under
 `pyrpl_websocket.workspace` so it does not collide with legacy module data.
 
-## Open Design Questions
+## Remaining Validation Questions
 
-- Should the first web backend still import `qtpy`, or should the module layer
-  be refactored to make Qt completely optional?
-- Which frontend framework, if any, should be used?
-- Should Red Pitaya run the web server directly, or should the first production
-  mode run the web server on a PC while keeping the Red Pitaya as
-  `monitor_server` plus FPGA?
-- Is LAN access required, or is localhost plus SSH tunneling sufficient for
-  early versions?
-- Is browser-side channel math required at parity, or can it be deferred?
-- Should raw scope streaming use `float32` initially or optimized `int16` plus
-  scale metadata from the start?
-- What is the target continuous scope frame rate on real lab networks?
-- Should multiple browser clients be supported in the first release?
-- What architecture does the target Red Pitaya image report:
-  `armv7l`, `aarch64`, or something else?
+- Which established user formulas require NumPy whole-array operations such as
+  `np.mean(ch1)`? The browser supports restricted, element-wise formulas;
+  reductions need an explicit compatible design rather than hidden `eval`.
+- What sustained frame rate and latency does the selected Red Pitaya image
+  achieve with real network clients and the deployed `float32` stream?
+- Does the target Red Pitaya image report `armv7l` or `aarch64`, and does the
+  `.[web-redpitaya]` wheel install without optional compiled packages there?
+- Hardware validation remains required for final Scope timing/normalization and
+  Spectrum/Network Analyzer normalization and transfer correction.
 
 ## Plotting Direction
 

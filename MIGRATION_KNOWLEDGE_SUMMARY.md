@@ -109,6 +109,12 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Display-only Scope changes such as XY mode, math visibility, or formula edits
   redraw `displayedData`; they must not run the last frame through averaging
   again.
+- The original Scope math formula is Python `eval` over full NumPy arrays. The
+  browser must use its restricted per-sample engine instead: support explicit
+  element-wise NumPy aliases and comparisons/conditionals, never arbitrary
+  Python or JavaScript access. Keep whole-array operations such as
+  `np.mean(ch1)` as documented gaps until their semantics are explicitly
+  designed and tested.
 - Original rolling Scope data uses `[-duration, 0]`, bypasses trace averaging,
   disables trigger/threshold/hysteresis and Run single, but leaves the FPGA
   high-resolution `average` control editable.

@@ -3481,3 +3481,24 @@ control.
 - Verification target after this change: 73 backend tests, 19 frontend unit
   tests, the production build, and 12 Playwright workflows, including the
   cross-panel geometry audit.
+
+## 2026-07-19 Scope Math Compatibility Boundary
+
+- The original Scope widget evaluates `math_formula` as Python against complete
+  NumPy arrays (`ch1`, `ch2`, `times`, and `np`). The browser must not recreate
+  unrestricted Python `eval`; it evaluates a restricted formula once per
+  sample instead.
+- Preserve common element-wise PyRPL formulas through explicit aliases rather
+  than broad `np.` stripping: support inverse trig aliases, `square`, `clip`,
+  `where`, extrema, `heaviside`, angle conversions, and `np.pi`/`np.e`.
+  Comparisons and logical operators are safe in this restricted expression
+  grammar and enable `np.where(ch1 >= 0, ..., ...)`.
+- Remove nondeterministic and collection-oriented expression helpers such as
+  `random`, `map`, and `fold`. Whole-array NumPy operations such as
+  `np.mean(ch1)` remain an explicit parity boundary unless their exact
+  array-reduction semantics are deliberately designed and tested.
+- Packaging verification caught a repeated release mistake: after Vite rotates
+  a hashed bundle name, an ignored stale `build/lib` directory can make a
+  wheel contain both old and new scripts. Run `rm -rf build` before each wheel
+  build and require the wheel verifier to find exactly one main frontend
+  bundle and one Spectrum worker.
