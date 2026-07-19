@@ -777,6 +777,8 @@ style.textContent = `
 
   .segmented-control legend {
     position: absolute;
+    top: 0;
+    left: 0;
     color: var(--muted);
     font-size: 11px;
   }
@@ -1723,6 +1725,13 @@ style.textContent = `
 	    font-size: 11px;
 	  }
 
+  .control-row label.toggle-control {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+
   .plot-toolbar {
     display: flex;
     align-items: center;
@@ -1788,51 +1797,193 @@ style.textContent = `
     cursor: ew-resize;
   }
 
-	  @media (max-width: 680px) {
-	    .topbar,
-      .menubar,
-	    .module-panel,
-	    .plot-toolbar {
+  @media (max-width: 680px) {
+    body {
+      height: auto;
+      min-height: 100dvh;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    #app,
+    .shell {
+      height: auto;
+      min-height: 100dvh;
+    }
+
+    .shell {
+      grid-template-rows: auto auto;
+      width: 100%;
+      max-width: 100vw;
+      overflow: visible;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .topbar > div:first-child {
+      min-width: 0;
+    }
+
+    #session-line {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .menubar {
+      flex-direction: row;
+      align-items: center;
+      gap: 6px;
+      margin-left: 0;
+    }
+
+    .control-strip output {
+      max-width: 110px;
+    }
+
+    .menu-content {
+      left: auto;
+      right: 0;
+      max-height: min(70dvh, 520px);
+      overflow: auto;
+    }
+
+    .workspace {
+      grid-template-rows: auto auto;
+      overflow: visible;
+    }
+
+    .workspace-tabs {
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+    }
+
+    .workspace-tab {
+      flex: 0 0 auto;
+    }
+
+    .workspace-panels,
+    .workspace-panel,
+    .panel-content,
+    .split-pane,
+    .module-panel,
+    .plot-panel,
+    .lockbox-content,
+    #lockbox-stages {
+      min-width: 0;
+      max-width: 100%;
+      height: auto;
+      min-height: 0;
+      overflow: visible;
+    }
+
+    .workspace-panel {
+      grid-template-rows: auto auto;
+    }
+
+    .panel-header {
       align-items: stretch;
       flex-direction: column;
+      gap: 6px;
+    }
+
+    .actions {
+      align-items: flex-start;
+      gap: 4px;
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .action-row,
+    .zoom-actions,
+    #lockbox-actions {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      gap: 4px;
+      flex-wrap: wrap;
+      justify-content: flex-start;
     }
 
     .actions button,
     .zoom-actions button {
-      flex: 1 1 120px;
+      flex: 0 0 auto;
     }
 
-    .menubar {
-      margin-left: 0;
+    .module-panel,
+    .plot-toolbar {
+      align-items: stretch;
+      min-width: 0;
+      max-width: 100%;
     }
 
-    .menu-content {
-      left: 0;
-      right: auto;
+    .plot-toolbar output {
+      min-width: 0;
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
 
-	    .zoom-actions {
-	      width: 100%;
-	    }
-	
-	    .module-panel {
-	      display: grid;
-	      grid-template-columns: 1fr;
-	    }
+    .panel-content > .split-pane,
+    .network-content > .split-pane,
+    .curve-viewer-content > .split-pane {
+      width: auto !important;
+      height: auto !important;
+      flex-basis: auto !important;
+    }
 
-      .signal-row,
-      .tune-row,
-      .register-row,
-      .spectrum-content,
-      .lockbox-grid,
-      .lockbox-header-controls {
-        grid-template-columns: 1fr;
-      }
-	
-	    .module-panel output {
-	      grid-column: 1 / -1;
-	    }
-	  }
+    .panel-content > .gutter,
+    .network-content > .gutter,
+    .curve-viewer-content > .gutter {
+      display: none;
+    }
+
+    #scope-plot-pane,
+    .spectrum-plot-panel {
+      height: 360px !important;
+      min-height: 360px;
+    }
+
+    .spectrum-content,
+    .network-content,
+    .curve-viewer-content {
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr);
+      height: auto !important;
+      overflow: visible;
+    }
+
+    .network-plots {
+      height: 520px !important;
+      min-height: 520px;
+    }
+
+    .lockbox-grid,
+    .lockbox-header-controls {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .lockbox-column,
+    .lockbox-sequence-column {
+      grid-template-rows: auto;
+    }
+
+    .signal-row,
+    .tune-row,
+    .register-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .module-panel output {
+      grid-column: 1 / -1;
+    }
+  }
 `;
 document.head.appendChild(style);
 

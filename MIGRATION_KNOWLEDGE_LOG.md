@@ -3419,3 +3419,31 @@ control.
   production Vite build, all 10 Playwright workflows, and packaged-wheel asset
   verification pass. Hardware timing and normalization validation remains
   deferred until the board returns.
+
+## 2026-07-19 Responsive Workspace Verification
+
+- The original narrow breakpoint kept the desktop viewport-locked shell and
+  Split.js percentage heights. On a phone this clipped action rows and made the
+  three Lockbox columns and plots occupy the same constrained vertical region.
+  Phone panels now use natural document flow, stacked controls and stable-height
+  plots, wrapped compact actions, and no inactive split gutters. Tablet and
+  desktop Split.js behavior is unchanged.
+- The first structural fix still measured 937 CSS pixels in a 390-pixel
+  viewport. The cause was the Scope plot's long nowrap status output imposing
+  its min-content width through every ancestor grid. Let grid/flex layers
+  shrink and wrap plot status text at the phone breakpoint; do not merely hide
+  the resulting horizontal overflow.
+- Visual-review mistake: a scaled full-page screenshot looked contained before
+  browser metrics exposed the 937-pixel document width. Always pair responsive
+  screenshots with `scrollWidth`, bounding-box, and non-overlap assertions.
+- Playwright's CLI device profile selected the profile's unavailable WebKit
+  browser despite a Chromium flag. For local visual checks in this environment,
+  use explicit Chromium plus `--viewport-size`; use Playwright test projects
+  for true device profiles when those browser binaries are installed.
+- Checkbox alignment was also being overridden by a later generic grid-label
+  rule. Keep toggle labels explicitly flex-row so each checkbox stays in front
+  of its FPGA Avg, XY, or Math label. Anchor segmented-control legends at the
+  top-left instead of relying on browser fieldset positioning.
+- Verification: 19 frontend unit tests, the production build, and all 11
+  Playwright workflows pass, including 390x844 phone and 820x1180 tablet Scope
+  plus mobile Lockbox ordering. Backend behavior is unchanged.

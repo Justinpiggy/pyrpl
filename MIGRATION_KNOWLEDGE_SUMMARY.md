@@ -249,3 +249,11 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Keep binary frame parsing independent of the FPGA's current 16k capture size.
   Synthetic frontend tests should include 65,536 samples so future streamed or
   composed traces cannot reintroduce argument-stack or allocation assumptions.
+- Do not retain percentage-height split panes on phone-width auto-height pages.
+  Stack controls and stable-height plots, hide only the inactive gutters, and
+  let the document scroll. Long nowrap status outputs can impose a hidden
+  min-content width on every ancestor grid; wrap them at the narrow breakpoint
+  and assert `documentElement.scrollWidth <= innerWidth` in Playwright.
+- A scaled full-page screenshot is not proof of responsive containment. Pair
+  visual inspection with CSS-pixel bounds for headers, menus, action rows,
+  plots, and sequential panel columns.

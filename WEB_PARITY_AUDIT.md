@@ -58,6 +58,9 @@ gap.
 - Long-lived event and acquisition WebSockets retry unexpected network loss
   with bounded backoff. Explicit Stop/Close paths cancel retries, and browser
   coverage verifies Scope data resumes after an offline/online transition.
+- Narrow screens use document scrolling and stacked instrument panes instead of
+  percentage-height Split.js tracks. Automated phone/tablet checks cover Scope
+  plot size, Lockbox ordering, menu containment, and horizontal overflow.
 - Actual installation and acquisition validation on the Zynq-7000 board is
   deferred until hardware is available.
 

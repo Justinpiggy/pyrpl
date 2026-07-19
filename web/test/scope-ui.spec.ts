@@ -548,6 +548,94 @@ test("scope stream reconnects after a browser network interruption", async ({ pa
   await expect(page.locator("#status")).toContainText(/Frame \d+/);
 });
 
+test("phone and tablet workspaces contain controls and plots without overlap", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+  });
+  await resetServerConfig(page);
+  await page.goto("/");
+  await expect(page.locator("#scope-plot .uplot")).toBeVisible();
+  await expect(page.locator("#status")).toContainText(/Frame [1-9]/);
+
+  const phoneScope = await page.evaluate(() => {
+    const controls = document.querySelector("#scope-controls-pane")?.getBoundingClientRect();
+    const plotPane = document.querySelector("#scope-plot-pane")?.getBoundingClientRect();
+    const topbar = document.querySelector(".topbar")?.getBoundingClientRect();
+    const menu = document.querySelector(".menu-dropdown")?.getBoundingClientRect();
+    const gutter = document.querySelector("#scope-panel-content > .gutter");
+    return {
+      innerWidth: window.innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      scrollHeight: document.documentElement.scrollHeight,
+      controlsBottom: controls?.bottom ?? 0,
+      plotTop: plotPane?.top ?? 0,
+      plotWidth: plotPane?.width ?? 0,
+      plotHeight: plotPane?.height ?? 0,
+      topbarRight: topbar?.right ?? 0,
+      menuRight: menu?.right ?? 0,
+      gutterDisplay: gutter ? getComputedStyle(gutter).display : "missing",
+      offenders: Array.from(document.querySelectorAll<HTMLElement>("body *"))
+        .map((element) => {
+          const bounds = element.getBoundingClientRect();
+          return { tag: element.tagName, id: element.id, className: element.className, right: bounds.right, width: bounds.width };
+        })
+        .filter((item) => item.right > window.innerWidth + 1 || item.width > window.innerWidth + 1)
+        .sort((left, right) => right.width - left.width)
+        .slice(0, 20),
+    };
+  });
+  expect(phoneScope.scrollWidth, JSON.stringify(phoneScope.offenders)).toBeLessThanOrEqual(phoneScope.innerWidth);
+  expect(phoneScope.scrollHeight).toBeGreaterThan(844);
+  expect(phoneScope.controlsBottom).toBeLessThanOrEqual(phoneScope.plotTop + 1);
+  expect(phoneScope.plotWidth).toBeGreaterThan(340);
+  expect(phoneScope.plotHeight).toBeGreaterThanOrEqual(360);
+  expect(phoneScope.topbarRight).toBeLessThanOrEqual(phoneScope.innerWidth);
+  expect(phoneScope.menuRight).toBeLessThanOrEqual(phoneScope.innerWidth);
+  expect(phoneScope.gutterDisplay).toBe("none");
+
+  await page.locator(".menu-dropdown summary").click();
+  await page.locator("#panel-lockbox-enabled").setChecked(true);
+  await page.getByRole("button", { name: "Lockbox", exact: true }).click();
+  await expect(page.locator("#lockbox-input-plot .uplot")).toBeVisible();
+  const phoneLockbox = await page.evaluate(() => {
+    const columns = Array.from(document.querySelectorAll("#lockbox-panel .lockbox-column"), (element) => {
+      const bounds = element.getBoundingClientRect();
+      return { top: bounds.top, bottom: bounds.bottom };
+    });
+    const actionBounds = document.querySelector("#lockbox-actions")?.getBoundingClientRect();
+    return {
+      innerWidth: window.innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      columns,
+      actionRight: actionBounds?.right ?? 0,
+    };
+  });
+  expect(phoneLockbox.scrollWidth).toBeLessThanOrEqual(phoneLockbox.innerWidth);
+  expect(phoneLockbox.actionRight).toBeLessThanOrEqual(phoneLockbox.innerWidth);
+  expect(phoneLockbox.columns).toHaveLength(3);
+  expect(phoneLockbox.columns[0].bottom).toBeLessThanOrEqual(phoneLockbox.columns[1].top + 1);
+  expect(phoneLockbox.columns[1].bottom).toBeLessThanOrEqual(phoneLockbox.columns[2].top + 1);
+
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await resetServerConfig(page);
+  await page.reload();
+  await expect(page.locator("#scope-plot .uplot")).toBeVisible();
+  await expect(page.locator("#status")).toContainText(/Frame [1-9]/);
+  const tablet = await page.evaluate(() => {
+    const plot = document.querySelector("#scope-plot-pane")?.getBoundingClientRect();
+    return {
+      innerWidth: window.innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      plotWidth: plot?.width ?? 0,
+      plotHeight: plot?.height ?? 0,
+    };
+  });
+  expect(tablet.scrollWidth).toBeLessThanOrEqual(tablet.innerWidth);
+  expect(tablet.plotWidth).toBeGreaterThan(760);
+  expect(tablet.plotHeight).toBeGreaterThan(500);
+});
+
 test("sampler and AMS panel refreshes, measures statistics, and writes DAC2", async ({ page }) => {
   await resetServerConfig(page);
   await page.goto("/");

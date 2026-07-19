@@ -648,6 +648,10 @@ Implemented software-only coverage:
 - Synthetic binary tests cover normal 16k Scope frames and 65,536-sample
   renderer input. Bounded fan-out queues and animation-frame coalescing cover
   dropped display frames without blocking acquisition.
+- Playwright covers a 390x844 phone workspace and an 820x1180 tablet workspace.
+  Phone panels use natural document scrolling and stacked fixed-height plots;
+  desktop/tablet layouts retain Split.js. Scope and Lockbox checks reject
+  horizontal overflow and overlapping panel columns.
 - Production single-writer tests cover REST takeover/audit and accepted versus
   rejected JSON control-WebSocket mutations.
 - Hardware smoke and normalization tests remain deferred until the board is
