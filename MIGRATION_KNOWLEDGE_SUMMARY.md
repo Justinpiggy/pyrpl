@@ -286,5 +286,5 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   label/legend rectangles against visible controls at both wide and compact PC
   sizes; visual checks of Scope alone will miss failures in dynamic panels.
 - Lockbox stages are dynamic widgets in the original GUI. Keep each web stage
-  card content-sized, but bound the sequence viewport and scroll that list so
-  many stages do not make the complete Lockbox panel grow indefinitely.
+  card content-sized, let the sequence viewport fill the available Lockbox
+  panel height, and scroll that list only after many stages exceed it.

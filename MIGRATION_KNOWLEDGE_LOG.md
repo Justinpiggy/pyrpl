@@ -3593,11 +3593,11 @@ control.
   widget for each stage. Its controls and stage outputs differ by model, so a
   fixed card height can clip valid attributes from built-in or user-provided
   models.
-- In the web UI, keep the sequence column at a compact bounded height and make
-  `#lockbox-stages` the vertical scrolling viewport. Cards use their natural
-  content height and the list uses `grid-auto-rows: max-content`, preserving
-  every control while allowing arbitrarily many stages without expanding the
-  overall Lockbox panel.
+- In the web UI, make the sequence column fill the available Lockbox panel
+  height and make `#lockbox-stages` the vertical scrolling viewport. Cards use
+  their natural content height and the list uses `grid-auto-rows: max-content`,
+  preserving every control while allowing arbitrarily many stages without
+  expanding the overall Lockbox panel.
 - Keep the mobile single-column layout unbounded so normal page scrolling
   remains usable on small screens. Browser coverage must add enough stages to
   prove the desktop viewport remains fixed and the final stage can be reached

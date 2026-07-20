@@ -1383,7 +1383,7 @@ test("lockbox panel switches classes, edits stages, and renders static plots", a
   await expect(page.locator("#lockbox-status")).toContainText(/stage|lock_on/);
 });
 
-test("lockbox stages use a compact scrollable sequence viewport", async ({ page }) => {
+test("lockbox stages fill the panel height and scroll when needed", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.clear();
   });
@@ -1410,11 +1410,14 @@ test("lockbox stages use a compact scrollable sequence viewport", async ({ page 
       scrollHeight: element.scrollHeight,
       overflowY: getComputedStyle(element).overflowY,
       sequenceHeight: sequence?.height ?? 0,
+      sequenceBottom: sequence?.bottom ?? 0,
+      gridBottom: element.parentElement?.parentElement?.getBoundingClientRect().bottom ?? 0,
     };
   });
   expect(viewport.overflowY).toBe("auto");
   expect(viewport.clientHeight).toBeLessThan(viewport.scrollHeight);
   expect(viewport.sequenceHeight).toBeCloseTo(before, 0);
+  expect(viewport.sequenceBottom).toBeCloseTo(viewport.gridBottom, 0);
 
   await page.locator("#lockbox-stages").evaluate((element) => {
     element.scrollTop = element.scrollHeight;

@@ -1447,7 +1447,7 @@
   }
 
   .lockbox-content {
-    overflow: auto;
+    overflow: hidden;
   }
 
   .lockbox-overview {
@@ -1461,8 +1461,10 @@
   .lockbox-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(280px, 1fr));
+    flex: 1 1 0;
     gap: 6px;
     min-height: 0;
+    overflow: hidden;
   }
 
   .lockbox-column {
@@ -1476,8 +1478,6 @@
 
   .lockbox-sequence-column {
     grid-template-rows: auto minmax(0, 1fr);
-    align-self: start;
-    height: clamp(360px, 56dvh, 520px);
   }
 
   .lockbox-section-header,
@@ -1972,10 +1972,6 @@
     .lockbox-column,
     .lockbox-sequence-column {
       grid-template-rows: auto;
-    }
-
-    .lockbox-sequence-column {
-      height: auto;
     }
 
     .signal-row,
