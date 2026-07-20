@@ -33,7 +33,7 @@ def main() -> None:
             raise SystemExit(f"wheel must contain exactly one Spectrum FFT worker, found {workers}")
         entry_points_name = next(name for name in names if name.endswith(".dist-info/entry_points.txt"))
         entry_points = archive.read(entry_points_name).decode("utf-8")
-        for command in ["pyrpl-web =", "pyrpl-web-audit ="]:
+        for command in ["pyrpl-web =", "pyrpl-web-audit =", "pyrpl-web-validate-hardware ="]:
             if command not in entry_points:
                 raise SystemExit(f"wheel is missing console command: {command[:-2]}")
     print(f"verified web wheel: {wheel}")

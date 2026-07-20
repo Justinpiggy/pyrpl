@@ -208,6 +208,12 @@ zero-padding now runs in a browser Web Worker, including normalized windows,
 baseband complex cross spectra, scope/IQ transfer correction, and linear
 browser-side averaging.
 
+The opt-in `pyrpl-web-validate-hardware` command is prepared for that board
+session. It first probes the compatible monitor-server transport without
+writes; explicit `--allow-write` gates Scope capture, internal ASG0-to-Scope,
+Spectrum hardware capture, and Network Analyzer IQ self-loop checks. See
+`HARDWARE_VALIDATION.md`.
+
 Multi-client semantics are complete for the initial production policy. One
 renewable browser/API lease owns all mutations, observers receive state and
 fan-out acquisition data without starting competing hardware loops, explicit

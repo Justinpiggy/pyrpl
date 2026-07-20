@@ -3520,3 +3520,15 @@ control.
   publish its temporary capture to the running Scope stream, and restore the
   previous setup afterward. Preserve this documented exception rather than
   treating it as a generic resource rule.
+
+## 2026-07-19 Hardware Validation Harness
+
+- Live validation must be explicit and safe by default. The hardware command
+  only probes monitor-server connectivity until `--allow-write` is supplied;
+  write-enabled checks belong on a dedicated validation board and leave Scope,
+  Spectrum Analyzer, Network Analyzer, and ASG0 stopped/off afterward.
+- Base the internal checks on legacy PyRPL coverage: ASG0-to-Scope confirms DSP
+  routing without external wiring, while Network Analyzer's IQ self-loop gives
+  a controlled unity-response check. Do not claim external detector transfer
+  correction or browser FFT normalization has passed until the relevant
+  physical loop and WebSocket display have been exercised.

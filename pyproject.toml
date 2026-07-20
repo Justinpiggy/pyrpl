@@ -99,6 +99,7 @@ ipython = [
 [project.scripts]
 pyrpl-web = "pyrpl_websocket.__main__:main"
 pyrpl-web-audit = "pyrpl_websocket.dependency_audit:main"
+pyrpl-web-validate-hardware = "pyrpl_websocket.hardware_validation:main"
 
 [tool.setuptools]
 packages = { find = {} }
