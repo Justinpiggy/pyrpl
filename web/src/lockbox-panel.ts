@@ -256,6 +256,7 @@ export class LockboxPanel {
     this.elements.stages.textContent = "";
     stages.forEach((stage, index) => {
       const card = this.createSectionCard(stage.name, `stage ${index}`);
+      card.classList.add("lockbox-stage-card");
       const deleteButton = document.createElement("button");
       deleteButton.type = "button";
       deleteButton.textContent = "Delete";

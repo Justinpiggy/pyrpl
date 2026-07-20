@@ -1383,6 +1383,45 @@ test("lockbox panel switches classes, edits stages, and renders static plots", a
   await expect(page.locator("#lockbox-status")).toContainText(/stage|lock_on/);
 });
 
+test("lockbox stages use a compact scrollable sequence viewport", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+  });
+
+  await resetServerConfig(page);
+  await page.goto("/");
+  await page.locator(".menu-dropdown summary").click();
+  await page.locator("#panel-lockbox-enabled").setChecked(true);
+  await page.getByRole("button", { name: "Lockbox" }).click();
+  await expect(page.locator("#lockbox-stages")).toBeVisible();
+
+  const before = await page.locator(".lockbox-sequence-column").evaluate((element) => element.getBoundingClientRect().height);
+  let stageCount = (await page.evaluate(() => window.pyrplScope?.getLockboxStageCount())) ?? 0;
+  for (let index = 0; index < 6; index += 1) {
+    await page.locator("#lockbox-add-stage").click();
+    stageCount += 1;
+    await expect.poll(() => page.evaluate(() => window.pyrplScope?.getLockboxStageCount())).toBe(stageCount);
+  }
+
+  const viewport = await page.locator("#lockbox-stages").evaluate((element) => {
+    const sequence = element.parentElement?.getBoundingClientRect();
+    return {
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      overflowY: getComputedStyle(element).overflowY,
+      sequenceHeight: sequence?.height ?? 0,
+    };
+  });
+  expect(viewport.overflowY).toBe("auto");
+  expect(viewport.clientHeight).toBeLessThan(viewport.scrollHeight);
+  expect(viewport.sequenceHeight).toBeCloseTo(before, 0);
+
+  await page.locator("#lockbox-stages").evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(page.locator("#lockbox-stages .lockbox-stage-card").last()).toBeInViewport();
+});
+
 test("configuration panel edits PyRPL YAML branches and validates input", async ({ page }) => {
   await page.goto("/");
   await page.locator("summary", { hasText: "Panels" }).click();

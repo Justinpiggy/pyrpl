@@ -3586,3 +3586,19 @@ control.
 - Browser coverage must assert that a newly shown Spectrum plot reaches the
   full host size without moving its split handle, and that Lockbox input/output
   uPlot roots fit their respective frames without clipping.
+
+## 2026-07-20 Lockbox Stage Viewport
+
+- The original Lockbox sequence creates a separate, dynamically composed
+  widget for each stage. Its controls and stage outputs differ by model, so a
+  fixed card height can clip valid attributes from built-in or user-provided
+  models.
+- In the web UI, keep the sequence column at a compact bounded height and make
+  `#lockbox-stages` the vertical scrolling viewport. Cards use their natural
+  content height and the list uses `grid-auto-rows: max-content`, preserving
+  every control while allowing arbitrarily many stages without expanding the
+  overall Lockbox panel.
+- Keep the mobile single-column layout unbounded so normal page scrolling
+  remains usable on small screens. Browser coverage must add enough stages to
+  prove the desktop viewport remains fixed and the final stage can be reached
+  by scrolling.

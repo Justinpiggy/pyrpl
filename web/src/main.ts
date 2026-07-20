@@ -1497,6 +1497,8 @@ style.textContent = `
 
   .lockbox-sequence-column {
     grid-template-rows: auto minmax(0, 1fr);
+    align-self: start;
+    height: clamp(360px, 56dvh, 520px);
   }
 
   .lockbox-section-header,
@@ -1546,11 +1548,14 @@ style.textContent = `
   }
 
   #lockbox-stages {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: max-content;
+    align-content: start;
     min-height: 0;
-  }
-
-  #lockbox-stages {
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
   }
 
   .lockbox-card {
@@ -1560,6 +1565,10 @@ style.textContent = `
     border: 1px solid var(--panel-border);
     border-radius: 6px;
     padding: 6px;
+  }
+
+  .lockbox-stage-card {
+    align-content: start;
   }
 
   .lockbox-control-row {
@@ -1984,6 +1993,10 @@ style.textContent = `
     .lockbox-column,
     .lockbox-sequence-column {
       grid-template-rows: auto;
+    }
+
+    .lockbox-sequence-column {
+      height: auto;
     }
 
     .signal-row,

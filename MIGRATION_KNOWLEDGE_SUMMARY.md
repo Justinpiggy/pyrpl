@@ -285,3 +285,6 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   anchor and line height. Cross-panel browser tests should compare visible
   label/legend rectangles against visible controls at both wide and compact PC
   sizes; visual checks of Scope alone will miss failures in dynamic panels.
+- Lockbox stages are dynamic widgets in the original GUI. Keep each web stage
+  card content-sized, but bound the sequence viewport and scroll that list so
+  many stages do not make the complete Lockbox panel grow indefinitely.
