@@ -843,9 +843,10 @@ legacy PyRPL layout. Web-only workspace layout is kept under
 
 ## Remaining Validation Questions
 
-- Which established user formulas require NumPy whole-array operations such as
-  `np.mean(ch1)`? The browser supports restricted, element-wise formulas;
-  reductions need an explicit compatible design rather than hidden `eval`.
+- The browser supports safe scalar reductions over a complete `ch1`, `ch2`, or
+  `times` vector: `np.mean`, `sum`, `min`, `max`, `ptp`, `var`, `std`, and
+  `median`. Complex NumPy array expressions, axes, slices, and masks remain an
+  explicit compatibility boundary rather than a hidden `eval` feature.
 - What sustained frame rate and latency does the selected Red Pitaya image
   achieve with real network clients and the deployed `float32` stream?
 - Does the target Red Pitaya image report `armv7l` or `aarch64`, and does the

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+import zipfile
 from pathlib import Path
 from threading import Event
 from unittest import mock
@@ -414,6 +415,40 @@ class WebAppTest(unittest.TestCase):
             report = audit_report(machine="armv7l")
         self.assertFalse(report["ok"])
         self.assertTrue(any("Pydantic 1" in error for error in report["errors"]))
+
+    def test_dependency_audit_requires_the_pinned_redpitaya_web_stack(self):
+        versions = {
+            "numpy": "1.24.0",
+            "PyYAML": "6.0.1",
+            "fastapi": "0.116.0",
+            "starlette": "0.38.6",
+            "pydantic": "1.10.24",
+            "uvicorn": "0.30.6",
+            "wsproto": "1.2.0",
+            "h11": "0.14.0",
+            "pydantic_core": None,
+            "uvloop": None,
+            "httptools": None,
+            "watchfiles": None,
+        }
+        with mock.patch("pyrpl_websocket.dependency_audit._version", side_effect=versions.get):
+            report = audit_report(machine="armv7l")
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("fastapi>=0.115, <0.116" in error for error in report["errors"]))
+
+    def test_dependency_audit_rejects_nonportable_web_wheel(self):
+        with tempfile.TemporaryDirectory() as directory:
+            wheel = Path(directory) / "pyrpl-0-cp310-cp310-linux_armv7l.whl"
+            with zipfile.ZipFile(wheel, "w") as archive:
+                archive.writestr("pyrpl_websocket/frontend/index.html", "<!doctype html>")
+                archive.writestr("pyrpl_websocket/__main__.py", "")
+                archive.writestr("pyrpl_websocket/frontend/assets/index-a.js", "")
+                archive.writestr("pyrpl_websocket/frontend/assets/spectrum-worker-a.js", "")
+                archive.writestr("pyrpl_websocket/native.so", "")
+            report = audit_report(wheel=wheel)
+        self.assertFalse(report["ok"])
+        self.assertIn("universal *-none-any", " ".join(report["errors"]))
+        self.assertIn("native extensions", " ".join(report["errors"]))
 
     def test_asset_info_finds_copied_monitor_server_assets(self):
         assets = asset_info()

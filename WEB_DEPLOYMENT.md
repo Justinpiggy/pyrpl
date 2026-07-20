@@ -27,8 +27,28 @@ TypeScript frontend on a development machine before copying or installing the
 repository; Node.js is not needed on the board because the wheel contains the
 compiled assets.
 
+Build and inspect the wheel on the development machine first. This verifies
+that the compiled TypeScript bundle is included, and that the Python payload is
+a universal `*-none-any` wheel with no native extension in the web runtime:
+
 ```bash
-python3 -m pip install --no-cache-dir ".[web-redpitaya]"
+cd web && npm ci && npm run build && cd ..
+rm -rf build
+python -m pip wheel . --no-deps --no-build-isolation --wheel-dir /tmp/pyrpl-web-wheel
+python scripts/verify_web_wheel.py /tmp/pyrpl-web-wheel/*.whl
+python -m pyrpl_websocket.dependency_audit \
+  --strict-armv7 --wheel /tmp/pyrpl-web-wheel/*.whl
+```
+
+On the board, install the already-built wheel with the bounded runtime extra,
+then run the same environment audit. The board-provided NumPy installation is
+intentionally retained; it is the only compiled numerical dependency required
+by the web runtime.
+
+```bash
+WHEEL="$(realpath /path/to/pyrpl-*.whl)"
+python3 -m pip install --no-cache-dir \
+  "pyrpl[web-redpitaya] @ file://${WHEEL}"
 pyrpl-web-audit --strict-armv7
 ```
 

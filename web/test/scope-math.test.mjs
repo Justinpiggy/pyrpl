@@ -62,10 +62,34 @@ test("Scope math supports NumPy conditionals and constants per sample", () => {
   assert.deepEqual(Array.from(values), [0, 0, 1, 1]);
 });
 
+test("Scope math broadcasts explicit NumPy reductions over a complete trace", () => {
+  const values = evaluateScopeMath(
+    "np.mean(ch1) + np.ptp(ch2) + np.std(times)",
+    ch1,
+    ch2,
+    times,
+  );
+
+  const expected = -0.0625 + 2 + Math.sqrt(0.078125);
+  for (const value of values) assert.ok(Math.abs(value - expected) < 1e-6);
+});
+
+test("Scope math keeps each supported complete-vector reduction explicit", () => {
+  const values = evaluateScopeMath(
+    "np.sum(ch1) + np.min(ch2) + np.max(times) + np.var(ch1) + np.median(ch2)",
+    ch1,
+    ch2,
+    times,
+  );
+
+  const expected = 1.99921875;
+  for (const value of values) assert.ok(Math.abs(value - expected) < 1e-6);
+});
+
 test("Scope math keeps unsupported array APIs and unsafe expressions out", () => {
   assert.throws(
-    () => evaluateScopeMath("np.mean(ch1)", ch1, ch2, times),
-    /unknown variable mean/,
+    () => evaluateScopeMath("np.diff(ch1)", ch1, ch2, times),
+    /unknown variable diff/,
   );
   assert.throws(() => evaluateScopeMath("ch1 = 1", ch1, ch2, times));
   assert.throws(() => evaluateScopeMath("", ch1, ch2, times), /formula is empty/);

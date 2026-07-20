@@ -3532,3 +3532,29 @@ control.
   a controlled unity-response check. Do not claim external detector transfer
   correction or browser FFT normalization has passed until the relevant
   physical loop and WebSocket display have been exercised.
+
+## 2026-07-19 Scope Reductions And Offline ARM Audit
+
+- PyRPL Scope formulas are whole-array NumPy `eval`, while the browser renderer
+  is intentionally sample-wise. Safe parity for a reduction is a precomputed
+  scalar over exactly one complete `ch1`, `ch2`, or `times` vector, substituted
+  before the restricted expression is evaluated and therefore broadcast like a
+  NumPy scalar. Support only direct-vector `mean`, `sum`, `min`, `max`, `ptp`,
+  `var`, `std`, and `median`; do not pretend that axes, slices, masks, or
+  nested vector expressions are equivalent.
+- Do not insert the text `NaN` into an `expr-eval` formula: it is interpreted
+  as an unapproved variable. Emit an arithmetic invalid expression such as
+  `(0 / 0)` to preserve a non-finite result in the restricted grammar.
+- ARM deployment can be meaningfully audited before the board is available:
+  verify the pinned `web-redpitaya` version ranges and prohibited ARMv7
+  accelerators, then inspect a built `py3-none-any` wheel for one compiled
+  frontend bundle, one Spectrum worker, and no native web-runtime extensions.
+  This is deployment readiness evidence, not a replacement for live capture
+  and monitor-server validation.
+- Pip extras on a locally built wheel require direct-reference syntax such as
+  `"pyrpl[web-redpitaya] @ file:///absolute/path/pyrpl-...whl"`; appending an
+  extra directly to a wheel filename is not a reliable install form.
+- Do not equate a portable wheel with the exact `py3-none-any` filename tag.
+  Setuptools can correctly emit `py2.py3-none-any` for a pure-Python package;
+  audit the meaningful `*-none-any` platform tag and the absence of native web
+  runtime extensions instead.
