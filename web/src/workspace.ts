@@ -4,7 +4,8 @@ const WORKSPACE_STORAGE_KEY = "pyrpl-websocket.workspace.v1";
 export type WorkspaceLayoutMode = "tabs" | "split-horizontal" | "split-vertical";
 
 const DEFAULT_LAYOUT_MODE: WorkspaceLayoutMode = "tabs";
-const DEFAULT_WORKSPACE_SPLIT_SIZES = [50, 50];
+const DEFAULT_WORKSPACE_SPLIT_PANE_COUNT = 2;
+export const MAX_WORKSPACE_SPLIT_PANES = 3;
 
 export interface PanelWorkspaceState {
   enabled: boolean;
@@ -14,6 +15,7 @@ export interface PanelWorkspaceState {
 export interface WorkspaceState {
   activePanelId: PanelId | null;
   layoutMode: WorkspaceLayoutMode;
+  splitPanelIds: PanelId[];
   workspaceSplitSizes: number[];
   panels: Record<PanelId, PanelWorkspaceState>;
 }
@@ -31,7 +33,8 @@ export function defaultWorkspaceState(): WorkspaceState {
   return {
     activePanelId: firstEnabledPanel(panels),
     layoutMode: DEFAULT_LAYOUT_MODE,
-    workspaceSplitSizes: [...DEFAULT_WORKSPACE_SPLIT_SIZES],
+    splitPanelIds: firstEnabledPanel(panels) ? [firstEnabledPanel(panels)!] : [],
+    workspaceSplitSizes: normalizeWorkspaceSplitSizes([], 1),
     panels,
   };
 }
@@ -68,11 +71,19 @@ export function normalizeWorkspaceState(saved: unknown): WorkspaceState {
     payload.activePanelId && panels[payload.activePanelId]?.enabled
       ? payload.activePanelId
       : firstEnabledPanel(panels);
+  const splitPanelIds = normalizeSplitPanelIds(
+    Array.isArray(payload.splitPanelIds)
+      ? payload.splitPanelIds
+      : enabledPanelIds(panels).slice(0, DEFAULT_WORKSPACE_SPLIT_PANE_COUNT),
+    panels,
+    activePanelId,
+  );
 
   return {
     activePanelId,
     layoutMode: normalizeLayoutMode(payload.layoutMode),
-    workspaceSplitSizes: normalizeWorkspaceSplitSizes(payload.workspaceSplitSizes, DEFAULT_WORKSPACE_SPLIT_SIZES.length),
+    splitPanelIds,
+    workspaceSplitSizes: normalizeWorkspaceSplitSizes(payload.workspaceSplitSizes, Math.max(1, splitPanelIds.length)),
     panels,
   };
 }
@@ -82,7 +93,36 @@ export function saveWorkspaceState(state: WorkspaceState): void {
 }
 
 export function firstEnabledPanel(panels: Record<PanelId, PanelWorkspaceState>): PanelId | null {
-  return PANEL_DEFINITIONS.find((panel) => panels[panel.id]?.enabled)?.id ?? null;
+  return enabledPanelIds(panels)[0] ?? null;
+}
+
+export function enabledPanelIds(panels: Record<PanelId, PanelWorkspaceState>): PanelId[] {
+  return PANEL_DEFINITIONS.filter((panel) => panels[panel.id]?.enabled).map((panel) => panel.id);
+}
+
+export function normalizeSplitPanelIds(
+  value: unknown,
+  panels: Record<PanelId, PanelWorkspaceState>,
+  fallbackPanelId: PanelId | null = firstEnabledPanel(panels),
+): PanelId[] {
+  const enabled = enabledPanelIds(panels);
+  const requested = Array.isArray(value) ? value : [];
+  const selected: PanelId[] = [];
+  for (const panelId of requested) {
+    if (typeof panelId === "string" && enabled.includes(panelId as PanelId) && !selected.includes(panelId as PanelId)) {
+      selected.push(panelId as PanelId);
+    }
+    if (selected.length === MAX_WORKSPACE_SPLIT_PANES) {
+      return selected;
+    }
+  }
+  if (selected.length > 0) {
+    return selected;
+  }
+  if (fallbackPanelId && enabled.includes(fallbackPanelId)) {
+    return [fallbackPanelId];
+  }
+  return enabled.slice(0, 1);
 }
 
 export function normalizeLayoutMode(value: unknown): WorkspaceLayoutMode {

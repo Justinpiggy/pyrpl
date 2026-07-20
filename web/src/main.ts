@@ -11,9 +11,11 @@ import Split from "split.js";
 import { PANEL_DEFINITIONS, type PanelId } from "./panel-registry";
 import { createRegisterPanel } from "./register-panel";
 import {
+  MAX_WORKSPACE_SPLIT_PANES,
   firstEnabledPanel,
   loadWorkspaceState,
   normalizeLayoutMode,
+  normalizeSplitPanelIds,
   normalizeSplitSizes,
   normalizeWorkspaceState,
   normalizeWorkspaceSplitSizes,
@@ -24,6 +26,7 @@ import {
 
 const controlClient = new ControlClient();
 controlClient.installFetchHeaders();
+const DEFAULT_WORKSPACE_SPLIT_PANE_COUNT = 2;
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -862,6 +865,10 @@ style.textContent = `
     display: none;
   }
 
+  .workspace-tabs[hidden] {
+    display: none;
+  }
+
   .workspace-tab {
     height: 28px;
     border-color: var(--panel-border);
@@ -873,6 +880,21 @@ style.textContent = `
     border-color: #71828e;
     background: var(--panel);
     color: var(--text);
+  }
+
+  .workspace-pane-selector {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    min-width: 0;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .workspace-pane-selector select {
+    min-width: 116px;
+    max-width: 180px;
   }
 
   .workspace-panel {
@@ -923,6 +945,7 @@ style.textContent = `
     min-height: 42px;
     border-bottom: 1px solid var(--panel-border);
     padding: 5px 8px;
+    flex-wrap: wrap;
   }
 
   .spectrum-header {
@@ -2376,6 +2399,7 @@ function exposeDebugState(): void {
     getScopeSplitSizes: () => workspaceState.panels.scope.splitSizes ?? [28, 72],
     getWorkspaceLayoutMode: () => workspaceState.layoutMode,
     getWorkspaceSplitSizes: () => workspaceState.workspaceSplitSizes,
+    getWorkspaceSplitPanelIds: () => workspaceState.splitPanelIds,
     getActivePanelId: () => workspaceState.activePanelId,
     getCsvLineCount: () => stream.exportCsv().trimEnd().split("\n").length,
     getDisplayedStats: () => stream.getDisplayedStats(),
@@ -2422,9 +2446,10 @@ function applyWorkspaceState(): void {
   renderPanelMenu();
   renderWorkspaceTabs();
   const enabledPanels = enabledPanelIds();
-  const useWorkspaceSplit = workspaceState.layoutMode !== "tabs" && enabledPanels.length > 1;
+  const splitPanelIds = workspaceState.layoutMode === "tabs" ? [] : workspaceState.splitPanelIds;
+  const useWorkspaceSplit = workspaceState.layoutMode !== "tabs" && splitPanelIds.length > 0;
   const visiblePanelIds = useWorkspaceSplit
-    ? enabledPanels
+    ? splitPanelIds
     : workspaceState.activePanelId
       ? [workspaceState.activePanelId]
       : [];
@@ -2439,8 +2464,9 @@ function applyWorkspaceState(): void {
   for (const [panelId, panel] of Object.entries(panelElements) as Array<[PanelId, HTMLElement]>) {
     panel.hidden = !visiblePanels.has(panelId);
   }
+  renderWorkspacePaneSelectors(visiblePanelIds);
   emptyWorkspace.hidden = hasEnabledPanels;
-  if (useWorkspaceSplit) {
+  if (useWorkspaceSplit && visiblePanelIds.length > 1) {
     ensureWorkspaceSplit(visiblePanelIds);
   } else {
     destroyWorkspaceSplit();
@@ -2470,6 +2496,30 @@ function applyWorkspaceState(): void {
 
 function enabledPanelIds(): PanelId[] {
   return PANEL_DEFINITIONS.filter((panel) => workspaceState.panels[panel.id]?.enabled).map((panel) => panel.id);
+}
+
+function splitPanelIdsFor(
+  panels: WorkspaceState["panels"],
+  requested: PanelId[],
+  desiredCount: number,
+  fallbackPanelId: PanelId | null,
+): PanelId[] {
+  const enabled = PANEL_DEFINITIONS.filter((panel) => panels[panel.id]?.enabled).map((panel) => panel.id);
+  const maximum = Math.min(MAX_WORKSPACE_SPLIT_PANES, enabled.length);
+  const count = Math.min(Math.max(1, desiredCount), maximum);
+  if (count === 0) {
+    return [];
+  }
+  const selected = normalizeSplitPanelIds(requested, panels, fallbackPanelId);
+  for (const panelId of enabled) {
+    if (selected.length >= count) {
+      break;
+    }
+    if (!selected.includes(panelId)) {
+      selected.push(panelId);
+    }
+  }
+  return selected.slice(0, count);
 }
 
 function renderPanelMenu(): void {
@@ -2520,10 +2570,40 @@ function renderPanelMenu(): void {
   });
   layoutLabel.append(layoutText, layoutSelect);
   panelMenu.appendChild(layoutLabel);
+
+  if (workspaceState.layoutMode !== "tabs") {
+    const enabledPanels = enabledPanelIds();
+    const paneLabel = document.createElement("label");
+    paneLabel.className = "menu-field";
+    const paneText = document.createElement("span");
+    paneText.textContent = "Panels";
+    const paneSelect = document.createElement("select");
+    paneSelect.id = "workspace-pane-count";
+    const maximum = Math.min(MAX_WORKSPACE_SPLIT_PANES, enabledPanels.length);
+    for (let count = 1; count <= maximum; count += 1) {
+      const option = document.createElement("option");
+      option.value = String(count);
+      option.textContent = String(count);
+      paneSelect.appendChild(option);
+    }
+    paneSelect.value = String(Math.min(Math.max(1, workspaceState.splitPanelIds.length), maximum));
+    paneSelect.addEventListener("change", () => {
+      setWorkspacePaneCount(Number(paneSelect.value)).catch((error: Error) => {
+        moduleStatus.textContent = error.message;
+        registerStatus.textContent = error.message;
+      });
+    });
+    paneLabel.append(paneText, paneSelect);
+    panelMenu.appendChild(paneLabel);
+  }
 }
 
 function renderWorkspaceTabs(): void {
   workspaceTabs.textContent = "";
+  workspaceTabs.hidden = workspaceState.layoutMode !== "tabs";
+  if (workspaceTabs.hidden) {
+    return;
+  }
   for (const panel of PANEL_DEFINITIONS) {
     if (!workspaceState.panels[panel.id]?.enabled) {
       continue;
@@ -2538,6 +2618,45 @@ function renderWorkspaceTabs(): void {
       });
     });
     workspaceTabs.appendChild(button);
+  }
+}
+
+function renderWorkspacePaneSelectors(visiblePanelIds: PanelId[]): void {
+  for (const panel of Object.values(panelElements)) {
+    panel.querySelector(".workspace-pane-selector")?.remove();
+  }
+  if (workspaceState.layoutMode === "tabs") {
+    return;
+  }
+  const enabledPanels = enabledPanelIds();
+  for (const [index, panelId] of visiblePanelIds.entries()) {
+    const header = panelElements[panelId].querySelector<HTMLElement>(".panel-header");
+    if (!header) {
+      continue;
+    }
+    const label = document.createElement("label");
+    label.className = "workspace-pane-selector";
+    const text = document.createElement("span");
+    text.textContent = "Panel";
+    const select = document.createElement("select");
+    select.id = `workspace-pane-select-${index}`;
+    select.value = panelId;
+    for (const candidate of enabledPanels) {
+      const option = document.createElement("option");
+      option.value = candidate;
+      option.textContent = PANEL_DEFINITIONS.find((panel) => panel.id === candidate)?.title ?? candidate;
+      option.disabled = candidate !== panelId && visiblePanelIds.includes(candidate);
+      select.appendChild(option);
+    }
+    select.value = panelId;
+    select.addEventListener("change", () => {
+      setWorkspacePanePanel(index, select.value as PanelId).catch((error: Error) => {
+        moduleStatus.textContent = error.message;
+        registerStatus.textContent = error.message;
+      });
+    });
+    label.append(text, select);
+    header.appendChild(label);
   }
 }
 
@@ -2617,7 +2736,7 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
     {
       direction: workspaceState.layoutMode === "split-horizontal" ? "horizontal" : "vertical",
       sizes: normalizeWorkspaceSplitSizes(workspaceState.workspaceSplitSizes, panelIds.length),
-      minSize: 220,
+      minSize: workspaceState.layoutMode === "split-horizontal" ? 220 : 140,
       gutterSize: 8,
       snapOffset: 24,
       onDrag: () => {
@@ -2665,9 +2784,16 @@ async function setPanelEnabled(panelId: PanelId, enabled: boolean): Promise<void
       : !enabled && workspaceState.activePanelId === panelId
         ? firstEnabledPanel(nextPanels)
         : workspaceState.activePanelId;
+  const desiredPaneCount = Math.min(
+    Math.max(1, workspaceState.splitPanelIds.length),
+    PANEL_DEFINITIONS.filter((panel) => nextPanels[panel.id]?.enabled).length,
+  );
+  const splitPanelIds = splitPanelIdsFor(nextPanels, workspaceState.splitPanelIds, desiredPaneCount, activePanelId);
   workspaceState = {
     ...workspaceState,
     activePanelId,
+    splitPanelIds,
+    workspaceSplitSizes: normalizeWorkspaceSplitSizes(workspaceState.workspaceSplitSizes, Math.max(1, splitPanelIds.length)),
     panels: nextPanels,
   };
   saveWorkspaceState(workspaceState);
@@ -2679,7 +2805,7 @@ async function setPanelEnabled(panelId: PanelId, enabled: boolean): Promise<void
     });
     return;
   }
-  if (panelId === "scope" && enabled && workspaceState.activePanelId === "scope") {
+  if (panelId === "scope" && enabled && isPanelVisible("scope")) {
     await activateScopePanel();
   }
   if (panelId === "spectrumanalyzer" && !enabled) {
@@ -2714,27 +2840,79 @@ async function setActivePanel(panelId: PanelId): Promise<void> {
   }
 }
 
-async function setWorkspaceLayoutMode(layoutMode: WorkspaceLayoutMode): Promise<void> {
-  workspaceState = { ...workspaceState, layoutMode };
+async function setWorkspacePaneCount(count: number): Promise<void> {
+  const splitPanelIds = splitPanelIdsFor(
+    workspaceState.panels,
+    workspaceState.splitPanelIds,
+    count,
+    workspaceState.activePanelId,
+  );
+  workspaceState = {
+    ...workspaceState,
+    splitPanelIds,
+    workspaceSplitSizes: normalizeWorkspaceSplitSizes(workspaceState.workspaceSplitSizes, Math.max(1, splitPanelIds.length)),
+  };
   saveWorkspaceState(workspaceState);
   applyWorkspaceState();
-  if (workspaceState.panels.scope.enabled && layoutMode !== "tabs") {
+}
+
+async function setWorkspacePanePanel(index: number, panelId: PanelId): Promise<void> {
+  if (!workspaceState.panels[panelId]?.enabled || index < 0 || index >= workspaceState.splitPanelIds.length) {
+    return;
+  }
+  const splitPanelIds = [...workspaceState.splitPanelIds];
+  const previousIndex = splitPanelIds.indexOf(panelId);
+  if (previousIndex >= 0) {
+    [splitPanelIds[index], splitPanelIds[previousIndex]] = [splitPanelIds[previousIndex], splitPanelIds[index]];
+  } else {
+    splitPanelIds[index] = panelId;
+  }
+  workspaceState = { ...workspaceState, splitPanelIds };
+  saveWorkspaceState(workspaceState);
+  applyWorkspaceState();
+}
+
+function isPanelVisible(panelId: PanelId): boolean {
+  return workspaceState.layoutMode === "tabs"
+    ? workspaceState.activePanelId === panelId
+    : workspaceState.splitPanelIds.includes(panelId);
+}
+
+async function setWorkspaceLayoutMode(layoutMode: WorkspaceLayoutMode): Promise<void> {
+  const splitPanelIds =
+    workspaceState.layoutMode === "tabs" && layoutMode !== "tabs"
+      ? splitPanelIdsFor(
+          workspaceState.panels,
+          workspaceState.splitPanelIds,
+          Math.min(DEFAULT_WORKSPACE_SPLIT_PANE_COUNT, enabledPanelIds().length),
+          workspaceState.activePanelId,
+        )
+      : workspaceState.splitPanelIds;
+  workspaceState = {
+    ...workspaceState,
+    layoutMode,
+    splitPanelIds,
+    workspaceSplitSizes: normalizeWorkspaceSplitSizes(workspaceState.workspaceSplitSizes, Math.max(1, splitPanelIds.length)),
+  };
+  saveWorkspaceState(workspaceState);
+  applyWorkspaceState();
+  if (isPanelVisible("scope")) {
     window.requestAnimationFrame(() => stream.refreshLayout());
   }
-  if (workspaceState.panels.lockbox.enabled && layoutMode !== "tabs") {
+  if (isPanelVisible("lockbox")) {
     window.requestAnimationFrame(() => lockboxPanel.refreshLayout());
   }
-  if (workspaceState.panels.networkanalyzer.enabled && layoutMode !== "tabs") {
+  if (isPanelVisible("networkanalyzer")) {
     window.requestAnimationFrame(() => networkAnalyzerPanel.refreshLayout());
   }
-  if (workspaceState.panels.curveviewer.enabled && layoutMode !== "tabs") {
+  if (isPanelVisible("curveviewer")) {
     window.requestAnimationFrame(() => curveViewerPanel.refreshLayout());
   }
 }
 
 async function activateScopePanel(): Promise<void> {
   await fetchSingleFrame();
-  if (!workspaceState.panels.scope.enabled || workspaceState.activePanelId !== "scope") {
+  if (!workspaceState.panels.scope.enabled || !isPanelVisible("scope")) {
     stopStream("Scope panel disabled");
     return;
   }
@@ -4399,8 +4577,11 @@ async function startup(): Promise<void> {
     status.textContent = "No panel enabled";
     return;
   }
-  if (workspaceState.activePanelId !== "scope") {
-    status.textContent = `${PANEL_DEFINITIONS.find((panel) => panel.id === workspaceState.activePanelId)?.title} panel ready`;
+  if (!isPanelVisible("scope")) {
+    const visiblePanelId = workspaceState.layoutMode === "tabs"
+      ? workspaceState.activePanelId
+      : workspaceState.splitPanelIds[0] ?? workspaceState.activePanelId;
+    status.textContent = `${PANEL_DEFINITIONS.find((panel) => panel.id === visiblePanelId)?.title} panel ready`;
     return;
   }
   if (!workspaceState.panels.scope.enabled) {

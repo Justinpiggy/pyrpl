@@ -3602,3 +3602,21 @@ control.
   remains usable on small screens. Browser coverage must add enough stages to
   prove the desktop viewport remains fixed and the final stage can be reached
   by scrolling.
+
+## 2026-07-20 Workspace Pane Selection
+
+- The workspace tab strip is navigation for Tabs layout only. Showing it above
+  Side by Side or Stacked layouts is redundant because several modules are
+  already visible at once.
+- Keep enabled modules separate from selected visible panes. Persist an ordered
+  `splitPanelIds` list with distinct enabled modules, and let each visible pane
+  select its module. The workspace menu selects one to three panes; a module
+  enabled in the menu is an available choice, not an instruction to display
+  every enabled module.
+- Normalize legacy saved workspaces with no `splitPanelIds` to their first two
+  enabled modules. Preserve valid saved selections, remove disabled or
+  duplicate entries, and resize the saved Split.js proportions to the actual
+  selected pane count.
+- Browser coverage must hide the tab strip in non-tab layouts, change a pane
+  selector, expand to three panes, and retain the selected modules when
+  changing orientation.

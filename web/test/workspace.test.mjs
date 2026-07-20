@@ -69,7 +69,8 @@ test("workspace defaults to Scope enabled and Register Debug disabled", () => {
 
   assert.equal(state.activePanelId, "scope");
   assert.equal(state.layoutMode, "tabs");
-  assert.deepEqual(Array.from(state.workspaceSplitSizes), [50, 50]);
+  assert.deepEqual(Array.from(state.splitPanelIds), ["scope"]);
+  assert.deepEqual(Array.from(state.workspaceSplitSizes), [100]);
   assert.equal(state.panels.scope.enabled, true);
   assert.equal(state.panels.registers.enabled, false);
   assert.deepEqual(Array.from(state.panels.scope.splitSizes), [28, 72]);
@@ -103,6 +104,7 @@ test("workspace preserves active enabled panel, layout mode, and split sizes", (
 
   assert.equal(state.activePanelId, "registers");
   assert.equal(state.layoutMode, "split-horizontal");
+  assert.deepEqual(Array.from(state.splitPanelIds), ["scope", "registers"]);
   assert.deepEqual(Array.from(state.workspaceSplitSizes), [35, 65]);
   assert.equal(state.panels.registers.enabled, true);
   assert.deepEqual(Array.from(state.panels.scope.splitSizes), [30, 70]);
@@ -124,8 +126,29 @@ test("workspace falls back when saved active panel is disabled", () => {
 
   assert.equal(state.activePanelId, "scope");
   assert.equal(state.layoutMode, "tabs");
-  assert.deepEqual(Array.from(state.workspaceSplitSizes), [50, 50]);
+  assert.deepEqual(Array.from(state.splitPanelIds), ["scope"]);
+  assert.deepEqual(Array.from(state.workspaceSplitSizes), [100]);
   assert.deepEqual(Array.from(state.panels.scope.splitSizes), [28, 72]);
+});
+
+test("workspace preserves distinct selected split panes and ignores disabled duplicates", () => {
+  const { loadWorkspaceState, saveWorkspaceState } = loadWorkspaceModule();
+  saveWorkspaceState({
+    activePanelId: "scope",
+    layoutMode: "split-vertical",
+    splitPanelIds: ["scope", "lockbox", "scope", "registers"],
+    workspaceSplitSizes: [20, 30, 50],
+    panels: {
+      scope: { enabled: true },
+      lockbox: { enabled: true },
+      registers: { enabled: false },
+    },
+  });
+
+  const state = loadWorkspaceState();
+
+  assert.deepEqual(Array.from(state.splitPanelIds), ["scope", "lockbox"]);
+  assert.deepEqual(Array.from(state.workspaceSplitSizes), [50, 50]);
 });
 
 test("workspace can represent no enabled panels", () => {

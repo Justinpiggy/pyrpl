@@ -288,3 +288,7 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Lockbox stages are dynamic widgets in the original GUI. Keep each web stage
   card content-sized, let the sequence viewport fill the available Lockbox
   panel height, and scroll that list only after many stages exceed it.
+- The workspace tab strip is for Tabs layout only. In Side by Side and Stacked
+  layouts, persist a distinct ordered set of visible pane modules and provide
+  a selector in each pane plus a pane-count selector. Enabled modules are
+  available choices, not an instruction to display every module at once.

@@ -30,6 +30,23 @@ interface Window {
     getScopeSplitSizes: () => [number, number];
     getWorkspaceLayoutMode: () => "tabs" | "split-horizontal" | "split-vertical";
     getWorkspaceSplitSizes: () => number[];
+    getWorkspaceSplitPanelIds: () => Array<
+      | "scope"
+      | "asg"
+      | "pid"
+      | "iq"
+      | "iir"
+      | "trig"
+      | "pwm"
+      | "spectrumanalyzer"
+      | "networkanalyzer"
+      | "curveviewer"
+      | "pyrplconfig"
+      | "lockbox"
+      | "housekeeping"
+      | "telemetry"
+      | "registers"
+    >;
     getActivePanelId: () =>
       | "scope"
       | "asg"

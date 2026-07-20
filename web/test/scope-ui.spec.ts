@@ -208,6 +208,10 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   expect(await page.evaluate(() => window.pyrplScope?.getWorkspaceLayoutMode())).toBe("split-horizontal");
   await expect(page.locator("#scope-panel")).toBeVisible();
   await expect(page.locator("#registers-panel")).toBeVisible();
+  await expect(page.locator("#workspace-tabs")).toBeHidden();
+  await expect(page.locator("#workspace-pane-select-0")).toHaveValue("scope");
+  await expect(page.locator("#workspace-pane-select-1")).toHaveValue("registers");
+  await expect(page.locator("#workspace-pane-count")).toHaveValue("2");
   const initialWorkspaceSplitSizes = await page.evaluate(() => window.pyrplScope?.getWorkspaceSplitSizes());
   expect(initialWorkspaceSplitSizes).toEqual([50, 50]);
   const workspaceGutterBox = await page.locator("#workspace-panels > .gutter-horizontal").boundingBox();
@@ -591,9 +595,11 @@ test("side-by-side workspace keeps every plot stable while selecting panels", as
         workspace: {
           ...defaultWorkspace,
           layoutMode: "split-horizontal",
+          splitPanelIds: ["scope", companion.id],
           panels: {
             ...defaultWorkspace.panels,
             [companion.id]: { enabled: true },
+            housekeeping: { enabled: true },
           },
         },
       },
@@ -605,8 +611,10 @@ test("side-by-side workspace keeps every plot stable while selecting panels", as
 
     const measurements: Array<{ scope: number; companion: number[] }> = [];
     for (let index = 0; index < 5; index += 1) {
-      await page.getByRole("button", { name: companion.title, exact: true }).click();
-      await page.getByRole("button", { name: "Scope", exact: true }).click();
+      await page.locator("#workspace-pane-select-1").selectOption("housekeeping");
+      await expect(page.locator("#housekeeping-panel")).toBeVisible();
+      await page.locator("#workspace-pane-select-1").selectOption(companion.id);
+      await expect(page.locator(`#${companion.id}-panel`)).toBeVisible();
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       measurements.push(await page.evaluate((panelId) => ({
         scope: document.querySelector<HTMLCanvasElement>("#scope-plot canvas")?.clientHeight ?? 0,
@@ -619,6 +627,44 @@ test("side-by-side workspace keeps every plot stable while selecting panels", as
       expect(measurement.companion, `${companion.title} changed its plot heights`).toEqual(initial.companion);
     }
   }
+});
+
+test("split workspaces select a panel for each pane instead of showing tabs", async ({ page }) => {
+  await resetServerConfig(page);
+  await page.request.post("/api/workspace", {
+    data: {
+      workspace: {
+        ...defaultWorkspace,
+        layoutMode: "split-horizontal",
+        splitPanelIds: ["scope", "asg"],
+        panels: {
+          ...defaultWorkspace.panels,
+          asg: { enabled: true },
+          housekeeping: { enabled: true },
+        },
+      },
+    },
+  });
+  await page.goto("/");
+
+  await expect(page.locator("#workspace-tabs")).toBeHidden();
+  await expect(page.locator("#workspace-pane-select-0")).toHaveValue("scope");
+  await expect(page.locator("#workspace-pane-select-1")).toHaveValue("asg");
+  await page.locator("#workspace-pane-select-1").selectOption("housekeeping");
+  await expect(page.locator("#housekeeping-panel")).toBeVisible();
+  await expect(page.locator("#asg-panel")).toBeHidden();
+  expect(await page.evaluate(() => window.pyrplScope?.getWorkspaceSplitPanelIds())).toEqual(["scope", "housekeeping"]);
+
+  await page.locator(".menu-dropdown summary").click();
+  await page.locator("#workspace-pane-count").selectOption("3");
+  await expect(page.locator("#workspace-pane-select-2")).toHaveValue("asg");
+  await expect(page.locator("#asg-panel")).toBeVisible();
+
+  await page.locator("#workspace-layout-mode").selectOption("split-vertical");
+  await expect(page.locator("#workspace-tabs")).toBeHidden();
+  await expect(page.locator("#workspace-pane-select-0")).toHaveValue("scope");
+  await expect(page.locator("#workspace-pane-select-1")).toHaveValue("housekeeping");
+  await expect(page.locator("#workspace-pane-select-2")).toHaveValue("asg");
 });
 
 test("repeated side-by-side layout changes keep Scope plot dimensions stable", async ({ page }) => {
