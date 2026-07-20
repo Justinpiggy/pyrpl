@@ -3558,3 +3558,15 @@ control.
   Setuptools can correctly emit `py2.py3-none-any` for a pure-Python package;
   audit the meaningful `*-none-any` platform tag and the absence of native web
   runtime extensions instead.
+
+## 2026-07-19 Split Workspace Plot Containment
+
+- A live uPlot canvas has an explicit size. In a nested CSS grid or Split.js
+  layout, allowing that child to contribute to its host's intrinsic size can
+  feed a newly measured plot height back into the next layout pass. Give every
+  live-plot host `contain: size layout`, keep the outer split workspace at an
+  explicit `height: 100%`, and keep split panels shrinkable with `min-width: 0`.
+  This prevents repeated side-by-side panel switching from making a plot grow.
+- Verify this as browser behavior across Scope paired with non-plot and
+  plot-owning panels, and across repeated Tabs-to-Side-by-Side transitions;
+  checking a single initial Split.js render is insufficient.

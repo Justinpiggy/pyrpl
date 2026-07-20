@@ -30,6 +30,10 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   interaction behavior, and stable dimensions over time.
 - For uPlot inside split panels, observe the bounded panel/frame, not a
   self-expanding plot container.
+- In Split.js workspaces, use `contain: size layout` on every live-plot host,
+  keep the split workspace at `height: 100%`, and allow panels to shrink with
+  `min-width: 0`; this stops a canvas measurement feeding back into the next
+  side-by-side layout pass.
 
 ## Module/Resource Rules
 

@@ -577,6 +577,80 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   expect(browserMessages.filter((message) => message.includes("ResizeObserver loop"))).toEqual([]);
 });
 
+test("side-by-side workspace keeps every plot stable while selecting panels", async ({ page }) => {
+  const companions = [
+    { id: "registers", title: "Register Debug" },
+    { id: "spectrumanalyzer", title: "Spectrum Analyzer" },
+    { id: "networkanalyzer", title: "Network Analyzer" },
+    { id: "iir", title: "IIR" },
+  ];
+  for (const companion of companions) {
+    await resetServerConfig(page);
+    await page.request.post("/api/workspace", {
+      data: {
+        workspace: {
+          ...defaultWorkspace,
+          layoutMode: "split-horizontal",
+          panels: {
+            ...defaultWorkspace.panels,
+            [companion.id]: { enabled: true },
+          },
+        },
+      },
+    });
+    await page.goto("/");
+    await expect(page.locator("#scope-panel")).toBeVisible();
+    await expect(page.locator(`#${companion.id}-panel`)).toBeVisible();
+    await expect(page.locator("#scope-plot .uplot")).toBeVisible();
+
+    const measurements: Array<{ scope: number; companion: number[] }> = [];
+    for (let index = 0; index < 5; index += 1) {
+      await page.getByRole("button", { name: companion.title, exact: true }).click();
+      await page.getByRole("button", { name: "Scope", exact: true }).click();
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      measurements.push(await page.evaluate((panelId) => ({
+        scope: document.querySelector<HTMLCanvasElement>("#scope-plot canvas")?.clientHeight ?? 0,
+        companion: Array.from(document.querySelectorAll<HTMLCanvasElement>(`#${panelId}-panel canvas`), (canvas) => canvas.clientHeight),
+      }), companion.id));
+    }
+    const initial = measurements[0];
+    for (const measurement of measurements) {
+      expect(measurement.scope, `${companion.title} changed Scope plot height`).toBeCloseTo(initial.scope, 0);
+      expect(measurement.companion, `${companion.title} changed its plot heights`).toEqual(initial.companion);
+    }
+  }
+});
+
+test("repeated side-by-side layout changes keep Scope plot dimensions stable", async ({ page }) => {
+  await resetServerConfig(page);
+  await page.request.post("/api/workspace", {
+    data: {
+      workspace: {
+        ...defaultWorkspace,
+        layoutMode: "tabs",
+        panels: {
+          ...defaultWorkspace.panels,
+          spectrumanalyzer: { enabled: true, splitSizes: [35, 65] },
+        },
+      },
+    },
+  });
+  await page.goto("/");
+  await expect(page.locator("#scope-plot .uplot")).toBeVisible();
+  const heights: number[] = [];
+  for (let index = 0; index < 5; index += 1) {
+    await page.locator(".menu-dropdown summary").click();
+    await page.locator("#workspace-layout-mode").selectOption("split-horizontal");
+    await expect(page.locator("#spectrumanalyzer-panel")).toBeVisible();
+    await page.locator(".menu-dropdown summary").click();
+    await page.locator("#workspace-layout-mode").selectOption("tabs");
+    await page.getByRole("button", { name: "Scope", exact: true }).click();
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    heights.push(await page.locator("#scope-plot canvas").first().evaluate((canvas) => canvas.clientHeight));
+  }
+  for (const height of heights) expect(height).toBeCloseTo(heights[0], 0);
+});
+
 test("scope stream reconnects after a browser network interruption", async ({ page, context }) => {
   await page.addInitScript(() => {
     window.localStorage.clear();

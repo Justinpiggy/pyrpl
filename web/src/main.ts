@@ -899,6 +899,12 @@ style.textContent = `
 
   .workspace-panels.is-split {
     display: flex;
+    height: 100%;
+    min-width: 0;
+  }
+
+  .workspace-panels.is-split > .workspace-panel {
+    min-width: 0;
   }
 
   .workspace-panels.is-horizontal {
@@ -973,6 +979,7 @@ style.textContent = `
   .network-plot-frame {
     position: relative;
     min-height: 0;
+    contain: size layout;
     overflow: hidden;
     background: var(--plot-bg);
   }
@@ -1034,6 +1041,7 @@ style.textContent = `
 
   .curve-viewer-plot-frame {
     min-height: 0;
+    contain: size layout;
     overflow: hidden;
     background: var(--plot-bg);
   }
@@ -1603,6 +1611,7 @@ style.textContent = `
   .lockbox-plot {
     min-width: 0;
     min-height: 220px;
+    contain: size layout;
     overflow: hidden;
     background: var(--plot-bg);
   }
@@ -1757,6 +1766,7 @@ style.textContent = `
     min-width: 0;
     min-height: 0;
     height: 100%;
+    contain: size layout;
     overflow: hidden;
     background: var(--plot-bg);
   }
