@@ -1610,7 +1610,7 @@ style.textContent = `
 
   .lockbox-plot {
     min-width: 0;
-    min-height: 220px;
+    min-height: 224px;
     contain: size layout;
     overflow: hidden;
     background: var(--plot-bg);
@@ -1628,9 +1628,9 @@ style.textContent = `
 
   #lockbox-output-plot {
     display: grid;
-    grid-template-rows: repeat(2, minmax(160px, 1fr));
+    grid-template-rows: repeat(2, minmax(224px, 1fr));
     gap: 6px;
-    min-height: 340px;
+    min-height: 454px;
   }
 
   .lockbox-output-plot-frame {

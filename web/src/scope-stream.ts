@@ -47,6 +47,7 @@ export class ScopeStream {
   private xyMode = false;
   private mathActive = false;
   private mathFormula = "ch1 * ch2";
+  private readonly resizeObserver: ResizeObserver;
   private readonly resizeListener = () => this.scheduleResize();
 
   constructor(
@@ -57,6 +58,8 @@ export class ScopeStream {
   ) {
     this.reconnectScheduler = new ReconnectScheduler(() => this.openSocket());
     this.plot = new uPlot(this.options(), this.emptyData(), this.plotHost);
+    this.resizeObserver = new ResizeObserver(() => this.scheduleResize());
+    this.resizeObserver.observe(this.plotHost);
     window.addEventListener("resize", this.resizeListener);
     this.bindInteractions();
     this.scheduleResize();
@@ -201,6 +204,7 @@ export class ScopeStream {
 
   destroy(): void {
     this.close();
+    this.resizeObserver.disconnect();
     window.removeEventListener("resize", this.resizeListener);
     if (this.resizeFrame !== null) {
       cancelAnimationFrame(this.resizeFrame);
@@ -527,8 +531,11 @@ export class ScopeStream {
   }
 
   private resize(): void {
-    const width = Math.max(320, Math.floor(this.plotHost.clientWidth));
-    const height = Math.max(240, Math.floor(this.plotHost.clientHeight));
+    const width = Math.floor(this.plotHost.clientWidth);
+    const height = Math.floor(this.plotHost.clientHeight);
+    if (width < 1 || height < 1) {
+      return;
+    }
     if (width === this.plotSize.width && height === this.plotSize.height) {
       return;
     }

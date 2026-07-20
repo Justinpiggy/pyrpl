@@ -58,8 +58,13 @@ export class LockboxPanel {
   private inputPlot: uPlot | null = null;
   private outputMagnitudePlot: uPlot | null = null;
   private outputPhasePlot: uPlot | null = null;
+  private readonly resizeObserver: ResizeObserver;
+  private resizeFrame: number | null = null;
 
   constructor(private readonly elements: LockboxPanelElements) {
+    this.resizeObserver = new ResizeObserver(() => this.scheduleLayoutRefresh());
+    this.resizeObserver.observe(elements.inputPlot);
+    this.resizeObserver.observe(elements.outputPlot);
     elements.classSelect.addEventListener("change", () => {
       this.setClass(elements.classSelect.value).catch((error: Error) => {
         this.setStatus(error.message);
@@ -106,13 +111,14 @@ export class LockboxPanel {
       `${schema.classname}: ${schema.state.current_state ?? "ready"} | ${schema.state.lock_status ? "locked" : "not locked"}`,
     );
     await Promise.all([this.refreshInputPlot(), this.refreshOutputPlot()]);
+    this.scheduleLayoutRefresh();
   }
 
   refreshLayout(): void {
-    this.inputPlot?.setSize(this.plotSize(this.elements.inputPlot));
+    if (this.inputPlot) this.fitPlotToHost(this.inputPlot, this.elements.inputPlot);
     const outputFrames = this.elements.outputPlot.querySelectorAll<HTMLElement>(".lockbox-output-plot-frame");
-    if (outputFrames[0]) this.outputMagnitudePlot?.setSize(this.plotSize(outputFrames[0]));
-    if (outputFrames[1]) this.outputPhasePlot?.setSize(this.plotSize(outputFrames[1]));
+    if (outputFrames[0] && this.outputMagnitudePlot) this.fitPlotToHost(this.outputMagnitudePlot, outputFrames[0]);
+    if (outputFrames[1] && this.outputPhasePlot) this.fitPlotToHost(this.outputPhasePlot, outputFrames[1]);
   }
 
   getStageCount(): number {
@@ -496,6 +502,8 @@ export class LockboxPanel {
     magnitudeFrame.className = "lockbox-output-plot-frame";
     phaseFrame.className = "lockbox-output-plot-frame";
     host.append(magnitudeFrame, phaseFrame);
+    this.resizeObserver.observe(magnitudeFrame);
+    this.resizeObserver.observe(phaseFrame);
     const magnitude = payload.series.find((series) => series.label === "magnitude")?.values ?? [];
     const phase = payload.series.find((series) => series.label === "phase")?.values ?? [];
     this.outputMagnitudePlot = new uPlot(
@@ -516,6 +524,7 @@ export class LockboxPanel {
       [payload.x, phase],
       phaseFrame,
     );
+    this.scheduleLayoutRefresh();
   }
 
   private outputPlotOptions(
@@ -536,9 +545,43 @@ export class LockboxPanel {
   private plotSize(host: HTMLElement): { width: number; height: number } {
     const rect = host.getBoundingClientRect();
     return {
-      width: Math.max(260, Math.floor(rect.width || 420)),
-      height: Math.max(180, Math.floor(rect.height || 220)),
+      width: Math.floor(rect.width) || 420,
+      height: Math.floor(rect.height) || 224,
     };
+  }
+
+  private fitPlotToHost(plot: uPlot, host: HTMLElement): void {
+    const bounds = host.getBoundingClientRect();
+    if (bounds.width < 1 || bounds.height < 1) {
+      return;
+    }
+    const wrap = plot.root.querySelector<HTMLElement>(".u-wrap")?.getBoundingClientRect();
+    const chromeHeight = Math.max(0, Math.ceil(plot.root.getBoundingClientRect().height - (wrap?.height ?? 0)));
+    plot.setSize({
+      width: Math.floor(bounds.width),
+      height: Math.max(80, Math.floor(bounds.height) - chromeHeight),
+    });
+  }
+
+  private scheduleLayoutRefresh(): void {
+    if (this.resizeFrame !== null) {
+      return;
+    }
+    let remainingPasses = 3;
+    const refresh = (): void => {
+      this.resizeFrame = requestAnimationFrame(() => {
+        if (!this.elements.root.hidden) {
+          this.refreshLayout();
+        }
+        remainingPasses -= 1;
+        if (remainingPasses > 0) {
+          refresh();
+        } else {
+          this.resizeFrame = null;
+        }
+      });
+    };
+    refresh();
   }
 
   private setStatus(message: string): void {

@@ -3570,3 +3570,19 @@ control.
 - Verify this as browser behavior across Scope paired with non-plot and
   plot-owning panels, and across repeated Tabs-to-Side-by-Side transitions;
   checking a single initial Split.js render is insufficient.
+
+## 2026-07-19 Hidden-Panel Plot Initialization
+
+- Panels are constructed while hidden. Do not resize a hidden plot host to a
+  made-up minimum such as `320x240`: wait for its bounded host to have a real
+  nonzero size, then use a coalesced `ResizeObserver` on that host. With size
+  containment in place, that observer tracks actual layout changes without the
+  self-expanding `ResizeObserver` loop previously seen in Scope.
+- A uPlot `height` sizes its drawing wrap, not the complete root. Static plots
+  with a title and legend need the measured title/legend chrome subtracted from
+  the host height before calling `setSize`; otherwise the root overflows and
+  axes or legend are clipped. Lockbox output frames also need a readable
+  minimum height that accommodates this chrome.
+- Browser coverage must assert that a newly shown Spectrum plot reaches the
+  full host size without moving its split handle, and that Lockbox input/output
+  uPlot roots fit their respective frames without clipping.

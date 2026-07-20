@@ -1067,6 +1067,12 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   await page.getByRole("button", { name: "Spectrum Analyzer" }).click();
   await expect(page.locator("#spectrumanalyzer-panel")).toBeVisible();
   await expect(page.locator("#spectrumanalyzer-panel .gutter-vertical")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const host = document.querySelector("#spectrum-plot")?.getBoundingClientRect();
+    const plot = document.querySelector("#spectrum-plot .uplot")?.getBoundingClientRect();
+    return Math.abs((plot?.width ?? 0) - (host?.width ?? 0)) <= 2 &&
+      Math.abs((plot?.height ?? 0) - (host?.height ?? 0)) <= 2;
+  })).toBe(true);
   const initialSpectrumControlsBox = await page.locator("#spectrum-controls-pane").boundingBox();
   const spectrumGutterBox = await page.locator("#spectrumanalyzer-panel .gutter-vertical").boundingBox();
   expect(initialSpectrumControlsBox).toBeTruthy();
@@ -1316,6 +1322,22 @@ test("lockbox panel switches classes, edits stages, and renders static plots", a
   await expect(page.locator("#lockbox-input-plot .uplot")).toBeVisible();
   await expect(page.locator("#lockbox-output-plot .uplot")).toHaveCount(2);
   await expect(page.locator("#lockbox-output-plot .uplot").first()).toBeVisible();
+  const lockboxPlotBounds = await page.evaluate(() => {
+    const boxes = [
+      ["#lockbox-input-plot", "#lockbox-input-plot .uplot"],
+      [".lockbox-output-plot-frame", ".lockbox-output-plot-frame .uplot"],
+    ].map(([hostSelector, plotSelector]) => {
+      const host = document.querySelector(hostSelector)?.getBoundingClientRect();
+      const plot = document.querySelector(plotSelector)?.getBoundingClientRect();
+      return { hostWidth: host?.width ?? 0, hostHeight: host?.height ?? 0, plotWidth: plot?.width ?? 0, plotHeight: plot?.height ?? 0 };
+    });
+    return boxes;
+  });
+  expect(
+    lockboxPlotBounds.every((bounds) =>
+      Math.abs(bounds.plotWidth - bounds.hostWidth) <= 2 && Math.abs(bounds.plotHeight - bounds.hostHeight) <= 2),
+    JSON.stringify(lockboxPlotBounds),
+  ).toBe(true);
   expect(await page.locator("#lockbox-input-plot canvas").first().evaluate(countPaintedPixels)).toBeGreaterThan(1000);
   expect(await page.locator("#lockbox-output-plot canvas").first().evaluate(countPaintedPixels)).toBeGreaterThan(1000);
   expect(

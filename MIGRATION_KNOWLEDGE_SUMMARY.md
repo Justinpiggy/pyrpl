@@ -34,6 +34,10 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   keep the split workspace at `height: 100%`, and allow panels to shrink with
   `min-width: 0`; this stops a canvas measurement feeding back into the next
   side-by-side layout pass.
+- For a plot initially created in a hidden panel, observe the bounded visible
+  host and resize only after it has nonzero geometry. For titled/legend uPlots,
+  subtract the measured root chrome from the host height before `setSize`, or
+  the plot frame will clip its own axes and legend.
 
 ## Module/Resource Rules
 

@@ -55,6 +55,7 @@ export class SpectrumPlot {
     runningState: "stopped",
     iqBandwidth: [],
   };
+  private readonly resizeObserver: ResizeObserver;
   private readonly resizeListener = () => this.scheduleResize();
 
   constructor(
@@ -67,6 +68,8 @@ export class SpectrumPlot {
     this.plot = new uPlot(this.options("", this.labels), EMPTY_DATA, this.host);
     this.fftWorker.onmessage = (event: MessageEvent<SpectrumWorkerResponse>) => this.handleWorkerResponse(event.data);
     this.fftWorker.onerror = () => this.setStatus("Spectrum FFT worker error");
+    this.resizeObserver = new ResizeObserver(() => this.scheduleResize());
+    this.resizeObserver.observe(this.host);
     window.addEventListener("resize", this.resizeListener);
     this.bindInteractions();
     this.scheduleResize();
@@ -211,6 +214,7 @@ export class SpectrumPlot {
 
   destroy(): void {
     this.close();
+    this.resizeObserver.disconnect();
     window.removeEventListener("resize", this.resizeListener);
     if (this.resizeFrame !== null) {
       cancelAnimationFrame(this.resizeFrame);
@@ -469,8 +473,11 @@ export class SpectrumPlot {
     }
     this.resizeFrame = window.requestAnimationFrame(() => {
       this.resizeFrame = null;
-      const width = Math.max(320, Math.floor(this.host.clientWidth));
-      const height = Math.max(240, Math.floor(this.host.clientHeight));
+      const width = Math.floor(this.host.clientWidth);
+      const height = Math.floor(this.host.clientHeight);
+      if (width < 1 || height < 1) {
+        return;
+      }
       if (width === this.plotSize.width && height === this.plotSize.height) {
         return;
       }
