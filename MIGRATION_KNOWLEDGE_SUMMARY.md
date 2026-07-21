@@ -299,3 +299,9 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   order equal to selected pane order before creating Split.js, use flex-basis
   styles for the flex container, and test real drags in two- and three-pane
   horizontal and vertical layouts.
+- A deployed Red Pitaya `monitor_server` is a one-client process and exits
+  after disconnect. Validate sequentially, restart it per independent client,
+  and verify it is stopped after tests. A read-only probe on `10.0.5.118`
+  passed, while the first write-enabled Scope input-selector write remains an
+  unresolved compatibility failure; never change FPGA firmware or
+  `monitor_server.c` as a workaround.

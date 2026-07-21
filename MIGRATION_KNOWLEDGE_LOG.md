@@ -3642,3 +3642,21 @@ control.
   workspace handles in two- and three-pane horizontal and vertical modes, and
   drag Scope's controls/plot handle while asserting both the rendered pane
   sizes and persisted Split.js ratios change.
+
+## 2026-07-20 Red Pitaya Monitor-Server Hardware Validation
+
+- The deployed Red Pitaya `monitor_server` accepts one TCP client only and
+  exits when that client disconnects. Run browser/server validation and a
+  standalone validator sequentially, never concurrently; restart
+  `/opt/pyrpl/update_fpga.sh` before each independent client session.
+- The read-only compatible-protocol probe succeeded against `10.0.5.118`:
+  one Scope control-register read completed with zero writes. Do not interpret
+  that as successful acquisition validation.
+- The write-enabled suite reached the existing server but failed on the first
+  Scope input-selector write at `0x40380000`. The server closed after the
+  client disconnected, as designed. Preserve this as an unresolved hardware
+  compatibility investigation; do not modify FPGA firmware or
+  `monitor_server.c` to mask it.
+- After any hardware test, explicitly stop the SSH-held monitor-server
+  launcher and verify both `ps` and the port-2222 listener are empty. This was
+  confirmed on `10.0.5.118` after this test.
