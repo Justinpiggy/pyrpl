@@ -168,11 +168,13 @@ def sync_iq_setting(client: MonitorClient | DummyClient, module_name: str, setti
 def sync_iq_settings(client: MonitorClient | DummyClient, module_name: str, settings: IqSettings) -> None:
     for attribute in IQ_SETUP_ATTRIBUTES:
         sync_iq_setting(client, module_name, settings, attribute)
-    sync_iq_phases(client)
+    sync_iq_phases(client, module_name)
 
 
-def sync_iq_phases(client: MonitorClient | DummyClient) -> None:
-    base = dsp_addr_base("iq0")
+def sync_iq_phases(client: MonitorClient | DummyClient, module_name: str = "iq0") -> None:
+    """Mirror ``Iq.synchronize_iqs`` at the calling IQ module's base."""
+
+    base = dsp_addr_base(module_name)
     current = int(client.reads(base + 0xC, 1)[0])
     mask = (1 << DSP_INPUT_VALUES["iq0"]) | (1 << DSP_INPUT_VALUES["iq1"]) | (1 << DSP_INPUT_VALUES["iq2"])
     _write_word(client, base + 0xC, current & ~mask)
@@ -459,6 +461,25 @@ def filter_register_to_python(value: int, stages: int = 4, shiftbits: int = 6, m
             bandwidth *= FILTER_CORRECTION_FACTORS[alpha]
         bandwidths.append(-bandwidth if highpass else bandwidth)
     return bandwidths
+
+
+def filter_bandwidth_options(
+    client: MonitorClient | DummyClient,
+    base: int,
+    stages_offset: int,
+    shiftbits_offset: int,
+    minbw_offset: int,
+) -> list[float]:
+    """Return the positive FilterProperty choices from loaded FPGA constants."""
+
+    stages, shiftbits, minbw = _filter_config(client, base, stages_offset, shiftbits_offset, minbw_offset)
+    maxshift = _filter_maxshift(minbw)
+    values = []
+    for shift in range(max(0, maxshift - 2)):
+        bandwidth = filter_register_to_python(shift + 2**7, stages=stages, shiftbits=shiftbits, minbw=minbw)[0]
+        if bandwidth > 0:
+            values.append(float(bandwidth))
+    return values
 
 
 def _filter_config(

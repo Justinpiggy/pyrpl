@@ -108,6 +108,16 @@ export class NetworkAnalyzerPanel {
     this.scheduleResize();
   }
 
+  getCurveData(): { x: number[]; real: number[]; imaginary: number[] } | null {
+    const count = contiguousFiniteCount(this.x);
+    if (!count) return null;
+    return {
+      x: this.x.slice(0, count),
+      real: this.real.slice(0, count),
+      imaginary: this.imaginary.slice(0, count),
+    };
+  }
+
   destroy(): void {
     this.closeSocket();
     this.resizeObserver.disconnect();

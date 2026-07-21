@@ -8,7 +8,13 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .dsp_registers import dsp_addr_base, sync_iq_setting, sync_iq_settings
+from .dsp_registers import (
+    dsp_addr_base,
+    filter_bandwidth_options,
+    frequency_to_register,
+    sync_iq_setting,
+    sync_iq_settings,
+)
 from .modules import IqSettings, NetworkAnalyzerSettings
 from .monitor_client import DummyClient, MonitorClient
 
@@ -30,6 +36,7 @@ class NetworkAnalyzerRun:
     bandwidth: float = 0.0
     averages: int = 1
     sleep_cycles: int = 1
+    bandwidth_options: np.ndarray = field(default_factory=lambda: VALID_RBWS.copy())
     time_first_point: float | None = None
 
     def prepare(self, settings: NetworkAnalyzerSettings) -> None:
@@ -44,23 +51,36 @@ class NetworkAnalyzerRun:
 
 def sweep_frequencies(settings: NetworkAnalyzerSettings) -> np.ndarray:
     if settings.start_freq == settings.stop_freq:
-        return np.full(settings.points, settings.start_freq, dtype=np.float64)
-    if settings.logscale:
-        return np.logspace(
+        raw = np.full(settings.points, settings.start_freq, dtype=np.float64)
+    elif settings.logscale:
+        raw = np.logspace(
             math.log10(settings.start_freq),
             math.log10(settings.stop_freq),
             settings.points,
             endpoint=True,
             dtype=np.float64,
         )
-    return np.linspace(settings.start_freq, settings.stop_freq, settings.points, endpoint=True, dtype=np.float64)
+    else:
+        raw = np.linspace(settings.start_freq, settings.stop_freq, settings.points, endpoint=True, dtype=np.float64)
+    return np.asarray([normalize_frequency(frequency) for frequency in raw], dtype=np.float64)
 
 
-def select_rbw(settings: NetworkAnalyzerSettings, frequency: float) -> float:
+def normalize_frequency(frequency: float) -> float:
+    """Return the real FPGA IQ frequency, matching PyRPL FrequencyRegister."""
+
+    return 125e6 / 2**32 * frequency_to_register(frequency, bits=32)
+
+
+def select_rbw(
+    settings: NetworkAnalyzerSettings,
+    frequency: float,
+    bandwidth_options: np.ndarray | None = None,
+) -> float:
+    options = VALID_RBWS if bandwidth_options is None or not len(bandwidth_options) else bandwidth_options
     desired = settings.rbw
     if settings.auto_bandwidth:
-        desired = min(max(frequency / settings.q_factor_min, VALID_RBWS[0]), settings.rbw)
-    return float(VALID_RBWS[np.argmin(np.abs(VALID_RBWS - desired))])
+        desired = min(max(frequency / settings.q_factor_min, options[0]), settings.rbw)
+    return float(options[np.argmin(np.abs(options - desired))])
 
 
 def configure_iq(
@@ -71,7 +91,11 @@ def configure_iq(
     run: NetworkAnalyzerRun,
 ) -> None:
     frequency = float(run.frequencies[0])
-    run.bandwidth = select_rbw(settings, frequency)
+    base = dsp_addr_base(module_name)
+    options = filter_bandwidth_options(client, base, 0x230, 0x234, 0x238)
+    run.bandwidth_options = np.asarray(options or VALID_RBWS, dtype=np.float64)
+    run.bandwidth = select_rbw(settings, frequency, run.bandwidth_options)
+    settings.rbw = run.bandwidth
     iq.amplitude = 0.0
     iq.frequency = frequency
     iq.bandwidth = [run.bandwidth, run.bandwidth]
@@ -86,11 +110,14 @@ def configure_iq(
     sync_iq_settings(client, module_name, iq)
     run.averages = max(1, int(round(FPGA_CLOCK / run.bandwidth * settings.average_per_point)))
     run.sleep_cycles = max(1, int(round(FPGA_CLOCK / run.bandwidth * SLEEP_TIMES)))
-    base = dsp_addr_base(module_name)
     client.writes(base + 0x130, [run.averages])
     client.writes(base + 0x134, [run.sleep_cycles])
+    # Match NetworkAnalyzer._start_trace_acquisition: frequency, amplitude,
+    # then the IQ on-bit synchronization transition start the first NA trace.
+    sync_iq_setting(client, module_name, iq, "frequency")
     iq.amplitude = settings.amplitude
     sync_iq_setting(client, module_name, iq, "amplitude")
+    sync_iq_setting(client, module_name, iq, "on")
 
 
 def acquire_point(
@@ -107,7 +134,7 @@ def acquire_point(
         if abs(desired_amplitude - iq.amplitude) > 1e-6:
             ramp_iq_amplitude(client, module_name, iq, desired_amplitude)
         run.amplitudes[index] = iq.amplitude
-    bandwidth = select_rbw(settings, frequency)
+    bandwidth = select_rbw(settings, frequency, run.bandwidth_options)
     if bandwidth != run.bandwidth:
         run.bandwidth = bandwidth
         iq.bandwidth = [bandwidth, bandwidth]

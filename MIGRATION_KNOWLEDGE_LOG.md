@@ -3748,3 +3748,39 @@ control.
   Both retained the approximately `0.05489 Vpk^2` DC bin. The browser's raw
   Spectrum frame and direct Scope frame both measured about `0.15013 V RMS`
   and `0.425 Vpp` before FFT.
+
+## 2026-07-21 Network Analyzer Physical-Loop Investigation
+
+- Use the same external connector mapping for Network Analyzer as Spectrum:
+  Red Pitaya OUT0/IN0 is legacy PyRPL `out1`/`in1`. The unchanged legacy
+  Network Analyzer provides the reference for both magnitude and phase.
+- Legacy `NetworkAnalyzer.frequencies` reports the real 32-bit FPGA frequency
+  register values, not requested floating-point sweep values. Web sweeps must
+  round-trip each requested frequency through `frequency_to_register()` before
+  using it for the IQ write, transfer correction, stream payload, or plot.
+- Do not hard-code Network Analyzer RBW choices on hardware. Original PyRPL
+  derives them from the loaded IQ filter constants; this board realizes a
+  requested 10 kHz as `9716.419185 Hz`. Web code now derives and caches the
+  same choices from offsets `0x230`, `0x234`, and `0x238`.
+- Original `Iq.synchronize_iqs()` toggles the sync register at the *calling*
+  IQ module's base address. A helper that always wrote IQ0 was wrong for a
+  Network Analyzer reservation on IQ2. `sync_iq_settings()` and the web IQ
+  Sync action now target the actual module.
+- Original Network Analyzer startup writes the configured IQ setup, NA
+  averaging registers, frequency, amplitude, then the IQ on bit. The web
+  path now keeps that ordering. Legacy observed about `11.66 ms` per point
+  for this nominal sub-millisecond dwell, but explicit 1, 10, and 20 ms web
+  sleep floors did not cure the 100 kHz fault. Do not retain a speculative
+  timing floor; preserve the original dwell calculation until the raw
+  accumulator difference is explained.
+- Physical result still has an unresolved regression at exactly 100 kHz:
+  legacy PyRPL repeatedly measured about `1.076 - 0.086j`, while the web
+  WebSocket path intermittently returns a corrupt 100 kHz accumulator. The
+  preceding points, and a web sweep ending at 90 kHz, are near the legacy
+  curve. Do not relax the comparison tolerance or hide the endpoint; retain
+  `hardware-network-external-loop.mjs` as a failing regression oracle until
+  the accumulator difference is explained.
+- A trial that applied all inactive IQ setup on every web-server startup made
+  monitor-server startup unacceptably slow and did not solve the endpoint.
+  Do not add blanket hardware initialization as a workaround; preserve the
+  original action-local setup behavior instead.

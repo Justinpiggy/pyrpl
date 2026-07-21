@@ -10,6 +10,7 @@ from pyrpl_websocket.hardware_validation import (
     selected_checks,
     run_validation,
     validate_asg_loopback,
+    validate_network_external_loop,
     validate_network_self_loop,
     validate_options,
     validate_scope,
@@ -52,6 +53,7 @@ class HardwareValidationTest(unittest.TestCase):
             self.assertEqual(validate_asg_loopback(session)["samples"], 2**14)
             self.assertEqual(validate_spectrum_capture(session)["samples"], 2**14)
             self.assertEqual(validate_network_self_loop(session, 1.0)["points"], 9)
+            self.assertEqual(validate_network_external_loop(session)["points"], 9)
         finally:
             session.close()
 

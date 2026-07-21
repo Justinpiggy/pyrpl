@@ -331,3 +331,8 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   sample 8190, Single required explicit rearm and returned to `paused_single`,
   rolling frames updated above 0.1 s, and duration writes set decimation 8 and
   64 as expected.
+- Network Analyzer hardware parity must use the original FPGA-quantized
+  frequency grid and IQ filter-derived RBW options, and synchronize at the
+  reserved IQ module base rather than always IQ0. The OUT0-to-IN0 browser
+  comparison remains intentionally failing at 100 kHz as of 2026-07-21:
+  retain it as a regression oracle rather than weakening its tolerance.

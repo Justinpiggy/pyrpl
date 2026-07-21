@@ -579,7 +579,7 @@ class WebSession:
                 if action == "setup":
                     sync_iq_settings(self.client, module_name, settings)
                 elif action == "sync":
-                    sync_iq_phases(self.client)
+                    sync_iq_phases(self.client, module_name)
                 else:
                     raise KeyError(action)
                 return settings.as_dict()

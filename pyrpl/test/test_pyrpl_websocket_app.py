@@ -44,7 +44,9 @@ from pyrpl_websocket.lockbox import LockboxSchemaLibrary, LockboxState
 from pyrpl_websocket.lockbox_runtime import TrustedLockboxRuntime
 from pyrpl_websocket.monitor_client import MonitorStats
 from pyrpl_websocket.modules import SPECTRUM_SPANS
+from pyrpl_websocket.network_analyzer import sweep_frequencies
 from pyrpl_websocket.scope import SCOPE_ADDR_BASE, SCOPE_CH1_OFFSET, SCOPE_CH2_OFFSET, SCOPE_DATA_LENGTH
+from pyrpl_websocket.scope_registers import DSP_INPUT_VALUES
 from pyrpl_websocket.session import WebSession
 from pyrpl_websocket.settings import ServerSettings
 from pyrpl_websocket.streams import StreamFanout
@@ -1227,17 +1229,36 @@ class WebAppTest(unittest.TestCase):
         session = WebSession(ServerSettings(hostname="_FAKE_"))
         try:
             session.set_module_attribute("networkanalyzer", "points", 8)
+            session.set_module_attribute("networkanalyzer", "rbw", 10_000.0)
             session.set_module_attribute("networkanalyzer", "trace_average", 1)
+            sync_bit = 1 << DSP_INPUT_VALUES["iq2"]
+            session.client.fpgamemory[dsp_addr_base("iq2") + 0xC] = sync_bit
             state = session.call_module_action("networkanalyzer", "single")
             self.assertEqual(state["iq_module"], "iq2")
+            self.assertAlmostEqual(state["rbw"], 9716.419185321407)
             self.assertEqual(session.module_state("iq2")["owner"], "networkanalyzer")
             self.assertIsNone(session.module_state("scope")["owner"])
+            self.assertEqual(session.client.fpgamemory[dsp_addr_base("iq2") + 0x100] & 1, 1)
+            self.assertEqual(session.client.fpgamemory[dsp_addr_base("iq2") + 0xC] & sync_bit, sync_bit)
 
             points = [session.acquire_network_analyzer_point() for _ in range(8)]
             self.assertEqual([point["index"] for point in points], list(range(8)))
             self.assertTrue(all(np.isfinite(point["real"]) for point in points))
             self.assertEqual(points[-1]["running_state"], "stopped")
             self.assertIsNone(session.module_state("iq2")["owner"])
+        finally:
+            session.close()
+
+    def test_network_analyzer_reports_fpga_quantized_frequency_grid(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_module_attribute("networkanalyzer", "start_freq", 10_000.0)
+            session.set_module_attribute("networkanalyzer", "stop_freq", 100_000.0)
+            session.set_module_attribute("networkanalyzer", "points", 9)
+            session.set_module_attribute("networkanalyzer", "logscale", False)
+            frequencies = sweep_frequencies(session.network_analyzer_settings)
+            self.assertAlmostEqual(frequencies[0], 9999.98883344233)
+            self.assertAlmostEqual(frequencies[-1], 100000.00474974513)
         finally:
             session.close()
 

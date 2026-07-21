@@ -81,6 +81,11 @@ interface Window {
       series: Array<{ label: string; values: number[]; imaginary?: number[] }>;
       unit: string;
     } | null;
+    getNetworkAnalyzerCurveData: () => {
+      x: number[];
+      real: number[];
+      imaginary: number[];
+    } | null;
     getIirXRange: () => { min: number; max: number } | null;
     getIirMagnitudeYRange: () => { min: number; max: number } | null;
     getIirPhaseYRange: () => { min: number; max: number } | null;

@@ -35,13 +35,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--asg-loopback", action="store_true", help="Check internal ASG0-to-Scope routing")
     parser.add_argument("--spectrum", action="store_true", help="Check Spectrum Analyzer's hardware Scope capture path")
     parser.add_argument("--network", action="store_true", help="Check Network Analyzer's internal IQ self-loop")
+    parser.add_argument(
+        "--network-external-loop",
+        action="store_true",
+        help="Check Network Analyzer through physical OUT0->IN0 (PyRPL out1->in1)",
+    )
     parser.add_argument("--network-unity-tolerance", type=float, default=0.2, help="Allowed relative unity error")
     parser.add_argument("--json", action="store_true", help="Emit the result as JSON")
     return parser
 
 
 def selected_checks(options: argparse.Namespace) -> tuple[str, ...]:
-    return tuple(name for name in ("scope", "scope_behavior", "asg_loopback", "spectrum", "network") if getattr(options, name))
+    return tuple(
+        name
+        for name in ("scope", "scope_behavior", "asg_loopback", "spectrum", "network", "network_external_loop")
+        if getattr(options, name)
+    )
 
 
 def validate_options(options: argparse.Namespace) -> None:
@@ -241,8 +250,9 @@ def validate_spectrum_capture(session: WebSession) -> dict[str, Any]:
     return frame_summary(frame)
 
 
-def validate_network_self_loop(session: WebSession, tolerance: float) -> dict[str, Any]:
-    session.set_module_attribute("networkanalyzer", "input", "networkanalyzer")
+def _configure_network_validation(session: WebSession, *, input_signal: str, output_direct: str) -> None:
+    session.set_module_attribute("networkanalyzer", "input", input_signal)
+    session.set_module_attribute("networkanalyzer", "output_direct", output_direct)
     session.set_module_attribute("networkanalyzer", "start_freq", 10_000.0)
     session.set_module_attribute("networkanalyzer", "stop_freq", 100_000.0)
     session.set_module_attribute("networkanalyzer", "points", 9)
@@ -250,11 +260,21 @@ def validate_network_self_loop(session: WebSession, tolerance: float) -> dict[st
     session.set_module_attribute("networkanalyzer", "average_per_point", 1)
     session.set_module_attribute("networkanalyzer", "trace_average", 1)
     session.set_module_attribute("networkanalyzer", "amplitude", 0.1)
+    session.set_module_attribute("networkanalyzer", "acbandwidth", 0.0)
+    session.set_module_attribute("networkanalyzer", "logscale", False)
     session.set_module_attribute("networkanalyzer", "auto_bandwidth", False)
     session.set_module_attribute("networkanalyzer", "auto_amplitude", False)
+
+
+def _run_network_validation(session: WebSession) -> np.ndarray:
     session.call_module_action("networkanalyzer", "single")
     points = [session.acquire_network_analyzer_point() for _ in range(9)]
-    values = np.asarray([complex(point["real"], point["imag"]) for point in points], dtype=np.complex128)
+    return np.asarray([complex(point["real"], point["imag"]) for point in points], dtype=np.complex128)
+
+
+def validate_network_self_loop(session: WebSession, tolerance: float) -> dict[str, Any]:
+    _configure_network_validation(session, input_signal="networkanalyzer", output_direct="off")
+    values = _run_network_validation(session)
     if not np.isfinite(values.real).all() or not np.isfinite(values.imag).all():
         raise HardwareValidationError("Network Analyzer returned non-finite points")
     magnitude = np.abs(values)
@@ -264,10 +284,34 @@ def validate_network_self_loop(session: WebSession, tolerance: float) -> dict[st
             f"Network Analyzer self-loop unity error {relative_error:.3g} exceeds {tolerance:.3g}"
         )
     return {
-        "points": len(points),
+        "points": len(values),
         "magnitude_min": float(np.min(magnitude)),
         "magnitude_max": float(np.max(magnitude)),
         "max_unity_error": relative_error,
+    }
+
+
+def validate_network_external_loop(session: WebSession) -> dict[str, Any]:
+    """Check the physical DAC/cable/ADC Network Analyzer path.
+
+    Analog calibration determines the cable-path gain, so the legacy-reference
+    comparison owns numerical parity instead of imposing an invented unity
+    target here.
+    """
+
+    _configure_network_validation(session, input_signal="in1", output_direct="out1")
+    values = _run_network_validation(session)
+    if not np.isfinite(values.real).all() or not np.isfinite(values.imag).all():
+        raise HardwareValidationError("External-loop Network Analyzer returned non-finite points")
+    magnitude = np.abs(values)
+    if float(np.median(magnitude)) < 0.02:
+        raise HardwareValidationError("External OUT0->IN0 Network Analyzer response is too small")
+    return {
+        "physical_loop": "OUT0->IN0 (PyRPL out1->in1)",
+        "points": int(len(values)),
+        "magnitude_min": float(np.min(magnitude)),
+        "magnitude_max": float(np.max(magnitude)),
+        "median_magnitude": float(np.median(magnitude)),
     }
 
 
@@ -296,6 +340,8 @@ def run_validation(options: argparse.Namespace) -> dict[str, Any]:
             report["spectrum_capture"] = validate_spectrum_capture(session)
         if options.network:
             report["network_self_loop"] = validate_network_self_loop(session, options.network_unity_tolerance)
+        if options.network_external_loop:
+            report["network_external_loop"] = validate_network_external_loop(session)
         return report
     finally:
         # Leave a dedicated validation board in an inert state.
