@@ -3602,6 +3602,10 @@ control.
   remains usable on small screens. Browser coverage must add enough stages to
   prove the desktop viewport remains fixed and the final stage can be reached
   by scrolling.
+- A Lockbox model creates every stage from one schema, so stage cards should
+  have a uniform height. Measure their natural heights after rendering or a
+  width change, then apply the tallest measured value to every card. This gives
+  a compact equal-size list without clipping a wrapped or dynamic control.
 
 ## 2026-07-20 Workspace Pane Selection
 
@@ -3620,3 +3624,21 @@ control.
 - Browser coverage must hide the tab strip in non-tab layouts, change a pane
   selector, expand to three panes, and retain the selected modules when
   changing orientation.
+
+## 2026-07-20 Split Workspace Geometry And Dragging
+
+- In a CSS grid with an `auto` tab row followed by a `1fr` pane row, hiding the
+  first grid item can cause auto-placement to move the pane host into the
+  short `auto` row. Explicitly assign the tab strip to row 1 and the pane host
+  to row 2; remove the now-empty row gap in split and stacked modes.
+- Split.js pairs elements in DOM order, not application state order. Before
+  initializing it, append selected panel elements in the persisted pane order.
+  Otherwise arbitrary selectors can make a visible handle resize the wrong
+  neighboring pair.
+- The workspace uses a flex container. Configure Split.js with `flex-basis`
+  element and gutter styles, not its default width/height styles, so the flex
+  algorithm does not cancel dragged proportions.
+- Do not consider a split layout finished after static geometry checks. Drag
+  workspace handles in two- and three-pane horizontal and vertical modes, and
+  drag Scope's controls/plot handle while asserting both the rendered pane
+  sizes and persisted Split.js ratios change.

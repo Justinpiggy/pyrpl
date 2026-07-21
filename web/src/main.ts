@@ -848,12 +848,14 @@ style.textContent = `
   .workspace {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
     gap: 6px;
     min-height: 0;
     overflow: hidden;
   }
 
   .workspace-tabs {
+    grid-row: 1;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -867,6 +869,10 @@ style.textContent = `
 
   .workspace-tabs[hidden] {
     display: none;
+  }
+
+  .workspace.is-split-workspace {
+    row-gap: 0;
   }
 
   .workspace-tab {
@@ -911,6 +917,8 @@ style.textContent = `
   }
 
   .workspace-panels {
+    grid-row: 2;
+    align-self: stretch;
     min-height: 0;
     overflow: hidden;
   }
@@ -921,11 +929,14 @@ style.textContent = `
 
   .workspace-panels.is-split {
     display: flex;
-    height: 100%;
+    height: auto;
     min-width: 0;
+    align-items: stretch;
   }
 
   .workspace-panels.is-split > .workspace-panel {
+    height: 100%;
+    min-height: 0;
     min-width: 0;
   }
 
@@ -1592,6 +1603,7 @@ style.textContent = `
 
   .lockbox-stage-card {
     align-content: start;
+    height: var(--lockbox-stage-height, auto);
   }
 
   .lockbox-control-row {
@@ -2039,6 +2051,7 @@ const spectrumPanelContent = requireElement<HTMLDivElement>("#spectrum-panel-con
 const spectrumControlsPane = requireElement<HTMLElement>("#spectrum-controls-pane");
 const spectrumPlotPane = requireElement<HTMLElement>("#spectrum-plot-pane");
 const panelMenu = requireElement<HTMLDivElement>("#panel-menu");
+const workspace = requireElement<HTMLElement>("#workspace");
 const workspaceTabs = requireElement<HTMLDivElement>("#workspace-tabs");
 const workspacePanels = requireElement<HTMLDivElement>("#workspace-panels");
 const scopePanel = requireElement<HTMLElement>("#scope-panel");
@@ -2443,6 +2456,7 @@ function createAsgControls(moduleName: AsgModuleId): AsgControls {
 }
 
 function applyWorkspaceState(): void {
+  workspace.classList.toggle("is-split-workspace", workspaceState.layoutMode !== "tabs");
   renderPanelMenu();
   renderWorkspaceTabs();
   const enabledPanels = enabledPanelIds();
@@ -2729,6 +2743,7 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
     return;
   }
   destroyWorkspaceSplit();
+  orderWorkspacePanels(panelIds);
   workspaceSplitMode = workspaceState.layoutMode;
   workspaceSplitPanelSignature = panelSignature;
   workspaceSplit = Split(
@@ -2739,6 +2754,12 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
       minSize: workspaceState.layoutMode === "split-horizontal" ? 220 : 140,
       gutterSize: 8,
       snapOffset: 24,
+      elementStyle: (_dimension, size, gutterSize) => ({
+        flexBasis: `calc(${size}% - ${gutterSize}px)`,
+      }),
+      gutterStyle: (_dimension, gutterSize) => ({
+        flexBasis: `${gutterSize}px`,
+      }),
       onDrag: () => {
         stream.refreshLayout();
         spectrumPlot.refreshLayout();
@@ -2760,6 +2781,18 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
       },
     },
   );
+}
+
+function orderWorkspacePanels(visiblePanelIds: PanelId[]): void {
+  const visible = new Set(visiblePanelIds);
+  for (const panelId of visiblePanelIds) {
+    workspacePanels.appendChild(panelElements[panelId]);
+  }
+  for (const panel of PANEL_DEFINITIONS) {
+    if (!visible.has(panel.id)) {
+      workspacePanels.appendChild(panelElements[panel.id]);
+    }
+  }
 }
 
 function destroyWorkspaceSplit(): void {

@@ -287,8 +287,15 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   sizes; visual checks of Scope alone will miss failures in dynamic panels.
 - Lockbox stages are dynamic widgets in the original GUI. Keep each web stage
   card content-sized, let the sequence viewport fill the available Lockbox
-  panel height, and scroll that list only after many stages exceed it.
+  panel height, and scroll that list only after many stages exceed it. Make all
+  stages in a schema match the tallest required card, recalculating on width
+  changes so controls never clip.
 - The workspace tab strip is for Tabs layout only. In Side by Side and Stacked
   layouts, persist a distinct ordered set of visible pane modules and provide
   a selector in each pane plus a pane-count selector. Enabled modules are
   available choices, not an instruction to display every module at once.
+- For split layouts, pin the tab strip and pane host to their CSS grid rows.
+  Hiding the tab strip must not auto-place panes into its `auto` row. Keep DOM
+  order equal to selected pane order before creating Split.js, use flex-basis
+  styles for the flex container, and test real drags in two- and three-pane
+  horizontal and vertical layouts.

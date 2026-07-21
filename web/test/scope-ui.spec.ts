@@ -252,6 +252,23 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
 
   await expect(page.locator("#status")).toContainText(/Frame \d+/);
   await expect(page.locator(".gutter-vertical")).toBeVisible();
+  const initialScopePaneBounds = await page.evaluate(() => {
+    const controls = document.querySelector("#scope-controls-pane")?.getBoundingClientRect();
+    const plot = document.querySelector("#scope-plot-pane")?.getBoundingClientRect();
+    const host = document.querySelector("#scope-panel-content")?.getBoundingClientRect();
+    return {
+      controlsHeight: controls?.height ?? 0,
+      plotHeight: plot?.height ?? 0,
+      controlsTop: controls?.top ?? 0,
+      plotBottom: plot?.bottom ?? 0,
+      hostTop: host?.top ?? 0,
+      hostBottom: host?.bottom ?? 0,
+    };
+  });
+  expect(initialScopePaneBounds.controlsHeight).toBeGreaterThanOrEqual(132);
+  expect(initialScopePaneBounds.plotHeight).toBeGreaterThanOrEqual(260);
+  expect(Math.abs(initialScopePaneBounds.controlsTop - initialScopePaneBounds.hostTop)).toBeLessThanOrEqual(8);
+  expect(Math.abs(initialScopePaneBounds.plotBottom - initialScopePaneBounds.hostBottom)).toBeLessThanOrEqual(8);
   const initialSplitSizes = await page.evaluate(() => window.pyrplScope?.getScopeSplitSizes());
   expect(initialSplitSizes).toEqual([28, 72]);
   const gutterBox = await page.locator(".gutter-vertical").boundingBox();
@@ -267,6 +284,12 @@ test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) 
   expect(draggedSplitSizes).toBeTruthy();
   expect(draggedSplitSizes![0]).toBeGreaterThan(initialSplitSizes![0]);
   expect(draggedSplitSizes![1]).toBeLessThan(initialSplitSizes![1]);
+  const draggedScopePaneBounds = await page.evaluate(() => ({
+    controlsHeight: document.querySelector("#scope-controls-pane")?.getBoundingClientRect().height ?? 0,
+    plotHeight: document.querySelector("#scope-plot-pane")?.getBoundingClientRect().height ?? 0,
+  }));
+  expect(draggedScopePaneBounds.controlsHeight).toBeGreaterThan(initialScopePaneBounds.controlsHeight);
+  expect(draggedScopePaneBounds.plotHeight).toBeLessThan(initialScopePaneBounds.plotHeight);
 
   await expect(page.locator("#sample-count")).toHaveCount(0);
   await expect(page.locator("#connect-scope")).toHaveText("Pause");
@@ -650,6 +673,31 @@ test("split workspaces select a panel for each pane instead of showing tabs", as
   await expect(page.locator("#workspace-tabs")).toBeHidden();
   await expect(page.locator("#workspace-pane-select-0")).toHaveValue("scope");
   await expect(page.locator("#workspace-pane-select-1")).toHaveValue("asg");
+  const horizontalGeometry = await page.evaluate(() => {
+    const host = document.querySelector("#workspace-panels")?.getBoundingClientRect();
+    const panels = Array.from(document.querySelectorAll<HTMLElement>("#workspace-panels > .workspace-panel:not([hidden])"), (panel) => {
+      const bounds = panel.getBoundingClientRect();
+      return { top: bounds.top, bottom: bounds.bottom };
+    });
+    return { hostTop: host?.top ?? 0, hostBottom: host?.bottom ?? 0, panels };
+  });
+  expect(horizontalGeometry.panels).toHaveLength(2);
+  expect(horizontalGeometry.panels.every((panel) =>
+    Math.abs(panel.top - horizontalGeometry.hostTop) <= 2 && Math.abs(panel.bottom - horizontalGeometry.hostBottom) <= 2,
+  )).toBe(true);
+  const sideBySideScopePaneBounds = await page.evaluate(() => ({
+    shellHeight: document.querySelector(".shell")?.getBoundingClientRect().height ?? 0,
+    workspaceHeight: document.querySelector("#workspace")?.getBoundingClientRect().height ?? 0,
+    workspacePanelsHeight: document.querySelector("#workspace-panels")?.getBoundingClientRect().height ?? 0,
+    panelHeight: document.querySelector("#scope-panel")?.getBoundingClientRect().height ?? 0,
+    headerHeight: document.querySelector("#scope-panel > .panel-header")?.getBoundingClientRect().height ?? 0,
+    contentHeight: document.querySelector("#scope-panel-content")?.getBoundingClientRect().height ?? 0,
+    controlsHeight: document.querySelector("#scope-controls-pane")?.getBoundingClientRect().height ?? 0,
+    plotHeight: document.querySelector("#scope-plot-pane")?.getBoundingClientRect().height ?? 0,
+  }));
+  expect(Math.abs(sideBySideScopePaneBounds.workspacePanelsHeight - sideBySideScopePaneBounds.workspaceHeight)).toBeLessThanOrEqual(1);
+  expect(sideBySideScopePaneBounds.controlsHeight, JSON.stringify(sideBySideScopePaneBounds)).toBeGreaterThanOrEqual(132);
+  expect(sideBySideScopePaneBounds.plotHeight).toBeGreaterThanOrEqual(260);
   await page.locator("#workspace-pane-select-1").selectOption("housekeeping");
   await expect(page.locator("#housekeeping-panel")).toBeVisible();
   await expect(page.locator("#asg-panel")).toBeHidden();
@@ -659,12 +707,76 @@ test("split workspaces select a panel for each pane instead of showing tabs", as
   await page.locator("#workspace-pane-count").selectOption("3");
   await expect(page.locator("#workspace-pane-select-2")).toHaveValue("asg");
   await expect(page.locator("#asg-panel")).toBeVisible();
+  await page.locator(".menu-dropdown summary").click();
+  const threeHorizontalGeometry = await page.evaluate(() => {
+    const host = document.querySelector("#workspace-panels")?.getBoundingClientRect();
+    const panels = Array.from(document.querySelectorAll<HTMLElement>("#workspace-panels > .workspace-panel:not([hidden])"), (panel) => {
+      const bounds = panel.getBoundingClientRect();
+      return { top: bounds.top, bottom: bounds.bottom };
+    });
+    return { hostTop: host?.top ?? 0, hostBottom: host?.bottom ?? 0, panels };
+  });
+  expect(threeHorizontalGeometry.panels).toHaveLength(3);
+  expect(threeHorizontalGeometry.panels.every((panel) =>
+    Math.abs(panel.top - threeHorizontalGeometry.hostTop) <= 2 && Math.abs(panel.bottom - threeHorizontalGeometry.hostBottom) <= 2,
+  )).toBe(true);
+  const horizontalSplitSizes = await page.evaluate(() => window.pyrplScope?.getWorkspaceSplitSizes());
+  const horizontalGutter = await page.locator("#workspace-panels > .gutter-horizontal").first().boundingBox();
+  expect(horizontalGutter).toBeTruthy();
+  if (!horizontalGutter || !horizontalSplitSizes) {
+    return;
+  }
+  await page.mouse.move(horizontalGutter.x + horizontalGutter.width / 2, horizontalGutter.y + horizontalGutter.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(horizontalGutter.x + horizontalGutter.width / 2 + 40, horizontalGutter.y + horizontalGutter.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  const draggedHorizontalSplitSizes = await page.evaluate(() => window.pyrplScope?.getWorkspaceSplitSizes());
+  expect(
+    draggedHorizontalSplitSizes?.[0],
+    JSON.stringify({ horizontalGutter, horizontalSplitSizes, draggedHorizontalSplitSizes }),
+  ).toBeGreaterThan(horizontalSplitSizes[0]);
 
+  await page.locator(".menu-dropdown summary").click();
   await page.locator("#workspace-layout-mode").selectOption("split-vertical");
+  await page.locator(".menu-dropdown summary").click();
   await expect(page.locator("#workspace-tabs")).toBeHidden();
   await expect(page.locator("#workspace-pane-select-0")).toHaveValue("scope");
   await expect(page.locator("#workspace-pane-select-1")).toHaveValue("housekeeping");
   await expect(page.locator("#workspace-pane-select-2")).toHaveValue("asg");
+  const verticalGeometry = await page.evaluate(() => {
+    const host = document.querySelector("#workspace-panels")?.getBoundingClientRect();
+    const panels = Array.from(document.querySelectorAll<HTMLElement>("#workspace-panels > .workspace-panel:not([hidden])"), (panel) => {
+      const bounds = panel.getBoundingClientRect();
+      return { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom };
+    });
+    return {
+      hostLeft: host?.left ?? 0,
+      hostRight: host?.right ?? 0,
+      hostTop: host?.top ?? 0,
+      hostBottom: host?.bottom ?? 0,
+      panels,
+    };
+  });
+  expect(verticalGeometry.panels).toHaveLength(3);
+  expect(verticalGeometry.panels.every((panel) =>
+    Math.abs(panel.left - verticalGeometry.hostLeft) <= 2 && Math.abs(panel.right - verticalGeometry.hostRight) <= 2,
+  )).toBe(true);
+  expect(Math.abs(verticalGeometry.panels[0].top - verticalGeometry.hostTop)).toBeLessThanOrEqual(2);
+  expect(Math.abs((verticalGeometry.panels.at(-1)?.bottom ?? 0) - verticalGeometry.hostBottom)).toBeLessThanOrEqual(2);
+  const verticalSplitSizes = await page.evaluate(() => window.pyrplScope?.getWorkspaceSplitSizes());
+  const verticalGutter = await page.locator("#workspace-panels > .gutter-vertical").first().boundingBox();
+  expect(verticalGutter).toBeTruthy();
+  if (!verticalGutter || !verticalSplitSizes) {
+    return;
+  }
+  await page.mouse.move(verticalGutter.x + verticalGutter.width / 2, verticalGutter.y + verticalGutter.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(verticalGutter.x + verticalGutter.width / 2, verticalGutter.y + verticalGutter.height / 2 + 40, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  const draggedVerticalSplitSizes = await page.evaluate(() => window.pyrplScope?.getWorkspaceSplitSizes());
+  expect(draggedVerticalSplitSizes?.[0]).toBeGreaterThan(verticalSplitSizes[0]);
 });
 
 test("repeated side-by-side layout changes keep Scope plot dimensions stable", async ({ page }) => {
@@ -1464,6 +1576,11 @@ test("lockbox stages fill the panel height and scroll when needed", async ({ pag
   expect(viewport.clientHeight).toBeLessThan(viewport.scrollHeight);
   expect(viewport.sequenceHeight).toBeCloseTo(before, 0);
   expect(viewport.sequenceBottom).toBeCloseTo(viewport.gridBottom, 0);
+  const stageMetrics = await page.locator("#lockbox-stages .lockbox-stage-card").evaluateAll((cards) =>
+    cards.map((card) => ({ height: card.getBoundingClientRect().height, scrollHeight: card.scrollHeight, clientHeight: card.clientHeight })),
+  );
+  expect(Math.max(...stageMetrics.map((metric) => metric.height)) - Math.min(...stageMetrics.map((metric) => metric.height))).toBeLessThanOrEqual(1);
+  expect(stageMetrics.every((metric) => metric.scrollHeight <= metric.clientHeight + 1)).toBe(true);
 
   await page.locator("#lockbox-stages").evaluate((element) => {
     element.scrollTop = element.scrollHeight;

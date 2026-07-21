@@ -60,6 +60,8 @@ export class LockboxPanel {
   private outputPhasePlot: uPlot | null = null;
   private readonly resizeObserver: ResizeObserver;
   private resizeFrame: number | null = null;
+  private stageLayoutWidth = 0;
+  private stageHeight = 0;
 
   constructor(private readonly elements: LockboxPanelElements) {
     this.resizeObserver = new ResizeObserver(() => this.scheduleLayoutRefresh());
@@ -119,6 +121,7 @@ export class LockboxPanel {
     const outputFrames = this.elements.outputPlot.querySelectorAll<HTMLElement>(".lockbox-output-plot-frame");
     if (outputFrames[0] && this.outputMagnitudePlot) this.fitPlotToHost(this.outputMagnitudePlot, outputFrames[0]);
     if (outputFrames[1] && this.outputPhasePlot) this.fitPlotToHost(this.outputPhasePlot, outputFrames[1]);
+    this.equalizeStageHeights();
   }
 
   getStageCount(): number {
@@ -254,6 +257,9 @@ export class LockboxPanel {
 
   private renderStages(stages: LockboxStage[]): void {
     this.elements.stages.textContent = "";
+    this.stageLayoutWidth = 0;
+    this.stageHeight = 0;
+    this.elements.stages.style.removeProperty("--lockbox-stage-height");
     stages.forEach((stage, index) => {
       const card = this.createSectionCard(stage.name, `stage ${index}`);
       card.classList.add("lockbox-stage-card");
@@ -308,6 +314,22 @@ export class LockboxPanel {
       card.appendChild(outputGrid);
       this.elements.stages.appendChild(card);
     });
+  }
+
+  private equalizeStageHeights(): void {
+    const cards = Array.from(this.elements.stages.querySelectorAll<HTMLElement>(".lockbox-stage-card"));
+    const width = Math.floor(this.elements.stages.getBoundingClientRect().width);
+    if (cards.length === 0 || width < 1 || (width === this.stageLayoutWidth && this.stageHeight > 0)) {
+      return;
+    }
+    this.elements.stages.style.removeProperty("--lockbox-stage-height");
+    const height = Math.ceil(Math.max(...cards.map((card) => card.getBoundingClientRect().height)));
+    if (height < 1) {
+      return;
+    }
+    this.elements.stages.style.setProperty("--lockbox-stage-height", `${height}px`);
+    this.stageLayoutWidth = width;
+    this.stageHeight = height;
   }
 
   private createSectionCard(titleText: string, subtitleText: string): HTMLElement {
