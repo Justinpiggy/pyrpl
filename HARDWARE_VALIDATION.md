@@ -27,6 +27,16 @@ conda run -n pyrpl-env pyrpl-web-validate-hardware \
   --scope --asg-loopback --spectrum --network --json
 ```
 
+The Scope behavior matrix is a separate gated check. It routes ASG0 internally
+to both Scope channels, checks a CH1 rising-edge capture and the web
+single-rearm state, verifies rolling frames update, and reads the FPGA
+decimation register after two durations:
+
+```bash
+conda run -n pyrpl-env pyrpl-web-validate-hardware \
+  --hostname 10.0.5.118 --allow-write --scope-behavior --json
+```
+
 The internal ASG0-to-Scope check is based on the legacy
 `test_scope_asg_ams.py` routing test. The Network Analyzer check uses its
 legacy internal IQ self-loop and reports the largest deviation from unity.

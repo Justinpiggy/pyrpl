@@ -13,6 +13,7 @@ from pyrpl_websocket.hardware_validation import (
     validate_network_self_loop,
     validate_options,
     validate_scope,
+    validate_scope_behavior,
     validate_spectrum_capture,
 )
 from pyrpl_websocket.scope import make_scope_frame
@@ -44,6 +45,10 @@ class HardwareValidationTest(unittest.TestCase):
         session = WebSession(ServerSettings(hostname="_FAKE_"))
         try:
             self.assertEqual(validate_scope(session)["first"]["samples"], 2**14)
+            behavior = validate_scope_behavior(session)
+            self.assertEqual(behavior["single_rearm"]["state"], "paused_single")
+            self.assertEqual(behavior["decimation"]["short_register"], 8)
+            self.assertEqual(behavior["decimation"]["long_register"], 64)
             self.assertEqual(validate_asg_loopback(session)["samples"], 2**14)
             self.assertEqual(validate_spectrum_capture(session)["samples"], 2**14)
             self.assertEqual(validate_network_self_loop(session, 1.0)["points"], 9)

@@ -3687,3 +3687,20 @@ control.
   stop Spectrum through its rendered control, then ensure Scope is stopped
   with the same browser control lease before closing the page. Confirm the
   server reports both instruments as `stopped`, then stop monitor_server.
+
+## 2026-07-21 Scope Trigger And Decimation Hardware Matrix
+
+- Read original `test_scope.py` and `test_scope_asg_ams.py` before defining a
+  Scope hardware check. The relevant legacy invariants are an ASG-fed rising
+  edge at the trigger slot, no additional single capture before rearm, rolling
+  updates only for durations above 0.1 s, and a real decimation write.
+- The opt-in `--scope-behavior` validator uses ASG0 internally and reads
+  `SCOPE_DECIMATION_ADDR`; it does not treat an x-axis rescale as evidence of
+  changing hardware sample time.
+- On `10.0.5.118`, a rising edge landed at index 8190 of 16384 with -5.74 mV
+  at the trigger point, rearmed Single returned to `paused_single`, rolling
+  frames had 12,956 finite samples, and duration changes wrote decimations 8
+  and 64 for 1.048576 ms and 8.388608 ms captures respectively.
+- Capture the single-rearm state before starting the following rolling test.
+  Returning the current session state later incorrectly reports
+  `running_continuous` even though rearm behavior passed.

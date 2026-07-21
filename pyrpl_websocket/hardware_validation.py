@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from typing import Any, Sequence
 
 import numpy as np
 
 from .monitor_client import MonitorClient
-from .scope import SCOPE_ADDR_BASE, ScopeFrame
+from .scope import SCOPE_ADDR_BASE, SCOPE_DATA_LENGTH, ScopeFrame
+from .scope_registers import SCOPE_DECIMATION_ADDR
 from .session import WebSession
 from .settings import ServerSettings
 
@@ -29,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=2222, help="monitor_server TCP port (default: 2222)")
     parser.add_argument("--allow-write", action="store_true", help="Allow FPGA reconfiguration for selected checks")
     parser.add_argument("--scope", action="store_true", help="Capture two immediate Scope frames")
+    parser.add_argument("--scope-behavior", action="store_true", help="Check Scope trigger, rearm, rolling, and decimation behavior")
     parser.add_argument("--asg-loopback", action="store_true", help="Check internal ASG0-to-Scope routing")
     parser.add_argument("--spectrum", action="store_true", help="Check Spectrum Analyzer's hardware Scope capture path")
     parser.add_argument("--network", action="store_true", help="Check Network Analyzer's internal IQ self-loop")
@@ -38,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def selected_checks(options: argparse.Namespace) -> tuple[str, ...]:
-    return tuple(name for name in ("scope", "asg_loopback", "spectrum", "network") if getattr(options, name))
+    return tuple(name for name in ("scope", "scope_behavior", "asg_loopback", "spectrum", "network") if getattr(options, name))
 
 
 def validate_options(options: argparse.Namespace) -> None:
@@ -103,6 +106,99 @@ def validate_scope(session: WebSession) -> dict[str, Any]:
     first_summary = frame_summary(first)
     second_summary = frame_summary(second)
     return {"first": first_summary, "second": second_summary}
+
+
+def _scope_decimation(session: WebSession) -> int:
+    return int(session.client.reads(SCOPE_DECIMATION_ADDR, 1)[0])
+
+
+def _require_frame(acquisition, check: str) -> ScopeFrame:
+    if acquisition.frame is None:
+        raise HardwareValidationError(f"{check} produced no Scope frame")
+    return acquisition.frame
+
+
+def validate_scope_behavior(session: WebSession) -> dict[str, Any]:
+    """Check the original Scope trigger and rolling acquisition paths on one board."""
+
+    _configure_asg0_test_tone(session)
+    base_duration = 8e-9 * SCOPE_DATA_LENGTH
+    edge_duration = base_duration * 8
+    session.set_module_attribute("scope", "input1", "asg0")
+    session.set_module_attribute("scope", "input2", "asg0")
+    session.set_module_attribute("scope", "duration", edge_duration)
+    session.set_module_attribute("scope", "rolling_mode", False)
+    session.set_module_attribute("scope", "trigger_source", "ch1_positive_edge")
+    session.set_module_attribute("scope", "threshold", 0.0)
+    session.set_module_attribute("scope", "hysteresis", 0.01)
+    session.set_module_attribute("scope", "trigger_delay", 0.0)
+    session.set_module_attribute("scope", "trace_average", 1)
+    session.call_module_action("scope", "single")
+    edge_frame = _require_frame(session.acquire_scope_frame(0, SCOPE_DATA_LENGTH), "edge-triggered Scope acquisition")
+    if session.scope_settings.running_state != "paused_single":
+        raise HardwareValidationError("single Scope capture did not enter paused_single")
+    if session.acquire_scope_frame(1, SCOPE_DATA_LENGTH).frame is not None:
+        raise HardwareValidationError("paused single Scope capture accepted another frame before rearm")
+    session.call_module_action("scope", "resume_single")
+    rearmed_frame = _require_frame(session.acquire_scope_frame(2, SCOPE_DATA_LENGTH), "rearmed single Scope acquisition")
+    if session.scope_settings.running_state != "paused_single":
+        raise HardwareValidationError("rearmed single Scope capture did not return to paused_single")
+    single_rearm_state = session.scope_settings.running_state
+
+    samples = edge_frame.samples()[:, 0].astype(np.float64, copy=False)
+    trigger_slot = edge_frame.sample_count // 2
+    radius = 32
+    region = samples[trigger_slot - radius : trigger_slot + radius + 1]
+    local_index = int(np.argmin(np.abs(region)))
+    trigger_index = trigger_slot - radius + local_index
+    if abs(float(samples[trigger_index])) > 0.08:
+        raise HardwareValidationError("edge-triggered Scope frame has no near-zero crossing at trigger time")
+    if trigger_index < 2 or trigger_index >= edge_frame.sample_count - 2 or samples[trigger_index + 2] <= samples[trigger_index - 2]:
+        raise HardwareValidationError("edge-triggered Scope frame is not rising at trigger time")
+
+    short_decimation = _scope_decimation(session)
+    long_duration = base_duration * 64
+    session.set_module_attribute("scope", "duration", long_duration)
+    session.call_module_action("scope", "setup")
+    long_decimation = _scope_decimation(session)
+    if short_decimation != 8 or long_decimation != 64:
+        raise HardwareValidationError(
+            f"Scope decimation registers were {short_decimation} and {long_decimation}, expected 8 and 64"
+        )
+
+    rolling_duration = base_duration * 1024
+    session.set_module_attribute("asg0", "frequency", 25_000.0)
+    session.call_module_action("asg0", "setup")
+    session.set_module_attribute("scope", "duration", rolling_duration)
+    session.set_module_attribute("scope", "rolling_mode", True)
+    session.set_module_attribute("scope", "trigger_source", "immediately")
+    session.call_module_action("scope", "continuous")
+    first_rolling = _require_frame(session.acquire_scope_frame(3, SCOPE_DATA_LENGTH), "first rolling Scope acquisition")
+    time.sleep(min(0.3, rolling_duration * 1.25))
+    second_rolling = _require_frame(session.acquire_scope_frame(4, SCOPE_DATA_LENGTH), "second rolling Scope acquisition")
+    first_samples = first_rolling.samples()[:, 0]
+    second_samples = second_rolling.samples()[:, 0]
+    finite = np.isfinite(first_samples) & np.isfinite(second_samples)
+    if int(np.count_nonzero(finite)) < SCOPE_DATA_LENGTH // 2:
+        raise HardwareValidationError("rolling Scope frames contain too few finite samples")
+    if float(np.max(np.abs(first_samples[finite] - second_samples[finite]))) < 1e-3:
+        raise HardwareValidationError("rolling Scope frames did not update")
+
+    return {
+        "edge_trigger": {
+            "trigger_index": trigger_index,
+            "trigger_voltage": float(samples[trigger_index]),
+            "samples": edge_frame.sample_count,
+        },
+        "single_rearm": {"samples": rearmed_frame.sample_count, "state": single_rearm_state},
+        "decimation": {
+            "short_duration": edge_duration,
+            "short_register": short_decimation,
+            "long_duration": long_duration,
+            "long_register": long_decimation,
+        },
+        "rolling": {"duration": rolling_duration, "finite_samples": int(np.count_nonzero(finite))},
+    }
 
 
 def _configure_asg0_test_tone(session: WebSession) -> None:
@@ -192,6 +288,8 @@ def run_validation(options: argparse.Namespace) -> dict[str, Any]:
         }
         if options.scope:
             report["scope"] = validate_scope(session)
+        if options.scope_behavior:
+            report["scope_behavior"] = validate_scope_behavior(session)
         if options.asg_loopback:
             report["asg_loopback"] = validate_asg_loopback(session)
         if options.spectrum:

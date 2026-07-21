@@ -311,3 +311,8 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   frames. On `10.0.5.118`, the rendered Scope accepted CH1-to-ASG0 and the
   rendered Spectrum displayed three live 131,073-bin series. Stop both
   acquisitions with the browser lease before shutting down monitor_server.
+- Scope hardware validation must check the FPGA decimation register, not just
+  the frontend axis. On `10.0.5.118`, the ASG0-fed CH1 rising edge aligned at
+  sample 8190, Single required explicit rearm and returned to `paused_single`,
+  rolling frames updated above 0.1 s, and duration writes set decimation 8 and
+  64 as expected.
