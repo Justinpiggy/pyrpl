@@ -3652,11 +3652,20 @@ control.
 - The read-only compatible-protocol probe succeeded against `10.0.5.118`:
   one Scope control-register read completed with zero writes. Do not interpret
   that as successful acquisition validation.
-- The write-enabled suite reached the existing server but failed on the first
-  Scope input-selector write at `0x40380000`. The server closed after the
-  client disconnected, as designed. Preserve this as an unresolved hardware
-  compatibility investigation; do not modify FPGA firmware or
-  `monitor_server.c` to mask it.
+- The original PyRPL client and the web `MonitorClient` both successfully
+  wrote `10` (`in1`) to the Scope input-selector register at `0x40380000` and
+  read the value back. The wire protocol is compatible.
+- The initial write-enabled validator failure was not a protocol mismatch. It
+  first opened a read-only probe client, which caused the one-client server to
+  exit, then tried to start `WebSession` as a second client. For acquisition
+  checks, probe through `session.client` instead of opening a separate
+  `MonitorClient`.
+- With that correction, the full dedicated-board validation passed on
+  `10.0.5.118`: two Scope frames, internal ASG0-to-Scope loopback at about
+  1.00 Vpp, Spectrum Analyzer hardware capture, and a nine-point Network
+  Analyzer self-loop with maximum unity error `0.0059`.
+- Keep FPGA firmware and `monitor_server.c` unchanged; the required fix was
+  entirely in the Python validation harness.
 - After any hardware test, explicitly stop the SSH-held monitor-server
   launcher and verify both `ps` and the port-2222 listener are empty. This was
   confirmed on `10.0.5.118` after this test.

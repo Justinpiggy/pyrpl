@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -7,6 +8,7 @@ from pyrpl_websocket.hardware_validation import (
     build_parser,
     frame_summary,
     selected_checks,
+    run_validation,
     validate_asg_loopback,
     validate_network_self_loop,
     validate_options,
@@ -47,3 +49,10 @@ class HardwareValidationTest(unittest.TestCase):
             self.assertEqual(validate_network_self_loop(session, 1.0)["points"], 9)
         finally:
             session.close()
+
+    def test_write_validation_probes_the_existing_session_client(self):
+        options = build_parser().parse_args(["--hostname", "_FAKE_", "--allow-write", "--scope"])
+        with patch("pyrpl_websocket.hardware_validation.probe_monitor", side_effect=AssertionError("second client opened")):
+            report = run_validation(options)
+        self.assertEqual(report["monitor"]["reads"], 1)
+        self.assertEqual(report["scope"]["first"]["samples"], 2**14)

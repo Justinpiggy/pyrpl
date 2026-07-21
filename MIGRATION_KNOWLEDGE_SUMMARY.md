@@ -300,8 +300,9 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   styles for the flex container, and test real drags in two- and three-pane
   horizontal and vertical layouts.
 - A deployed Red Pitaya `monitor_server` is a one-client process and exits
-  after disconnect. Validate sequentially, restart it per independent client,
-  and verify it is stopped after tests. A read-only probe on `10.0.5.118`
-  passed, while the first write-enabled Scope input-selector write remains an
-  unresolved compatibility failure; never change FPGA firmware or
-  `monitor_server.c` as a workaround.
+  after disconnect. For write-enabled validation, the monitor probe must use
+  the already-open `WebSession` client, never a separate probe connection.
+  On `10.0.5.118`, original and web clients both passed the Scope selector
+  write/readback, and the corrected Scope, ASG loopback, Spectrum, and Network
+  Analyzer hardware suite passed. Verify the server is stopped after tests;
+  never change FPGA firmware or `monitor_server.c` as a workaround.

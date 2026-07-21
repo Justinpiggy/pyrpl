@@ -71,10 +71,16 @@ def frame_summary(frame: ScopeFrame) -> dict[str, Any]:
 def probe_monitor(hostname: str, port: int) -> dict[str, Any]:
     client = MonitorClient(hostname, port)
     try:
-        control = int(client.reads(SCOPE_ADDR_BASE, 1)[0])
-        return {"scope_control": control, "reads": client.stats.reads, "writes": client.stats.writes}
+        return probe_client(client)
     finally:
         client.close()
+
+
+def probe_client(client: MonitorClient) -> dict[str, Any]:
+    """Probe an already-open compatible monitor-server client."""
+
+    control = int(client.reads(SCOPE_ADDR_BASE, 1)[0])
+    return {"scope_control": control, "reads": client.stats.reads, "writes": client.stats.writes}
 
 
 def _capture_scope(session: WebSession, sequence: int) -> ScopeFrame:
@@ -171,13 +177,19 @@ def validate_network_self_loop(session: WebSession, tolerance: float) -> dict[st
 
 def run_validation(options: argparse.Namespace) -> dict[str, Any]:
     validate_options(options)
-    report: dict[str, Any] = {"hostname": options.hostname, "port": options.port, "monitor": probe_monitor(options.hostname, options.port)}
     checks = selected_checks(options)
     if not checks:
-        return report
+        return {"hostname": options.hostname, "port": options.port, "monitor": probe_monitor(options.hostname, options.port)}
 
     session = WebSession(ServerSettings(hostname=options.hostname, port=options.port))
     try:
+        # monitor_server accepts one client and exits when that client closes.
+        # Keep the probe on this session's connection before running writes.
+        report: dict[str, Any] = {
+            "hostname": options.hostname,
+            "port": options.port,
+            "monitor": probe_client(session.client),
+        }
         if options.scope:
             report["scope"] = validate_scope(session)
         if options.asg_loopback:
