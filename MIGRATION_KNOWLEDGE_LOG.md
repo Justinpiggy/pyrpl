@@ -3669,3 +3669,21 @@ control.
 - After any hardware test, explicitly stop the SSH-held monitor-server
   launcher and verify both `ps` and the port-2222 listener are empty. This was
   confirmed on `10.0.5.118` after this test.
+
+## 2026-07-21 Browser Hardware WebSocket Smoke Test
+
+- Hardware protocol success is not sufficient for this migration. Use a real
+  browser against the packaged frontend and require changing Scope frame
+  sequences plus at least two Spectrum WebSocket frames before calling the UI
+  path validated.
+- Workspace layout persists in the configuration. A reusable browser hardware
+  test must explicitly activate Scope before looking for its stream or
+  controls; the previous active tab can legitimately be Spectrum.
+- On `10.0.5.118`, the rendered Scope accepted the CH1-to-ASG0 selector change
+  and advanced past frame 2. The rendered Spectrum Analyzer advanced to frame
+  1 with three live series and 131,073 bins at 102.929 Hz RBW. The plotted
+  canvas was visually inspected and contained the expected traces.
+- Spectrum stops and releases Scope asynchronously. Browser teardown must
+  stop Spectrum through its rendered control, then ensure Scope is stopped
+  with the same browser control lease before closing the page. Confirm the
+  server reports both instruments as `stopped`, then stop monitor_server.

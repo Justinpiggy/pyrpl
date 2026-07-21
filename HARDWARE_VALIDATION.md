@@ -33,3 +33,18 @@ legacy internal IQ self-loop and reports the largest deviation from unity.
 External wiring, detector gains, and a browser WebSocket session are still
 required to validate lab-specific transfer correction and frontend display
 normalization.
+
+For an end-to-end browser smoke test, leave `test_redpitaya.sh` running and
+use a second terminal:
+
+```bash
+cd web
+conda run -n pyrpl-env node test/hardware-browser.mjs
+```
+
+The smoke test claims the browser control lease, activates the Scope panel,
+routes CH1 to ASG0 through the rendered selector, requires multiple Scope and
+Spectrum WebSocket frames, and verifies a populated three-series 131,073-bin
+Spectrum plot. It stops both acquisitions with the same browser lease before
+exit. The browser test intentionally resets its active panel because workspace
+layout is persistent across sessions.

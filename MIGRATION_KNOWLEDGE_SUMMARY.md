@@ -306,3 +306,8 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   write/readback, and the corrected Scope, ASG loopback, Spectrum, and Network
   Analyzer hardware suite passed. Verify the server is stopped after tests;
   never change FPGA firmware or `monitor_server.c` as a workaround.
+- Real browser validation must activate a persisted Scope workspace explicitly,
+  then require changing Scope frame sequences and multiple Spectrum WebSocket
+  frames. On `10.0.5.118`, the rendered Scope accepted CH1-to-ASG0 and the
+  rendered Spectrum displayed three live 131,073-bin series. Stop both
+  acquisitions with the browser lease before shutting down monitor_server.
