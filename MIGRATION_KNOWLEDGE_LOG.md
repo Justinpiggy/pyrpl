@@ -3704,3 +3704,47 @@ control.
 - Capture the single-rearm state before starting the following rolling test.
   Returning the current session state later incorrectly reports
   `running_continuous` even though rearm behavior passed.
+
+## 2026-07-21 Spectrum External-Loop Comparison
+
+- The Red Pitaya silkscreen's zero-indexed OUT0/IN0 pair is PyRPL's first
+  routed pair, named `out1`/`in1` in `hardware_modules/dsp.py`. Do not map it
+  to the second pair merely because the external connector uses zero-based
+  labels.
+- Verify Spectrum Analyzer migration with an actual external cable, not only
+  PyRPL's internal `asg0` routing: route `asg0` to `out1`, select baseband
+  `in1`, and leave `in2` as the open/noise reference.
+- Compare two independent paths sequentially because monitor_server accepts
+  one client: the unchanged legacy `SpectrumAnalyzer.single()` result and the
+  packaged browser's real WebSocket plus Spectrum Web Worker result. Use the
+  same sine frequency, amplitude, span, window, and trace-average setting.
+- Keep `hardware_legacy_spectrum_external_loop.py` separate from the deployed
+  web package. It is a local regression oracle and imports the desktop legacy
+  PyRPL stack; the Red Pitaya server remains headless and ARM-safe.
+- Do not construct the original `Pyrpl` application with `autostart=False`
+  for this reference test. Its hardware module inventory is then absent while
+  software modules load, causing original ModuleManager reservations to fail
+  (`InsufficientResourceError` for IQ). Use the legacy startup lifecycle with
+  `reloadfpga=False`, then let its normal cleanup stop monitor_server.
+- `Pyrpl.__init__` checks `config.endswith(...)` before creating its
+  `MemoryTree`; passing `MemoryTree()` directly is therefore not supported.
+  For isolated legacy checks, create an empty file in a temporary directory
+  first. A nonexistent filename is intentionally redirected into
+  `PYRPL_USER_DIR/config` by `MemoryTree`, which would pollute user state.
+- A live OUT0-to-IN0 comparison caught a stale web Scope capture even though
+  ASG0 and IN0 sampler statistics both showed the expected sine. The web
+  `wait_scope_curve_ready()` had polled the FPGA immediately after arming;
+  idle bits from the prior capture could therefore look ready. Preserve the
+  original `AcquisitionModule._data_ready_async` rule: sleep the remaining
+  acquisition duration before the first ready poll, then poll until ready.
+- Do not require an externally measured sine to be the global largest
+  Spectrum bin. PyRPL preserves the physical ADC DC offset, and that DC bin
+  can exceed a small external tone. Hardware parity checks must report the DC
+  bin but compare the strongest calibrated bin in a small tolerance band
+  around the injected tone.
+- On `2026-07-21`, the 100 kHz, 0.2 V OUT0-to-IN0 reference matched: original
+  PyRPL measured `100001.6928 Hz`, `0.04663032 Vpk^2`; the packaged browser
+  WebSocket/Worker path measured `100001.6928 Hz`, `0.04662919 Vpk^2`.
+  Both retained the approximately `0.05489 Vpk^2` DC bin. The browser's raw
+  Spectrum frame and direct Scope frame both measured about `0.15013 V RMS`
+  and `0.425 Vpp` before FFT.

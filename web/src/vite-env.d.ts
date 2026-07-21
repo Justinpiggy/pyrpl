@@ -76,6 +76,11 @@ interface Window {
     getSpectrumAverageCount: () => number;
     getSpectrumXRange: () => { min: number; max: number };
     getSpectrumYRange: () => { min: number; max: number };
+    getSpectrumCurveData: () => {
+      x: number[];
+      series: Array<{ label: string; values: number[]; imaginary?: number[] }>;
+      unit: string;
+    } | null;
     getIirXRange: () => { min: number; max: number } | null;
     getIirMagnitudeYRange: () => { min: number; max: number } | null;
     getIirPhaseYRange: () => { min: number; max: number } | null;

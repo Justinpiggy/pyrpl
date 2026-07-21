@@ -139,6 +139,10 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   publishing the terminal `paused_single` event. The terminal event closes the
   browser stream; sending it first can discard the final capture and leave the
   browser average counter one frame behind.
+- Scope hardware capture must sleep the configured acquisition duration before
+  its first ready-register poll, matching original
+  `AcquisitionModule._data_ready_async`; polling immediately can accept stale
+  idle bits and stream the previous buffer.
 - Releasing temporary Scope ownership must restore intrinsic disabled states
   such as rolling-mode restrictions instead of blindly enabling every input.
 - Network analyzer is an IQ accumulator sweep, not a scope capture or CPU FFT.
@@ -161,6 +165,11 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   into 262,144 FFT points in a browser Web Worker. Baseband returns 131,073
   bins; IQ returns the full shifted 262,144 bins. Transfer `ArrayBuffer`s to
   and from the worker and discard results from superseded setup generations.
+- The physical Red Pitaya OUT0/IN0 connector pair maps to legacy PyRPL
+  `out1`/`in1`. Hardware Spectrum parity checks must use that external cable,
+  then compare original `SpectrumAnalyzer.single()` and the packaged browser
+  WebSocket/Worker result sequentially with identical tone, span, window, and
+  averaging settings.
 - Average baseband cross spectra as separate real and imaginary arrays, then
   take magnitude only for display. Save both components to CurveDB. Display
   unit and show/hide changes must not reset the linear `Vpk^2` average.
@@ -184,6 +193,12 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   in `curve_unit` (`Vpk^2`), independent of the selected display unit.
 - Spectrum trace averaging must happen on linear `Vpk^2` values before
   converting to dB, RMS, or density units for display.
+- Baseband Spectrum preserves physical ADC DC offset, as original PyRPL does.
+  Hardware tone comparisons must select a local peak near the known injected
+  frequency, not assume it is the globally largest bin.
+- Hardware reference on 2026-07-21: with OUT0 connected to IN0, a 100 kHz,
+  0.2 V ASG0 sine measured `0.04663032 Vpk^2` in original PyRPL and
+  `0.04662919 Vpk^2` through the packaged browser WebSocket/Worker path.
 - Curve Viewer selects the newest curve explicitly after refreshing a dynamic
   multi-row selector; browsers do not reliably auto-select its first option.
 - Complex curves display magnitude in dB and phase in degrees; real curves

@@ -150,10 +150,18 @@ def wait_scope_curve_ready(
     timeout: float | None = None,
     poll_interval: float = 0.001,
 ) -> bool:
-    """Wait until the FPGA says the just-started scope trace is ready."""
+    """Wait using PyRPL's duration-first Scope readiness rule.
+
+    The original ``AcquisitionModule._data_ready_async`` sleeps the remaining
+    Scope duration before its first register poll. Polling immediately can see
+    the prior capture's idle control bits and read stale data.
+    """
 
     timeout = max(0.25, float(settings.duration) + 0.25) if timeout is None else max(0.0, timeout)
     deadline = time.monotonic() + timeout
+    initial_wait = min(max(0.0, float(settings.duration)), max(0.0, deadline - time.monotonic()))
+    if initial_wait:
+        time.sleep(initial_wait)
     while time.monotonic() <= deadline:
         if scope_curve_ready(client):
             return True

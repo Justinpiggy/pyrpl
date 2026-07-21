@@ -2426,6 +2426,7 @@ function exposeDebugState(): void {
     getSpectrumAverageCount: () => spectrumPlot.getAverageCount(),
     getSpectrumXRange: () => spectrumPlot.getXRange(),
     getSpectrumYRange: () => spectrumPlot.getYRange(),
+    getSpectrumCurveData: () => spectrumPlot.getCurveData(),
     getIirXRange: () => iirPlot?.getXRange() ?? null,
     getIirMagnitudeYRange: () => iirPlot?.getMagnitudeYRange() ?? null,
     getIirPhaseYRange: () => iirPlot?.getPhaseYRange() ?? null,
