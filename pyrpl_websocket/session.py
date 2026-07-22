@@ -170,6 +170,7 @@ class WebSession:
         # Keep this read-only-by-convention alias for API payloads and trusted
         # compatibility proxies. Reservations must use ``module_manager``.
         self.module_owners = self.module_manager.owners
+        self._restore_lockbox_class_from_config()
         self._load_config_setup_attributes()
         self._module_states: dict[str, dict[str, dict]] = self._load_saved_states()
         self._fake_scope_clock = 0
@@ -268,6 +269,7 @@ class WebSession:
                 self.lockbox_runtime = previous_runtime
                 raise
             previous_runtime.close()
+            self._persist_lockbox_class_no_lock()
             schema = self.lockbox.schema()
         self._wake_lockbox_monitor()
         return schema
@@ -1162,6 +1164,28 @@ class WebSession:
             return
         for module_name in _empty_saved_states():
             self._restore_module_setup_no_lock(module_name)
+
+    def _restore_lockbox_class_from_config(self) -> None:
+        """Restore PyRPL's persisted Lockbox classname before UI use."""
+
+        if self.config is None:
+            return
+        classname = self.config.module_setup("lockbox").get("classname")
+        if not isinstance(classname, str) or classname == self.lockbox.classname:
+            return
+        try:
+            replacement = LockboxState(classname, library=self.lockbox.library)
+        except (KeyError, ValueError):
+            LOGGER.warning("Ignoring unavailable persisted Lockbox class %r", classname)
+            return
+        previous_runtime = self.lockbox_runtime
+        self.lockbox = replacement
+        self.lockbox_runtime = TrustedLockboxRuntime(self, replacement)
+        previous_runtime.close()
+
+    def _persist_lockbox_class_no_lock(self) -> None:
+        if self.config is not None:
+            self.config.set_module_setup("lockbox", {"classname": self.lockbox.classname})
 
     def _load_saved_states(self) -> dict[str, dict[str, dict]]:
         if self.config is not None:

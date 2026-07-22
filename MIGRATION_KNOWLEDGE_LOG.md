@@ -3859,3 +3859,13 @@ control.
   acquire a frame while the 16-chunk sweep upload remains in progress. Future
   long hardware operations need the same distinction between session-state
   locking and one-request socket serialization.
+
+## 2026-07-22 Lockbox Class Persistence
+
+- Legacy `Lockbox._make_Lockbox()` chooses the concrete Lockbox model from the
+  root configuration branch `lockbox.classname`. The web migration had no
+  corresponding persistence path, so every fresh server session silently
+  recreated the default `Linear` model.
+- Selecting a Lockbox class now writes `lockbox: {classname: ...}` to the
+  PyRPL-compatible YAML config. Restore that class before the web session
+  exposes Lockbox controls or activates custom-model runtime hooks.

@@ -96,6 +96,9 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   and `iq1`.
 - Store saved states in `<module>_states`.
 - Store web-only layout under `pyrpl_websocket.workspace`.
+- Persist the selected Lockbox model in the root `lockbox.classname` branch,
+  matching PyRPL's `Lockbox._make_Lockbox()` lookup; restore it before the web
+  session exposes Lockbox controls.
 
 ## IIR Rules
 
