@@ -54,6 +54,14 @@ Read this before changing migrated PyRPL behavior. The full details remain in
 - Preserve PyRPL special cases such as spectrum analyzer directly owning `iq2`.
 - Lockbox should not unnecessarily stop scope or spectrum analyzer except when
   the original routine temporarily owns scope for calibration/acquisition.
+- `Lockbox.unlock()` disables each output PID but does not free Lockbox-owned
+  PID, ASG, PWM, or IQ modules. Retain them until a Lockbox model is cleared or
+  replaced; freeing them restores persisted setups and creates incorrect,
+  disruptive hardware traffic.
+- A Lockbox sweep still writes PyRPL's complete ASG waveform table. On the
+  shared monitor-server connection, chunk that table into contiguous writes
+  and release the session lock between chunks so Scope continues streaming;
+  serialize each individual monitor request in the client.
 - Lockbox calibration configures a one-period Scope capture from the selected
   sweep output, subtracts the stored analog offset, and computes standard
   deviation plus midpoint/amplitude from the extrema. Forward that capture to

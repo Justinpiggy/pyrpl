@@ -3835,3 +3835,27 @@ control.
 - Regression coverage now proves a 250 ms stage delay returns from Lock
   promptly, allows Scope to acquire the session lock during that delay, and
   still reaches `lock_on`. The full web backend suite passes 79 tests.
+
+## 2026-07-21 Lockbox Unlock/Sweep Must Not Starve Scope
+
+- The first asynchronous Lockbox fix handled stage-duration waits but missed
+  the immediate hardware work in `unlock()` and `sweep()`. A Python thread is
+  not sufficient when it holds `WebSession._lock`: Scope still cannot acquire
+  a frame while that action writes registers.
+- Original `Lockbox.unlock()` iterates `OutputSignal.unlock()` only. Each
+  output retains its `pid` allocation, and the sweep `asg` allocation remains
+  owned by Lockbox. `OutputSignal._clear()` frees the PID only when the output
+  or Lockbox model is destroyed. The web path had incorrectly freed all
+  Lockbox resources during Unlock, invoking the ModuleManager release hook and
+  restoring every saved module setup. That was both non-legacy behavior and a
+  large avoidable monitor-server write burst.
+- Original ASG setup rewrites its 16384-word waveform RAM before enabling the
+  generator. Preserve the same register sequence and waveform values, but for
+  Lockbox Sweep send contiguous 1024-word protocol writes with the session
+  lock released between them. `MonitorClient` serializes each request with its
+  own reentrant I/O lock so Scope and the upload cannot interleave bytes on the
+  single monitor-server socket.
+- Regression coverage uses a deliberately slow ASG-RAM client: Scope must
+  acquire a frame while the 16-chunk sweep upload remains in progress. Future
+  long hardware operations need the same distinction between session-state
+  locking and one-request socket serialization.

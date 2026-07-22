@@ -14,7 +14,7 @@ from typing import Callable
 
 import numpy as np
 
-from .asg_registers import disable_asg, sync_asg_setting, sync_asg_settings, trigger_asg
+from .asg_registers import AsgSetupCancelled, disable_asg, sync_asg_setting, sync_asg_settings, trigger_asg
 from .config import WebConfig
 from .curve_store import configured_curve_store
 from .dsp_registers import (
@@ -177,6 +177,7 @@ class WebSession:
         self._lockbox_state_callback = lockbox_state_callback
         self._lockbox_sequence_stop = Event()
         self._lockbox_sequence_thread: Thread | None = None
+        self._lockbox_sweep_generation = 0
         self._lockbox_monitor_stop = Event()
         self._lockbox_monitor_wakeup = Event()
         self._lockbox_monitor_thread = Thread(
@@ -254,7 +255,9 @@ class WebSession:
             runtime = TrustedLockboxRuntime(self, candidate, autoload=False)
             previous_state = self.lockbox
             previous_runtime = self.lockbox_runtime
-            self._release_lockbox_iq_inputs_no_lock()
+            # PyRPL frees output, ASG, and IQ resources when the Lockbox
+            # object is destroyed, not when it is merely unlocked.
+            self._release_lockbox_resources_no_lock()
             self.lockbox = candidate
             self.lockbox_runtime = runtime
             try:
@@ -336,6 +339,10 @@ class WebSession:
         return schema
 
     def call_lockbox_action(self, action: str) -> dict:
+        if action == "sweep":
+            schema = self._call_lockbox_sweep()
+            self._wake_lockbox_monitor()
+            return schema
         with self._lock:
             schema = self._call_lockbox_action_no_lock(action)
         self._wake_lockbox_monitor()
@@ -560,12 +567,12 @@ class WebSession:
             raise KeyError(module_name)
 
     def call_module_action(self, module_name: str, action: str) -> dict:
+        if module_name == "lockbox":
+            with self._lock:
+                self._ensure_manual_control_allowed(module_name)
+            return self.call_lockbox_action(action)
         with self._lock:
             self._ensure_manual_control_allowed(module_name)
-            if module_name == "lockbox":
-                state = self._call_lockbox_action_no_lock(action)
-                self._wake_lockbox_monitor()
-                return state
             if module_name == "spectrumanalyzer":
                 return self._call_spectrum_action_no_lock(action)
             if module_name == "networkanalyzer":
@@ -1334,13 +1341,14 @@ class WebSession:
             self.lockbox.lock_status = self._lockbox_is_locked_no_lock()
         elif action == "unlock":
             self._cancel_lockbox_sequence_no_lock()
+            self._lockbox_sweep_generation += 1
             self._unlock_lockbox_outputs_no_lock(reset_offset=True)
             self.lockbox.current_state = "unlock"
             self.lockbox.lock_status = False
-            self._release_lockbox_resources_no_lock()
         elif action == "sweep":
-            self._cancel_lockbox_sequence_no_lock()
-            self._unlock_lockbox_outputs_no_lock(reset_offset=True)
+            # Trusted custom Lockbox methods call this internal path while
+            # already holding the session lock. Public web actions take the
+            # cooperative path in ``call_lockbox_action`` above.
             self._configure_lockbox_sweep_no_lock()
             self.lockbox.current_state = "sweep"
             self.lockbox.lock_status = False
@@ -1356,6 +1364,46 @@ class WebSession:
         else:
             raise KeyError(action)
         return self.lockbox.schema()
+
+    def _call_lockbox_sweep(self) -> dict:
+        """Configure a legacy Lockbox sweep without starving Scope reads.
+
+        The ASG RAM upload is the only long monitor-server request sequence.
+        PyRPL writes the same waveform table before enabling the generator; we
+        send that table in contiguous protocol-compatible chunks so a live
+        Scope acquisition can use the shared client between chunks.
+        """
+
+        with self._lock:
+            self._cancel_lockbox_sequence_no_lock()
+            self._lockbox_sweep_generation += 1
+            generation = self._lockbox_sweep_generation
+            self._unlock_lockbox_outputs_no_lock(reset_offset=True)
+            output_name, asg = self._prepare_lockbox_sweep_no_lock()
+
+        try:
+            sync_asg_settings(
+                self.client,
+                0,
+                asg,
+                waveform_chunk_words=1024,
+                after_waveform_chunk=lambda: self._lockbox_sweep_is_current(generation),
+            )
+        except AsgSetupCancelled:
+            with self._lock:
+                return self.lockbox.schema()
+
+        with self._lock:
+            if generation != self._lockbox_sweep_generation:
+                return self.lockbox.schema()
+            self._finish_lockbox_sweep_no_lock(output_name)
+            self.lockbox.current_state = "sweep"
+            self.lockbox.lock_status = False
+            return self.lockbox.schema()
+
+    def _lockbox_sweep_is_current(self, generation: int) -> bool:
+        with self._lock:
+            return generation == self._lockbox_sweep_generation
 
     def _reapply_lockbox_output_no_lock(self, output_name: str) -> None:
         output = self.lockbox.outputs[output_name]
@@ -1377,6 +1425,11 @@ class WebSession:
             self._unlock_one_lockbox_output_no_lock(output_name, reset_offset=False)
 
     def _configure_lockbox_sweep_no_lock(self) -> None:
+        output_name, asg = self._prepare_lockbox_sweep_no_lock()
+        sync_asg_settings(self.client, 0, asg)
+        self._finish_lockbox_sweep_no_lock(output_name)
+
+    def _prepare_lockbox_sweep_no_lock(self) -> tuple[str, AsgSettings]:
         output = self.lockbox.outputs[self.lockbox.default_sweep_output]
         self._reserve_lockbox_output_no_lock(output.name)
         self._reserve_module_no_lock("asg0", "lockbox")
@@ -1391,8 +1444,10 @@ class WebSession:
         asg.output_direct = "off"
         asg.start_phase = 0.0
         asg.cycles_per_burst = 0
-        sync_asg_settings(self.client, 0, asg)
+        return output.name, deepcopy(asg)
 
+    def _finish_lockbox_sweep_no_lock(self, output_name: str) -> None:
+        output = self.lockbox.outputs[output_name]
         pid = self.pid_settings[output.pid]
         pid.input = "asg0"
         pid.setpoint = 0.0

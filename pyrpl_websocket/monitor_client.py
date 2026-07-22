@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import socket
 from dataclasses import dataclass
+from threading import RLock
 from typing import Callable, Iterable
 
 def _np():
@@ -67,6 +68,10 @@ class MonitorClient:
         self.restart_server = restart_server
         self.timeout = timeout
         self.stats = MonitorStats()
+        # A Lockbox sweep can deliberately yield between ASG waveform chunks.
+        # Keep each monitor-server request atomic when Scope uses the same TCP
+        # connection during those yields.
+        self._io_lock = RLock()
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._connect()
 
@@ -85,20 +90,23 @@ class MonitorClient:
         raise ConnectionError("Unable to connect to monitor_server")
 
     def close(self) -> None:
-        try:
-            self.socket.send(make_header(b"c"))
-        except socket.error:
-            pass
-        finally:
-            self.socket.close()
+        with self._io_lock:
+            try:
+                self.socket.send(make_header(b"c"))
+            except socket.error:
+                pass
+            finally:
+                self.socket.close()
 
     def reads(self, addr: int, length: int):
-        self.stats.reads += 1
-        return self._try_n_times(self._reads, addr, length)
+        with self._io_lock:
+            self.stats.reads += 1
+            return self._try_n_times(self._reads, addr, length)
 
     def writes(self, addr: int, values: Iterable[int]) -> bool:
-        self.stats.writes += 1
-        return self._try_n_times(self._writes, addr, list(values))
+        with self._io_lock:
+            self.stats.writes += 1
+            return self._try_n_times(self._writes, addr, list(values))
 
     def _reads(self, addr: int, length: int):
         if length > MAX_WORDS:
@@ -171,6 +179,7 @@ class DummyClient:
 
     def __init__(self):
         self.stats = MonitorStats()
+        self._io_lock = RLock()
         self.fpgamemory: dict[int, int] = {
             0x40100014: 1,
             0x40380000: 10,
@@ -179,15 +188,17 @@ class DummyClient:
         self.phase = 0
 
     def reads(self, addr: int, length: int):
-        self.stats.reads += 1
-        np = _np()
-        return np.array([self._read_word(addr + 4 * i) for i in range(length)], dtype=np.uint32)
+        with self._io_lock:
+            self.stats.reads += 1
+            np = _np()
+            return np.array([self._read_word(addr + 4 * i) for i in range(length)], dtype=np.uint32)
 
     def writes(self, addr: int, values: Iterable[int]) -> bool:
-        self.stats.writes += 1
-        for index, value in enumerate(values):
-            self.fpgamemory[addr + 4 * index] = int(value)
-        return True
+        with self._io_lock:
+            self.stats.writes += 1
+            for index, value in enumerate(values):
+                self.fpgamemory[addr + 4 * index] = int(value)
+            return True
 
     def close(self) -> None:
         return None

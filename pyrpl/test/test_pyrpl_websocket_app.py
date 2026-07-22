@@ -9,7 +9,7 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
-from threading import Event
+from threading import Event, Thread
 from unittest import mock
 
 import numpy as np
@@ -42,7 +42,7 @@ from pyrpl_websocket.hk_registers import (
 )
 from pyrpl_websocket.lockbox import LockboxSchemaLibrary, LockboxState
 from pyrpl_websocket.lockbox_runtime import TrustedLockboxRuntime
-from pyrpl_websocket.monitor_client import MonitorStats
+from pyrpl_websocket.monitor_client import DummyClient, MonitorStats
 from pyrpl_websocket.modules import SPECTRUM_SPANS
 from pyrpl_websocket.network_analyzer import sweep_frequencies
 from pyrpl_websocket.scope import SCOPE_ADDR_BASE, SCOPE_CH1_OFFSET, SCOPE_CH2_OFFSET, SCOPE_DATA_LENGTH
@@ -141,6 +141,26 @@ class SimulatedHardwareScopeClient:
             raw = (self.capture_id * 100 + channel * 10 + start + index) % 4096
             values.append(raw)
         return np.array(values, dtype=np.uint32)
+
+
+class SlowWaveformDummyClient(DummyClient):
+    """Delay each ASG RAM write while retaining monitor request atomicity."""
+
+    def __init__(self):
+        super().__init__()
+        self.waveform_write_started = Event()
+
+    def writes(self, addr: int, values):
+        values = list(values)
+        if ASG_ADDR_BASE + 0x10000 <= addr < ASG_ADDR_BASE + 0x20000:
+            with self._io_lock:
+                self.stats.writes += 1
+                self.waveform_write_started.set()
+                time.sleep(0.01)
+                for index, value in enumerate(values):
+                    self.fpgamemory[addr + 4 * index] = int(value)
+                return True
+        return super().writes(addr, values)
 
 
 class SimulatedRollingHardwareScopeClient(SimulatedHardwareScopeClient):
@@ -993,7 +1013,9 @@ class WebAppTest(unittest.TestCase):
 
             unlocked = session.call_lockbox_action("unlock")
             self.assertEqual(unlocked["state"]["current_state"], "unlock")
-            self.assertIsNone(session.module_state("pid0")["owner"])
+            # Original OutputSignal.unlock() disables the PID but retains its
+            # ModuleManager allocation until the Lockbox/model is cleared.
+            self.assertEqual(session.module_state("pid0")["owner"], "lockbox")
             self.assertEqual(session.pid_settings["pid0"].p, 0.0)
             self.assertEqual(session.pid_settings["pid0"].i, 0.0)
 
@@ -1003,6 +1025,32 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.module_state("asg0")["owner"], "lockbox")
             self.assertEqual(session.pid_settings["pid0"].input, "asg0")
             self.assertEqual(session.asg_settings["asg0"].waveform, "ramp")
+        finally:
+            session.close()
+
+    def test_lockbox_sweep_yields_scope_session_lock_during_asg_upload(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            slow_client = SlowWaveformDummyClient()
+            session.client = slow_client
+            session.set_module_attribute("scope", "trigger_source", "immediately")
+            session.call_module_action("scope", "continuous")
+
+            result = []
+            thread = Thread(target=lambda: result.append(session.call_lockbox_action("sweep")))
+            thread.start()
+            self.assertTrue(slow_client.waveform_write_started.wait(1.0))
+
+            started = time.monotonic()
+            acquisition = session.acquire_scope_frame(sequence=1, sample_count=512)
+            elapsed = time.monotonic() - started
+
+            self.assertIsNotNone(acquisition.frame)
+            self.assertLess(elapsed, 0.1)
+            self.assertTrue(thread.is_alive())
+            thread.join(timeout=2.0)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(result[0]["state"]["current_state"], "sweep")
         finally:
             session.close()
 
