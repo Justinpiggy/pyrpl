@@ -16,7 +16,7 @@ import numpy as np
 import yaml
 from fastapi import WebSocketDisconnect
 
-from pyrpl_websocket.app import control_socket, create_app, handle_control_message
+from pyrpl_websocket.app import control_socket, create_app, handle_control_message, stream_fanout_socket
 from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
 from pyrpl_websocket.control import ControlConflict, ControlCoordinator
 from pyrpl_websocket.curve_store import CurveStore, configured_curve_store
@@ -390,6 +390,28 @@ class WebAppTest(unittest.TestCase):
             return first_run, second_run
 
         self.assertEqual(asyncio.run(scenario()), (1, 2))
+
+    def test_idle_fanout_stream_observes_browser_disconnect(self):
+        class DisconnectingSocket:
+            def __init__(self):
+                self.sent = []
+
+            async def receive(self):
+                return {"type": "websocket.disconnect"}
+
+            async def send_bytes(self, item):
+                self.sent.append(item)
+
+            async def close(self, **kwargs):
+                self.sent.append(kwargs)
+
+        async def scenario():
+            socket = DisconnectingSocket()
+            queue = asyncio.Queue()
+            await stream_fanout_socket(socket, queue, socket.send_bytes, "test failure")
+            return socket.sent
+
+        self.assertEqual(asyncio.run(scenario()), [])
 
     def test_dependency_audit_enforces_armv7_pure_python_stack(self):
         versions = {

@@ -3773,14 +3773,43 @@ control.
   sleep floors did not cure the 100 kHz fault. Do not retain a speculative
   timing floor; preserve the original dwell calculation until the raw
   accumulator difference is explained.
-- Physical result still has an unresolved regression at exactly 100 kHz:
-  legacy PyRPL repeatedly measured about `1.076 - 0.086j`, while the web
-  WebSocket path intermittently returns a corrupt 100 kHz accumulator. The
-  preceding points, and a web sweep ending at 90 kHz, are near the legacy
-  curve. Do not relax the comparison tolerance or hide the endpoint; retain
-  `hardware-network-external-loop.mjs` as a failing regression oracle until
-  the accumulator difference is explained.
+- The apparent 100 kHz regression was external-output contamination, not a
+  Network Analyzer accumulator defect. With the 100 kHz ASG0 direct route
+  disabled, the same OUT0-to-IN0 browser WebSocket comparison passed all nine
+  points: maximum magnitude difference `2.18%`, maximum phase difference
+  `2.79 deg`, including 100 kHz. Retain the legacy/browser comparison as a
+  passing regression oracle with this documented routing precondition.
 - A trial that applied all inactive IQ setup on every web-server startup made
   monitor-server startup unacceptably slow and did not solve the endpoint.
   Do not add blanket hardware initialization as a workaround; preserve the
   original action-local setup behavior instead.
+
+## 2026-07-21 Network Analyzer Direct-Output Contamination
+
+- `DspModule.output_direct` is an additive DAC route, not an exclusive output
+  mux: the original source explicitly states that all module signals routed to
+  the same DAC are summed. An ASG0 100 kHz sine left on `out1` therefore
+  contaminates a Network Analyzer sweep driving its reserved IQ to `out1`.
+- Original `NetworkAnalyzer` reserves only an IQ through `self.pyrpl.iqs.pop()`.
+  `ModuleManager` owns hardware-module availability, not analogue output
+  routes; the legacy analyzer sets its IQ's `output_direct` itself and does not
+  automatically disable ASG/PID/IQ routes already on that DAC.
+- The persistent web server makes this legacy omission easier to hit: a test
+  tone configured in an earlier session can remain active for a later external
+  Network Analyzer loopback. Before diagnosing FPGA accumulator timing, first
+  inspect and clear/guard every direct-output route that overlaps the analyzer
+  output.
+- Preserve this behavior in the migration. Do not introduce automatic DAC-route
+  arbitration: additive direct outputs are a useful original PyRPL feature.
+  Hardware validations must instead establish their own known routing state
+  (for example, set ASG0 direct output to `off` before an external Network
+  Analyzer loopback) and document that precondition.
+- A hardware browser test must not assume the workspace uses tabs. It must
+  temporarily save a deterministic workspace and restore it with the same
+  browser control identity after the test; a separate Playwright request
+  context is an observer once the page owns the single-writer lease and is
+  correctly rejected with HTTP 409.
+- A read-only acquisition WebSocket cannot learn that an idle browser closed
+  while it waits only on a fan-out queue. Scope, Spectrum, and Network
+  Analyzer stream routes must concurrently await `websocket.receive()` so a
+  disconnect unsubscribes the queue and lets normal server shutdown complete.

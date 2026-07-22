@@ -52,8 +52,30 @@ function compare(reference, actual) {
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+let savedWorkspace = null;
+
+function networkAnalyzerWorkspace(workspace) {
+  const panels = { ...(workspace?.panels ?? {}) };
+  panels.networkanalyzer = { ...(panels.networkanalyzer ?? {}), enabled: true };
+  return {
+    ...(workspace ?? {}),
+    activePanelId: "networkanalyzer",
+    layoutMode: "tabs",
+    splitPanelIds: ["networkanalyzer"],
+    workspaceSplitSizes: [100],
+    panels,
+  };
+}
 
 try {
+  const workspaceResponse = await page.request.get(`${baseUrl}/api/workspace`);
+  if (!workspaceResponse.ok()) throw new Error(`Workspace read failed: ${workspaceResponse.status()}`);
+  savedWorkspace = (await workspaceResponse.json()).workspace;
+  const workspaceWrite = await page.request.post(`${baseUrl}/api/workspace`, {
+    data: { workspace: networkAnalyzerWorkspace(savedWorkspace) },
+  });
+  if (!workspaceWrite.ok()) throw new Error(`Workspace setup failed: ${workspaceWrite.status()}`);
+
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.waitForSelector("#control-status");
   if (await page.locator("#take-control").isVisible()) await page.locator("#take-control").click();
@@ -75,9 +97,6 @@ try {
     auto_amplitude: false,
   })) await setAttribute(page, attribute, value);
 
-  await page.locator(".menu-dropdown summary").click();
-  await page.locator("#panel-networkanalyzer-enabled").setChecked(true);
-  await page.getByRole("button", { name: "Network Analyzer", exact: true }).click();
   await page.locator("#networkanalyzer-panel").waitFor({ state: "visible" });
   await page.locator("#network-single").click();
   await page.waitForFunction(
@@ -112,5 +131,15 @@ try {
   await page.evaluate(async () => {
     await fetch("/api/modules/networkanalyzer/actions/stop", { method: "POST" }).catch(() => undefined);
   }).catch(() => undefined);
+  if (savedWorkspace !== null) {
+    await page.evaluate(async (workspace) => {
+      const response = await fetch("/api/workspace", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspace }),
+      });
+      if (!response.ok) throw new Error(`Workspace restore failed: ${response.status}`);
+    }, savedWorkspace);
+  }
   await browser.close();
 }

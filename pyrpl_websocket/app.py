@@ -448,6 +448,45 @@ async def event_socket(websocket: WebSocket, events: EventBroker) -> None:
         events.unsubscribe(queue)
 
 
+async def stream_fanout_socket(
+    websocket: WebSocket,
+    queue: asyncio.Queue[Any],
+    send_item: Callable[[Any], Any],
+    failure_reason: str,
+) -> None:
+    async def send_items() -> None:
+        while True:
+            item = await queue.get()
+            if isinstance(item, StreamFailure):
+                await websocket.close(code=1011, reason=failure_reason)
+                return
+            await send_item(item)
+
+    async def wait_for_disconnect() -> None:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                return
+
+    sender = asyncio.create_task(send_items())
+    receiver = asyncio.create_task(wait_for_disconnect())
+    try:
+        done, pending = await asyncio.wait({sender, receiver}, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        for task in done:
+            try:
+                task.result()
+            except WebSocketDisconnect:
+                pass
+    except (asyncio.CancelledError, WebSocketDisconnect):
+        return
+    finally:
+        sender.cancel()
+        receiver.cancel()
+        await asyncio.gather(sender, receiver, return_exceptions=True)
+
+
 def create_app(settings: ServerSettings | None = None) -> FastAPI:
     settings = settings or ServerSettings()
     static_dir = Path(__file__).resolve().parent / "static"
@@ -1099,14 +1138,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         queue = fanout.subscribe()
         await websocket.accept()
         try:
-            while True:
-                item = await queue.get()
-                if isinstance(item, StreamFailure):
-                    await websocket.close(code=1011, reason="Scope acquisition failed")
-                    return
-                await websocket.send_bytes(item)
-        except WebSocketDisconnect:
-            return
+            await stream_fanout_socket(websocket, queue, websocket.send_bytes, "Scope acquisition failed")
         finally:
             fanout.unsubscribe(queue)
 
@@ -1150,14 +1182,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         queue = fanout.subscribe()
         await websocket.accept()
         try:
-            while True:
-                item = await queue.get()
-                if isinstance(item, StreamFailure):
-                    await websocket.close(code=1011, reason="Spectrum acquisition failed")
-                    return
-                await websocket.send_bytes(item)
-        except WebSocketDisconnect:
-            return
+            await stream_fanout_socket(websocket, queue, websocket.send_bytes, "Spectrum acquisition failed")
         finally:
             fanout.unsubscribe(queue)
 
@@ -1187,14 +1212,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         queue = fanout.subscribe()
         await websocket.accept()
         try:
-            while True:
-                item = await queue.get()
-                if isinstance(item, StreamFailure):
-                    await websocket.close(code=1011, reason="Network Analyzer acquisition failed")
-                    return
-                await websocket.send_json(item)
-        except WebSocketDisconnect:
-            return
+            await stream_fanout_socket(websocket, queue, websocket.send_json, "Network Analyzer acquisition failed")
         finally:
             fanout.unsubscribe(queue)
 

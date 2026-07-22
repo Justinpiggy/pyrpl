@@ -333,6 +333,15 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   64 as expected.
 - Network Analyzer hardware parity must use the original FPGA-quantized
   frequency grid and IQ filter-derived RBW options, and synchronize at the
-  reserved IQ module base rather than always IQ0. The OUT0-to-IN0 browser
-  comparison remains intentionally failing at 100 kHz as of 2026-07-21:
-  retain it as a regression oracle rather than weakening its tolerance.
+  reserved IQ module base rather than always IQ0. With the 100 kHz ASG0 route
+  disabled, the OUT0-to-IN0 browser comparison passed legacy parity at all
+  points, including 100 kHz (maximum 2.18% magnitude and 2.79 degree phase).
+- `output_direct` routes are intentionally additive at each DAC. Original
+  PyRPL reserves an IQ for Network Analyzer but not DAC routes, so an
+  ASG/PID/IQ left on the analyzer's output contaminates that measurement. Keep
+  this original feature; validation procedures must establish known routes
+  rather than auto-muting user signals.
+- Hardware browser tests must use the page's control identity to restore a
+  temporary workspace after acquiring the writer lease. Every acquisition
+  WebSocket stream must also await disconnects while idle so its fan-out
+  subscription is released and shutdown remains graceful.
