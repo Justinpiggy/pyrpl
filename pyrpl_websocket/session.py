@@ -175,6 +175,8 @@ class WebSession:
         self._fake_scope_clock = 0
         self._hardware_rolling_started = False
         self._lockbox_state_callback = lockbox_state_callback
+        self._lockbox_sequence_stop = Event()
+        self._lockbox_sequence_thread: Thread | None = None
         self._lockbox_monitor_stop = Event()
         self._lockbox_monitor_wakeup = Event()
         self._lockbox_monitor_thread = Thread(
@@ -247,6 +249,7 @@ class WebSession:
 
     def set_lockbox_class(self, classname: str) -> dict:
         with self._lock:
+            self._cancel_lockbox_sequence_no_lock()
             candidate = LockboxState(classname, library=self.lockbox.library)
             runtime = TrustedLockboxRuntime(self, candidate, autoload=False)
             previous_state = self.lockbox
@@ -327,8 +330,7 @@ class WebSession:
                 raise IndexError(index)
             if action != "execute":
                 raise KeyError(action)
-            self._execute_lockbox_stage_no_lock(self.lockbox.sequence[index])
-            self.lockbox.lock_status = self._lockbox_is_locked_no_lock()
+            self._start_lockbox_sequence_no_lock((self.lockbox.sequence[index],))
             schema = self.lockbox.schema()
         self._wake_lockbox_monitor()
         return schema
@@ -1009,8 +1011,11 @@ class WebSession:
         return _trigger_result(index is not None, index, source, threshold, hysteresis, condition)
 
     def close(self) -> None:
+        self._lockbox_sequence_stop.set()
         self._lockbox_monitor_stop.set()
         self._lockbox_monitor_wakeup.set()
+        if self._lockbox_sequence_thread is not None and self._lockbox_sequence_thread is not current_thread():
+            self._lockbox_sequence_thread.join(timeout=2.0)
         if self._lockbox_monitor_thread is not current_thread():
             self._lockbox_monitor_thread.join(timeout=2.0)
         self.lockbox_runtime.close()
@@ -1328,18 +1333,19 @@ class WebSession:
         if action == "is_locked":
             self.lockbox.lock_status = self._lockbox_is_locked_no_lock()
         elif action == "unlock":
+            self._cancel_lockbox_sequence_no_lock()
             self._unlock_lockbox_outputs_no_lock(reset_offset=True)
             self.lockbox.current_state = "unlock"
             self.lockbox.lock_status = False
             self._release_lockbox_resources_no_lock()
         elif action == "sweep":
+            self._cancel_lockbox_sequence_no_lock()
+            self._unlock_lockbox_outputs_no_lock(reset_offset=True)
             self._configure_lockbox_sweep_no_lock()
             self.lockbox.current_state = "sweep"
             self.lockbox.lock_status = False
         elif action == "lock":
             self._configure_lockbox_lock_no_lock()
-            self.lockbox.current_state = "lock_on"
-            self.lockbox.lock_status = self._lockbox_is_locked_no_lock()
         elif action == "calibrate_all":
             self._calibrate_lockbox_inputs_no_lock()
             self.lockbox.lock_status = False
@@ -1396,15 +1402,66 @@ class WebSession:
         output.current_state = "sweep"
 
     def _configure_lockbox_lock_no_lock(self) -> None:
+        self._start_lockbox_sequence_no_lock(tuple(self.lockbox.sequence))
+
+    def _cancel_lockbox_sequence_no_lock(self) -> None:
+        self._lockbox_sequence_stop.set()
+
+    def _start_lockbox_sequence_no_lock(self, stages) -> None:
+        self._cancel_lockbox_sequence_no_lock()
+        stop = Event()
+        stage_sequence = tuple(stages)
+        self._lockbox_sequence_stop = stop
+        thread = Thread(
+            target=self._run_lockbox_sequence,
+            args=(stop, stage_sequence),
+            name="pyrpl-lockbox-sequence",
+            daemon=True,
+        )
+        self._lockbox_sequence_thread = thread
+        thread.start()
+
+    def _run_lockbox_sequence(self, stop: Event, stages: tuple) -> None:
+        try:
+            for stage in stages:
+                if stop.is_set() or self._lockbox_monitor_stop.is_set():
+                    return
+                with self._lock:
+                    if stop.is_set() or self._lockbox_monitor_stop.is_set():
+                        return
+                    self._execute_lockbox_stage_no_lock(stage)
+                    schema = self.lockbox.schema()
+                self._publish_lockbox_sequence_state(schema)
+                if stop.wait(max(0.0, float(stage.duration))):
+                    return
+
+            with self._lock:
+                if stop.is_set() or self._lockbox_monitor_stop.is_set():
+                    return
+                if stages and stages[-1] is self.lockbox.sequence[-1]:
+                    self.lockbox.current_state = "lock_on"
+                self.lockbox.lock_status = self._lockbox_is_locked_no_lock()
+                schema = self.lockbox.schema()
+            self._publish_lockbox_sequence_state(schema)
+        finally:
+            with self._lock:
+                if self._lockbox_sequence_stop is stop:
+                    self._lockbox_sequence_thread = None
+
+    def _publish_lockbox_sequence_state(self, schema: dict) -> None:
+        self._wake_lockbox_monitor()
+        if self._lockbox_state_callback is not None:
+            try:
+                self._lockbox_state_callback(schema)
+            except Exception:
+                LOGGER.exception("Lockbox sequence status callback failed")
+
+    def _apply_lockbox_stage_no_lock(self, stage) -> None:
         for output_name in self.lockbox.outputs:
             self._reserve_lockbox_output_no_lock(output_name)
-
-        for stage in self.lockbox.sequence:
-            self._execute_lockbox_stage_no_lock(stage)
 
     def _execute_lockbox_stage_no_lock(self, stage) -> None:
-        for output_name in self.lockbox.outputs:
-            self._reserve_lockbox_output_no_lock(output_name)
+        self._apply_lockbox_stage_no_lock(stage)
         for output_name, stage_output in stage.outputs.items():
             if stage_output.lock_on == "ignore":
                 continue
@@ -1425,11 +1482,6 @@ class WebSession:
 
         self._call_lockbox_stage_function_no_lock(stage.function_call, stage)
         self.lockbox.current_state = stage.name
-        if stage.duration > 0:
-            if self._lockbox_monitor_stop.wait(stage.duration):
-                return
-        if self.lockbox.sequence[-1] is stage:
-            self.lockbox.current_state = "lock_on"
 
     def _call_lockbox_stage_function_no_lock(self, function_call: str, stage=None) -> None:
         if not function_call:

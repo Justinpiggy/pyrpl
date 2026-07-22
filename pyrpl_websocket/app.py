@@ -502,10 +502,17 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         )
         loop = asyncio.get_running_loop()
 
+        async def publish_lockbox_state_events(schema: dict) -> None:
+            await app.state.events.publish(module_state_event("lockbox", schema))
+            for module_name in _lockbox_resource_event_modules():
+                await app.state.events.publish(
+                    module_state_event(module_name, app.state.session.module_state(module_name))
+                )
+
         def publish_lockbox_state(schema: dict) -> None:
             loop.call_soon_threadsafe(
                 asyncio.create_task,
-                app.state.events.publish(module_state_event("lockbox", schema)),
+                publish_lockbox_state_events(schema),
             )
 
         app.state.session = WebSession(

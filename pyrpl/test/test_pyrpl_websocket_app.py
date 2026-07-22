@@ -693,7 +693,11 @@ class WebAppTest(unittest.TestCase):
 
             session.set_lockbox_stage_output_attribute(0, "piezo", "lock_on", True)
             executed = session.call_lockbox_stage_action(0, "execute")
-            self.assertEqual(executed["state"]["current_state"], "lock_on")
+            self.assertIn(executed["state"]["current_state"], {"sweep", "stage0", "lock_on"})
+            deadline = time.monotonic() + 1.0
+            while session.lockbox.current_state != "lock_on" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(session.lockbox.current_state, "lock_on")
             self.assertEqual(session.module_state("pid0")["owner"], "lockbox")
         finally:
             session.close()
@@ -727,6 +731,9 @@ class WebAppTest(unittest.TestCase):
             session.set_lockbox_stage_attribute(0, "input", "pdh")
             session.set_lockbox_stage_output_attribute(0, "piezo", "lock_on", True)
             session.call_lockbox_action("lock")
+            deadline = time.monotonic() + 1.0
+            while session.lockbox.current_state != "lock_on" and time.monotonic() < deadline:
+                time.sleep(0.01)
             self.assertEqual(session.pid_settings["pid0"].input, "iq0")
         finally:
             session.close()
@@ -900,6 +907,9 @@ class WebAppTest(unittest.TestCase):
                 session.set_lockbox_stage_attribute(0, "gain_factor", 4.5)
                 session.set_lockbox_stage_attribute(0, "function_call", "stage_method")
                 session.call_lockbox_stage_action(0, "execute")
+                deadline = time.monotonic() + 1.0
+                while "stage_gain_seen" not in session.lockbox.values and time.monotonic() < deadline:
+                    time.sleep(0.01)
                 self.assertEqual(session.lockbox.values["stage_gain_seen"], 4.5)
 
                 with self.assertRaisesRegex(RuntimeError, "broken trusted plugin"):
@@ -920,7 +930,11 @@ class WebAppTest(unittest.TestCase):
                 "pyrpl_websocket.session.sampler_stats",
                 return_value={"count": 1, "mean": 0.0, "stddev": 0.0, "max": 0.0, "min": 0.0},
             ):
-                locked = session.call_lockbox_action("lock")
+                session.call_lockbox_action("lock")
+                deadline = time.monotonic() + 1.0
+                while session.lockbox.current_state != "lock_on" and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                locked = session.lockbox.schema()
             self.assertTrue(locked["state"]["lock_status"])
 
             with mock.patch(
@@ -966,7 +980,11 @@ class WebAppTest(unittest.TestCase):
         try:
             session.set_lockbox_stage_output_attribute(0, "output1", "lock_on", True)
             locked = session.call_lockbox_action("lock")
-            self.assertEqual(locked["state"]["current_state"], "lock_on")
+            self.assertIn(locked["state"]["current_state"], {"unlock", "stage0", "lock_on"})
+            deadline = time.monotonic() + 1.0
+            while session.lockbox.current_state != "lock_on" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(session.lockbox.current_state, "lock_on")
             self.assertEqual(session.module_state("pid0")["owner"], "lockbox")
             self.assertEqual(session.pid_settings["pid0"].input, "in1")
             self.assertEqual(session.pid_settings["pid0"].setpoint, 0.0)
@@ -985,6 +1003,32 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.module_state("asg0")["owner"], "lockbox")
             self.assertEqual(session.pid_settings["pid0"].input, "asg0")
             self.assertEqual(session.asg_settings["asg0"].waveform, "ramp")
+        finally:
+            session.close()
+
+    def test_lockbox_stage_wait_does_not_hold_scope_session_lock(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            session.set_lockbox_stage_output_attribute(0, "output1", "lock_on", True)
+            session.set_lockbox_stage_attribute(0, "duration", 0.25)
+            started = time.monotonic()
+            session.call_lockbox_action("lock")
+            self.assertLess(time.monotonic() - started, 0.1)
+
+            deadline = time.monotonic() + 1.0
+            while session.lockbox.current_state != "stage0" and time.monotonic() < deadline:
+                time.sleep(0.005)
+            self.assertEqual(session.lockbox.current_state, "stage0")
+
+            started = time.monotonic()
+            scope_state = session.module_state("scope")
+            self.assertLess(time.monotonic() - started, 0.05)
+            self.assertEqual(scope_state["running_state"], "stopped")
+
+            deadline = time.monotonic() + 1.0
+            while session.lockbox.current_state != "lock_on" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(session.lockbox.current_state, "lock_on")
         finally:
             session.close()
 
@@ -1502,7 +1546,7 @@ class WebAppTest(unittest.TestCase):
             session.set_module_attribute("iq1", "demodulation_at_2f", "on")
             self.assertEqual(session.client.fpgamemory[base + 0x100] & (3 << 4), 3 << 4)
             session.call_module_action("iq1", "sync")
-            self.assertIn(dsp_addr_base("iq0") + 0xC, session.client.fpgamemory)
+            self.assertIn(dsp_addr_base("iq1") + 0xC, session.client.fpgamemory)
         finally:
             session.close()
 

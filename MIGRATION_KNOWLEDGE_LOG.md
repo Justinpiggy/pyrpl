@@ -3813,3 +3813,25 @@ control.
   while it waits only on a fan-out queue. Scope, Spectrum, and Network
   Analyzer stream routes must concurrently await `websocket.receive()` so a
   disconnect unsubscribes the queue and lets normal server shutdown complete.
+
+## 2026-07-21 Lockbox Sequence Must Remain Asynchronous
+
+- Original `LockboxWidget` connects its Lock button to `lock_async()` and each
+  stage's "Go to this stage" button to `Stage.execute_async()`. The desktop
+  sequence applies a stage, then awaits its duration without blocking other
+  instrument work.
+- The web migration had incorrectly run every stage synchronously under the
+  global `WebSession` lock. A nonzero stage duration therefore prevented Scope
+  acquisition and every other monitor-server operation for seconds; it also
+  made the Lock action appear broken while the HTTP request was still waiting.
+- Run Lockbox sequences in a server-owned cancellable thread. Hold the session
+  lock only while applying each stage's hardware settings or checking final
+  lock status; wait for the stage duration outside it. Unlock, Sweep, and model
+  replacement cancel the previous sequence. Session close signals and joins it.
+- Stage transitions publish Lockbox and resource events from the background
+  sequence so the browser sees PID/ASG/IQ ownership and current-stage changes.
+  Tests must wait for `lock_on` when asserting a started sequence; the action
+  response intentionally returns before its asynchronous completion.
+- Regression coverage now proves a 250 ms stage delay returns from Lock
+  promptly, allows Scope to acquire the session lock during that delay, and
+  still reaches `lock_on`. The full web backend suite passes 79 tests.

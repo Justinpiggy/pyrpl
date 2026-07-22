@@ -345,3 +345,8 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   temporary workspace after acquiring the writer lease. Every acquisition
   WebSocket stream must also await disconnects while idle so its fan-out
   subscription is released and shutdown remains graceful.
+- Lockbox Lock and stage execution are asynchronous in original PyRPL. Keep
+  stage duration waits outside the serialized monitor-server/session lock in a
+  cancellable server-owned sequence; otherwise Scope freezes and Lock requests
+  block for the sequence duration. Publish each sequence transition and cancel
+  it on Unlock, Sweep, model replacement, or session close.
