@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import secrets
+import struct
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+import numpy as np
 import yaml
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .assets import WEB_DIST_ASSETS_DIR, WEB_DIST_DIR, asset_info
 from .control import ControlConflict, ControlCoordinator, normalize_client_id
@@ -62,6 +67,77 @@ class CurveCreateRequest(BaseModel):
     y: list[float]
     y_imag: list[float] | None = None
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class CurveCreateEnvelope(CurveCreateRequest):
+    # Keep the documented numeric-array schema above, but validate samples in
+    # NumPy below. Pydantic 1's list[float] visits every point in Python on ARM.
+    x: list
+    y: list
+    y_imag: list | None = None
+
+
+@dataclass
+class CurvePayload:
+    x: np.ndarray
+    y: np.ndarray
+    y_imag: np.ndarray | None
+    params: dict[str, Any]
+
+
+class CurveBinaryHeader(BaseModel):
+    points: int = Field(gt=0)
+    complex: bool = False
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+def _parse_curve_payload(body: bytes, binary: bool = False) -> CurvePayload:
+    parser = getattr(CurveCreateEnvelope, "model_validate_json", None) or CurveCreateEnvelope.parse_raw
+    try:
+        if binary:
+            # PYC1, uint32 LE JSON-header length, UTF-8 header, then contiguous
+            # float64 LE x/y[/imag] arrays. No decimal sample conversion needed.
+            if len(body) < 8 or body[:4] != b"PYC1":
+                raise ValueError("invalid binary curve header")
+            header_size = struct.unpack_from("<I", body, 4)[0]
+            offset = 8 + header_size
+            header = CurveBinaryHeader(**json.loads(body[8:offset]))
+            columns = 3 if header.complex else 2
+            if len(body) != offset + header.points * columns * 8:
+                raise ValueError("binary curve length does not match header")
+            arrays = np.frombuffer(body, dtype="<f8", count=header.points * columns, offset=offset)
+            arrays = arrays.reshape(columns, header.points).copy()
+            payload = CurvePayload(arrays[0], arrays[1], arrays[2] if header.complex else None, header.params)
+        else:
+            payload = parser(body)
+    except ValidationError as exc:
+        errors = [{**error, "loc": ("body", *error["loc"])} for error in exc.errors()]
+        raise RequestValidationError(errors) from exc
+    except (TypeError, ValueError, UnicodeError) as exc:
+        raise RequestValidationError([{"loc": ("body",), "msg": str(exc), "type": "value_error"}]) from exc
+    converted = {}
+    for name in ("x", "y", "y_imag"):
+        values = getattr(payload, name)
+        if values is None:
+            continue
+        try:
+            array = np.asarray(values, dtype=np.float64)
+            if array.ndim != 1 or not np.isfinite(array).all():
+                raise ValueError("samples must be finite numbers in a one-dimensional array")
+            converted[name] = array
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise RequestValidationError([{
+                "loc": ("body", name), "msg": str(exc), "type": "value_error",
+            }]) from exc
+    return CurvePayload(converted["x"], converted["y"], converted.get("y_imag"), payload.params)
+
+
+async def parse_curve_request(request: Request) -> CurvePayload:
+    # ARM uses pure-Python Pydantic: validating hundreds of thousands of samples
+    # on the event loop freezes every HTTP and WebSocket client during a save.
+    body = await request.body()
+    binary = request.headers.get("content-type", "").split(";", 1)[0].strip() == "application/octet-stream"
+    return await asyncio.to_thread(_parse_curve_payload, body, binary)
 
 
 class CurveParamsRequest(BaseModel):
@@ -1021,11 +1097,18 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     async def curves(limit: int = 100):
         return {"curves": await asyncio.to_thread(app.state.session.curve_list, max(0, min(limit, 100)))}
 
-    @app.post("/api/curves")
-    async def create_curve(request: CurveCreateRequest):
+    @app.post("/api/curves", openapi_extra={
+        "requestBody": {"required": True, "content": {
+            "application/json": {"schema": (
+                CurveCreateRequest.model_json_schema() if hasattr(CurveCreateRequest, "model_json_schema")
+                else CurveCreateRequest.schema()
+            )},
+            "application/octet-stream": {"schema": {"type": "string", "format": "binary"}},
+        }},
+    })
+    def create_curve(request: CurvePayload = Depends(parse_curve_request), include_data: bool = True):
         try:
-            curve = await asyncio.to_thread(
-                app.state.session.create_curve,
+            curve = app.state.session.create_curve(
                 request.x,
                 request.y,
                 request.y_imag,
@@ -1033,25 +1116,30 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             )
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"curve": curve}
+        if not include_data:
+            curve = {key: curve[key] for key in ("pk", "name", "points", "complex")}
+        # CurveStore already returns JSON-compatible values. Returning a response
+        # avoids FastAPI walking every sample again on the event-loop thread.
+        # This synchronous endpoint also runs persistence/serialization in a worker.
+        return JSONResponse({"curve": curve})
 
     @app.get("/api/curves/{pk}")
-    async def curve(pk: int):
+    def curve(pk: int):
         try:
-            result = await asyncio.to_thread(app.state.session.curve, pk)
+            result = app.state.session.curve(pk)
         except (OSError, EOFError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=404, detail=f"Unknown curve {pk}") from exc
-        return {"curve": result}
+        return JSONResponse({"curve": result})
 
     @app.put("/api/curves/{pk}/params")
-    async def update_curve_params(pk: int, request: CurveParamsRequest):
+    def update_curve_params(pk: int, request: CurveParamsRequest):
         try:
-            result = await asyncio.to_thread(app.state.session.update_curve_params, pk, request.params_yaml)
+            result = app.state.session.update_curve_params(pk, request.params_yaml)
         except (OSError, EOFError) as exc:
             raise HTTPException(status_code=404, detail=f"Unknown curve {pk}") from exc
         except (TypeError, ValueError, yaml.YAMLError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"curve": result}
+        return JSONResponse({"curve": result})
 
     @app.delete("/api/curves/{pk}")
     async def delete_curve(pk: int):
@@ -1086,8 +1174,17 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         return frame
 
     @app.get("/api/modules/iir/plot")
-    async def iir_plot(points: int = 1000):
-        return await asyncio.to_thread(app.state.session.iir_plot, points)
+    async def iir_plot(points: int = 1000, tf_type: str | None = None, data_curve: int | None = None,
+                       plot_data: bool | None = None, plot_data_times_filter: bool | None = None,
+                       plot_measurement: bool | None = None):
+        view = {name: value for name, value in {
+            "tf_type": tf_type, "data_curve": data_curve, "plot_data": plot_data,
+            "plot_data_times_filter": plot_data_times_filter, "plot_measurement": plot_measurement,
+        }.items() if value is not None}
+        try:
+            return await asyncio.to_thread(app.state.session.iir_plot, points, view)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.websocket("/ws/control")
     async def control(websocket: WebSocket):

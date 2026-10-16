@@ -70,6 +70,7 @@ htmlcov/
 .coverage.*
 cover/*
 .cache
+/artifacts/redpitaya/*/
 nosetests.xml
 coverage.xml
 *,cover

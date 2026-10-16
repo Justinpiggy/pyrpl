@@ -3,20 +3,22 @@ import importlib
 import json
 import os
 import pickle
+import struct
 import sys
 import tempfile
 import time
 import unittest
 import zipfile
 from pathlib import Path
-from threading import Event, Thread
+from threading import Event, Thread, get_ident
+from types import ModuleType
 from unittest import mock
 
 import numpy as np
 import yaml
 from fastapi import WebSocketDisconnect
 
-from pyrpl_websocket.app import control_socket, create_app, handle_control_message, stream_fanout_socket
+from pyrpl_websocket.app import _parse_curve_payload, control_socket, create_app, handle_control_message, stream_fanout_socket
 from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
 from pyrpl_websocket.control import ControlConflict, ControlCoordinator
 from pyrpl_websocket.curve_store import CurveStore, configured_curve_store
@@ -515,8 +517,25 @@ class WebAppTest(unittest.TestCase):
                 pk, params, data = pickle.load(handle)
             self.assertEqual(pk, 1)
             self.assertEqual(params["name"], "complex response")
-            self.assertEqual(data[0], [1.0, 2.0])
-            self.assertEqual(data[1], [(3+0.5j), (4-0.5j)])
+            np.testing.assert_array_equal(data[0], [1.0, 2.0])
+            np.testing.assert_array_equal(data[1], [(3+0.5j), (4-0.5j)])
+
+            # Exercise the original desktop reader without importing its Qt UI.
+            package = ModuleType("legacy_curve_compat")
+            package.__path__ = []
+            directories = ModuleType("legacy_curve_compat.directories")
+            directories.user_curve_dir = directory
+            spec = importlib.util.spec_from_file_location(
+                "legacy_curve_compat.curvedb", Path(__file__).parents[1] / "curvedb.py")
+            legacy = importlib.util.module_from_spec(spec)
+            with mock.patch.dict(sys.modules, {
+                "legacy_curve_compat": package,
+                "legacy_curve_compat.directories": directories,
+            }):
+                spec.loader.exec_module(legacy)
+                loaded = legacy.CurveDB.get(1)
+            np.testing.assert_array_equal(loaded.data[0], data[0])
+            np.testing.assert_array_equal(loaded.data[1], data[1])
 
             updated = store.update_params(1, "name: renamed\nmodule: networkanalyzer\n")
             self.assertEqual(updated["name"], "renamed")
@@ -533,6 +552,95 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(curve["name"], "legacy")
             self.assertEqual(curve["x"], [0.0, 1.0])
             self.assertEqual(curve["y"], [2.0, 3.0])
+
+    def test_curve_http_summary_save_preserves_full_complex_data_and_legacy_response(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = create_app(ServerSettings(hostname="_FAKE_", curve_dir=directory, control_policy="shared"))
+            payload = {"x": [1, 2], "y": [3, 4], "y_imag": [0.5, -0.5], "params": {"name": "saved"}}
+
+            async def scenario():
+                async with app.router.lifespan_context(app):
+                    async def request(path, method="GET", data=None, query=""):
+                        sent = await asgi_http_request(app, path, method=method, query=query,
+                            headers=[(b"content-type", b"application/json")],
+                            body=json.dumps(data).encode() if data is not None else b"")
+                        self.assertEqual(sent[0]["status"], 200)
+                        return json.loads(b"".join(item.get("body", b"") for item in sent))
+
+                    summary = (await request("/api/curves", "POST", payload, "include_data=false"))["curve"]
+                    self.assertEqual(summary, {"pk": 1, "name": "saved", "points": 2, "complex": True})
+                    full = (await request("/api/curves/1"))["curve"]
+                    legacy = (await request("/api/curves", "POST", payload))["curve"]
+                    for result in (full, legacy):
+                        self.assertEqual(result["x"], payload["x"])
+                        self.assertEqual(result["y"], payload["y"])
+                        self.assertEqual(result["y_imag"], payload["y_imag"])
+                    edited = (await request("/api/curves/1/params", "PUT", {"params_yaml": "name: edited"}))["curve"]
+                    self.assertEqual(edited["name"], "edited")
+                    self.assertEqual(edited["y_imag"], payload["y_imag"])
+
+            asyncio.run(scenario())
+
+    def test_binary_curve_upload_roundtrip_and_invalid_payloads(self):
+        def encode(columns, **overrides):
+            header = json.dumps({"points": len(columns[0]), "complex": len(columns) == 3,
+                                 "params": {"name": "spectrum µV"}, **overrides}).encode()
+            return b"PYC1" + struct.pack("<I", len(header)) + header + np.asarray(columns, dtype="<f8").tobytes()
+
+        with tempfile.TemporaryDirectory() as directory:
+            app = create_app(ServerSettings(hostname="_FAKE_", curve_dir=directory, control_policy="shared"))
+
+            async def scenario():
+                async with app.router.lifespan_context(app):
+                    for columns in ([[0, 1], [2, 3]], [[0, 1], [2, 3], [-0.5, 0.5]]):
+                        response = await asgi_http_request(app, "/api/curves", method="POST",
+                            query="include_data=false", headers=[(b"content-type", b"application/octet-stream")],
+                            body=encode(columns))
+                        self.assertEqual(response[0]["status"], 200)
+                        saved = json.loads(b"".join(item.get("body", b"") for item in response))["curve"]
+                        self.assertEqual(saved["name"], "spectrum µV")
+                        self.assertNotIn("x", saved)
+                        loaded = app.state.session.curve(saved["pk"])
+                        self.assertEqual(loaded["x"], columns[0])
+                        self.assertEqual(loaded["y"], columns[1])
+                        if len(columns) == 3:
+                            self.assertEqual(loaded["y_imag"], columns[2])
+                    for body in (b"bad", b"PYC1\xff\xff\xff\xff", encode([[0], [1]])[:-1],
+                                 encode([[0], [1]], points=2), encode([[0], [1]], points=0),
+                                 encode([[0], [float("nan")]]), encode([[0], [1], [float("inf")]])):
+                        response = await asgi_http_request(app, "/api/curves", method="POST",
+                            headers=[(b"content-type", b"application/octet-stream")], body=body)
+                        self.assertEqual(response[0]["status"], 422)
+                    self.assertEqual(len(app.state.session.curve_list()), 2)
+
+            asyncio.run(scenario())
+
+    def test_curve_validation_runs_off_event_loop_and_preserves_validation_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = create_app(ServerSettings(hostname="_FAKE_", curve_dir=directory, control_policy="shared"))
+            validation_threads = []
+            event_loop_thread = get_ident()
+
+            def record_validation(body, binary=False):
+                validation_threads.append(get_ident())
+                return _parse_curve_payload(body, binary)
+
+            async def scenario():
+                async with app.router.lifespan_context(app):
+                    for body in (b'{"x": [1], "y": ["invalid"]}', b'{broken json',
+                                 b'{"x": [1], "y": [null]}', b'{"x": [[1]], "y": [2]}',
+                                 b'{"x": [1], "y": [2], "y_imag": ["NaN"]}'):
+                        response = await asgi_http_request(app, "/api/curves", method="POST",
+                            headers=[(b"content-type", b"application/json")], body=body)
+                        self.assertEqual(response[0]["status"], 422)
+                        detail = json.loads(b"".join(item.get("body", b"") for item in response))["detail"]
+                        self.assertEqual(detail[0]["loc"][0], "body")
+                    self.assertEqual(app.state.session.curve_list(), [])
+
+            with mock.patch("pyrpl_websocket.app._parse_curve_payload", side_effect=record_validation):
+                asyncio.run(scenario())
+            self.assertEqual(len(validation_threads), 5)
+            self.assertTrue(all(thread != event_loop_thread for thread in validation_threads))
 
     def test_curve_store_honors_global_config_backend_override(self):
         with tempfile.TemporaryDirectory() as dirname:
@@ -1643,6 +1751,28 @@ class WebAppTest(unittest.TestCase):
                 self.assertEqual(session.module_state("iir")["overflow"], expected)
         finally:
             session.close()
+
+    def test_iir_observer_plot_overrides_do_not_change_shared_settings_or_write_hardware(self):
+        app = create_app(ServerSettings(hostname="_FAKE_", control_policy="single-writer"))
+
+        async def scenario():
+            async with app.router.lifespan_context(app):
+                session = app.state.session
+                session.set_module_attribute("iir", "real_poles", "-1000")
+                before = session.iir_settings.as_dict()
+                writes = session.info()["writes"]
+                response = await asgi_http_request(app, "/api/modules/iir/plot",
+                    query="points=64&tf_type=continuous&plot_data=false&plot_data_times_filter=false",
+                    headers=[(b"x-pyrpl-client-id", b"observer")])
+                self.assertEqual(response[0]["status"], 200)
+                plot = json.loads(b"".join(item.get("body", b"") for item in response))
+                self.assertEqual(plot["tf_type"], "continuous")
+                self.assertEqual(session.iir_settings.as_dict(), before)
+                self.assertEqual(session.info()["writes"], writes)
+                with self.assertRaises(ValueError):
+                    session.iir_plot(view={"gain": 10})
+
+        asyncio.run(scenario())
 
     def test_session_iir_plot_follows_pole_zero_controls(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))

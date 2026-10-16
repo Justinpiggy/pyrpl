@@ -26,6 +26,8 @@ export class CurveViewerPanel {
   private resizeObserver: ResizeObserver;
   private resizeFrame: number | null = null;
   private selected: CurveRecord | null = null;
+  private loaded = false;
+  private loading: Promise<void> | null = null;
 
   constructor(
     private root: HTMLElement,
@@ -50,19 +52,38 @@ export class CurveViewerPanel {
   }
 
   async load(): Promise<void> {
-    await this.refreshList();
+    if (!this.loading) {
+      // A refresh must finish before edits, or its late response can overwrite
+      // newly typed parameters with the previously saved values.
+      this.params.disabled = true;
+      this.saveParamsButton.disabled = true;
+      this.deleteButton.disabled = true;
+      this.loading = this.refreshList().then(() => { this.loaded = true; })
+        .finally(() => {
+          this.loading = null;
+          this.params.disabled = false;
+          this.saveParamsButton.disabled = !this.selected;
+          this.deleteButton.disabled = !this.selected;
+        });
+    }
+    await this.loading;
   }
 
   refreshLayout(): void {
     this.ensureSplit();
     this.scheduleResize();
+    // A large saved spectrum must not delay Scope or the module menu at startup.
+    if (!this.root.hidden && !this.loaded) {
+      void this.load().catch((error: Error) => { this.status.textContent = error.message; });
+    }
   }
 
   private bindActions(): void {
-    this.select.addEventListener("change", () => void this.loadSelected());
-    this.refreshButton.addEventListener("click", () => void this.refreshList());
-    this.saveParamsButton.addEventListener("click", () => void this.saveParams());
-    this.deleteButton.addEventListener("click", () => void this.deleteSelected());
+    const report = (error: Error) => { this.status.textContent = error.message; };
+    this.select.addEventListener("change", () => void this.loadSelected().catch(report));
+    this.refreshButton.addEventListener("click", () => void this.load().catch(report));
+    this.saveParamsButton.addEventListener("click", () => void this.saveParams().catch(report));
+    this.deleteButton.addEventListener("click", () => void this.deleteSelected().catch(report));
   }
 
   private async refreshList(): Promise<void> {

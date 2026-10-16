@@ -3,6 +3,10 @@ import "uplot/dist/uPlot.min.css";
 
 import { PLOT_COLORS, plotAxis } from "./plot-theme";
 
+// Field IDs only need page-local uniqueness. randomUUID requires a secure
+// context and is unavailable when opening the board's LAN address over HTTP.
+let nextFieldId = 0;
+
 export interface LockboxAttribute {
   name: string;
   label: string;
@@ -404,7 +408,7 @@ export class LockboxPanel {
       });
       input = text;
     }
-    input.id = `lockbox-${attribute.name.replaceAll("_", "-")}-${crypto.randomUUID()}`;
+    input.id = `lockbox-${attribute.name.replaceAll("_", "-")}-${++nextFieldId}`;
     label.appendChild(input);
     return label;
   }

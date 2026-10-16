@@ -4,6 +4,8 @@ import { IirPlot } from "./iir-plot";
 import { LockboxPanel, type LockboxSchema } from "./lockbox-panel";
 import { NetworkAnalyzerPanel } from "./network-analyzer-panel";
 import { CurveViewerPanel } from "./curve-viewer-panel";
+import { encodeCurveUpload } from "./curve-upload";
+import { isLocalControl, isViewAttribute, PlotViews } from "./view-controls";
 import { ConfigPanel } from "./config-panel";
 import { ControlClient, type ControlStatus } from "./control-client";
 import { ReconnectScheduler } from "./websocket-reconnect";
@@ -25,6 +27,8 @@ import {
 } from "./workspace";
 
 const controlClient = new ControlClient();
+const plotViews = new PlotViews();
+let spectrumServerState: ModuleState = {};
 controlClient.installFetchHeaders();
 const DEFAULT_WORKSPACE_SPLIT_PANE_COUNT = 2;
 
@@ -2354,6 +2358,9 @@ let stream = new ScopeStream(
 );
 let spectrumPlot = new SpectrumPlot(spectrumPlotHost, (message) => {
   spectrumStatus.textContent = message;
+  const rbw = spectrumPlot.getRbw();
+  const field = genericModuleControls.get("spectrumanalyzer")?.inputs.get("rbw");
+  if (field && rbw !== undefined) field.value = String(rbw);
 }, (currentAverage) => {
   const traceAverage = genericModuleControls.get("spectrumanalyzer")?.inputs.get("trace_average");
   spectrumCurrentAverage.textContent = `${currentAverage} / ${traceAverage?.value || "1"}`;
@@ -2363,7 +2370,12 @@ let eventSocket: WebSocket | null = null;
 const eventReconnect = new ReconnectScheduler(() => connectEvents());
 let eventCount = 0;
 let runningState = "stopped";
+const scopeControlValues = new Map<string, unknown>();
+let scopeReady = false;
+const moduleStateRevisions = new Map<string, number>();
+let controlRole: ControlStatus["role"] = "observer";
 let spectrumRunningState = "stopped";
+let spectrumLastAction = "stop";
 let workspaceState = loadWorkspaceState();
 let currentSession: { fake: boolean } | null = null;
 let scopeSplit: Split.Instance | null = null;
@@ -2374,6 +2386,7 @@ let workspaceSplitPanelSignature = "";
 
 function saveWorkspaceState(state: WorkspaceState): void {
   saveWorkspaceStateLocal(state);
+  if (controlRole === "observer") return;
   void fetch("/api/workspace", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -2384,6 +2397,7 @@ function saveWorkspaceState(state: WorkspaceState): void {
 }
 
 async function loadWorkspaceStateFromConfig(): Promise<void> {
+  if (controlRole === "observer") return;
   const response = await fetch("/api/workspace");
   if (!response.ok) {
     return;
@@ -2508,6 +2522,9 @@ function applyWorkspaceState(): void {
   if (visiblePanels.has("curveviewer")) {
     window.requestAnimationFrame(() => curveViewerPanel.refreshLayout());
   }
+  syncScopeStream();
+  syncSpectrumStream();
+  networkAnalyzerPanel.setSubscriptionEnabled(workspaceState.panels.networkanalyzer.enabled);
 }
 
 function enabledPanelIds(): PanelId[] {
@@ -2835,9 +2852,11 @@ async function setPanelEnabled(panelId: PanelId, enabled: boolean): Promise<void
   applyWorkspaceState();
   if (panelId === "scope" && !enabled) {
     stopStream("Scope panel disabled");
-    callScopeAction("stop").catch((error: Error) => {
-      moduleStatus.textContent = error.message;
-    });
+    if (controlRole !== "observer") {
+      callScopeAction("stop").catch((error: Error) => {
+        moduleStatus.textContent = error.message;
+      });
+    }
     return;
   }
   if (panelId === "scope" && enabled && isPanelVisible("scope")) {
@@ -2845,9 +2864,11 @@ async function setPanelEnabled(panelId: PanelId, enabled: boolean): Promise<void
   }
   if (panelId === "spectrumanalyzer" && !enabled) {
     stopSpectrumStream("Spectrum panel disabled");
-    callSpectrumAction("stop").catch((error: Error) => {
-      spectrumStatus.textContent = error.message;
-    });
+    if (controlRole !== "observer") {
+      callSpectrumAction("stop").catch((error: Error) => {
+        spectrumStatus.textContent = error.message;
+      });
+    }
   }
 }
 
@@ -2946,20 +2967,40 @@ async function setWorkspaceLayoutMode(layoutMode: WorkspaceLayoutMode): Promise<
 }
 
 async function activateScopePanel(): Promise<void> {
-  await fetchSingleFrame();
   if (!workspaceState.panels.scope.enabled || !isPanelVisible("scope")) {
     stopStream("Scope panel disabled");
     return;
   }
-  if (currentSession?.fake) {
+  syncScopeStream();
+  if (runningState !== "stopped") return;
+  if (currentSession?.fake && controlRole !== "observer") {
+    await fetchSingleFrame();
+    if (!workspaceState.panels.scope.enabled || !isPanelVisible("scope")) return;
     await callScopeAction("continuous");
-    startStream();
   }
 }
 
 function setRunningState(state: string): void {
+  if (state.startsWith("running_") && !runningState.startsWith("running_")) {
+    stream.resetTraceAveraging();
+  }
   runningState = state;
   updateScopeAcquisitionButtons(state);
+  syncScopeStream();
+}
+
+function syncScopeStream(): void {
+  if (!scopeReady) return;
+  if (!workspaceState.panels.scope.enabled) {
+    if (connectButton.dataset.connected === "true") stopStream("Scope panel disabled");
+  } else if (runningState.startsWith("running_")) {
+    // Subscription is read-only: all clients follow the server's acquisition.
+    startStream();
+  } else if (runningState === "stopped" && connectButton.dataset.connected === "true") {
+    stopStream("Scope stopped");
+  }
+  // Keep a paused subscription so the final single-shot frame can arrive even
+  // when its state event is delivered first on the separate events socket.
 }
 
 function updateScopeAcquisitionButtons(state: string): void {
@@ -2987,6 +3028,11 @@ function updateScopeAcquisitionButtons(state: string): void {
     connectButton.disabled = false;
     singleFrameButton.textContent = "Run single";
     singleFrameButton.disabled = rolling;
+    stopScopeButton.disabled = true;
+  }
+  if (controlRole === "observer") {
+    connectButton.disabled = true;
+    singleFrameButton.disabled = true;
     stopScopeButton.disabled = true;
   }
 }
@@ -3018,6 +3064,19 @@ function setSpectrumRunningState(state: string): void {
     spectrumSingleButton.disabled = false;
     spectrumStopButton.disabled = true;
   }
+  syncSpectrumStream();
+}
+
+function syncSpectrumStream(): void {
+  if (!scopeReady) return;
+  if (!workspaceState.panels.spectrumanalyzer.enabled) {
+    if (spectrumRunButton.dataset.connected === "true") stopSpectrumStream("Spectrum panel disabled");
+  } else if (spectrumRunningState.startsWith("running_")) {
+    startSpectrumStream();
+  } else if (spectrumRunningState === "stopped" && !["single", "resume_single"].includes(spectrumLastAction)) {
+    if (spectrumRunButton.dataset.connected === "true") stopSpectrumStream();
+  }
+  // Single-shot completion can precede the final data on the other WebSocket.
 }
 
 function startStream(): void {
@@ -3116,6 +3175,8 @@ function populateSelect(select: HTMLSelectElement, attribute: ModuleAttribute): 
 }
 
 function applyScopeControlValue(attribute: string, value: string | number | boolean): void {
+  value = plotViews.get("scope")[attribute] ?? value;
+  scopeControlValues.set(attribute, value);
   if (attribute === "input1") {
     scopeInput1.value = String(value);
   } else if (attribute === "input2") {
@@ -3211,7 +3272,7 @@ function populateNumber(input: HTMLInputElement, attribute: ModuleAttribute): vo
 
 function applyScopeState(state: ScopeState): void {
   for (const [attribute, value] of Object.entries(state)) {
-    if (value !== null && value !== undefined) {
+    if (value !== null && value !== undefined && !Object.is(scopeControlValues.get(attribute), value)) {
       applyScopeControlValue(attribute, value as string | number | boolean);
     }
   }
@@ -3233,7 +3294,7 @@ function applyScopeRuntimeState(state: ScopeState): void {
 function setScopeOwner(owner: string | null): void {
   scopeControlsPane.classList.toggle("is-owned", owner !== null);
   for (const control of scopeParameterControls) {
-    control.disabled = owner !== null;
+    control.disabled = owner !== null && !isLocalControl(control);
   }
   if (owner === null) {
     updateRollingControls();
@@ -3244,6 +3305,12 @@ function setScopeOwner(owner: string | null): void {
 }
 
 async function setScopeAttribute(attribute: string, value: string | number | boolean): Promise<void> {
+  if (isViewAttribute("scope", attribute)) {
+    plotViews.set("scope", attribute, value);
+    applyScopeControlValue(attribute, value);
+    moduleStatus.textContent = `${attribute} = ${attributeValueLabel(attribute, value)} (local view)`;
+    return;
+  }
   const result = await setModuleAttributeValue("scope", attribute, value);
   if (
     [
@@ -3312,6 +3379,7 @@ async function loadScopeControls(): Promise<void> {
   updateScopeDisplaySettings();
   updatePlotTimeSettings();
   updateRollingControls();
+  for (const [attribute, value] of Object.entries(plotViews.get("scope"))) applyScopeControlValue(attribute, value);
   moduleStatus.textContent = "Scope controls ready";
 }
 
@@ -3658,6 +3726,8 @@ async function buildGenericModuleCard(container: HTMLElement, moduleName: string
       (message) => {
         statusOutput.textContent = message;
       },
+      () => controlRole !== "observer" && !genericModuleControls.get("iir")?.owner,
+      () => plotViews.get("iir"),
     );
     iirPlot.refresh().catch((error: Error) => {
       statusOutput.textContent = error.message;
@@ -3732,6 +3802,7 @@ function createGenericAttributeField(
       input.readOnly = true;
     }
   }
+  if (isViewAttribute(moduleName, attribute.name)) input.dataset.controlScope = "view";
   input.id = `${moduleName}-${attribute.name.replaceAll("_", "-")}`;
   label.appendChild(input);
   return { label, input };
@@ -3790,6 +3861,14 @@ async function setGenericModuleAttribute(
   value: ModulePrimitive,
   statusOutput: HTMLOutputElement,
 ): Promise<void> {
+  if (isViewAttribute(moduleName, attribute) && isScalarModulePrimitive(value)) {
+    plotViews.set(moduleName, attribute, value);
+    applyGenericModuleValue(moduleName, attribute, value);
+    if (moduleName === "spectrumanalyzer") applyGenericModuleState(moduleName, spectrumServerState);
+    if (moduleName === "iir") await iirPlot?.refresh();
+    statusOutput.textContent = `${attribute} = ${attributeValueLabel(attribute, value)} (local view)`;
+    return;
+  }
   const result = await setModuleAttributeValue(moduleName, attribute, value);
   applyGenericModuleValue(moduleName, attribute, result.value);
   statusOutput.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
@@ -3819,7 +3898,10 @@ async function callGenericModuleAction(moduleName: string, action: string, statu
 }
 
 function applyGenericModuleState(moduleName: string, state: ModuleState): void {
+  if (moduleName === "spectrumanalyzer") spectrumServerState = { ...spectrumServerState, ...state };
+  state = plotViews.merge(moduleName, state);
   if (moduleName === "spectrumanalyzer") {
+    if (typeof state.last_action === "string") spectrumLastAction = state.last_action;
     spectrumPlot.setSettings(state);
     applySpectrumFieldVisibility(state);
     if (typeof state.running_state === "string") {
@@ -3862,6 +3944,7 @@ function applySpectrumFieldVisibility(state: ModuleState): void {
 }
 
 function applyGenericModuleValue(moduleName: string, attribute: string, value: ModulePrimitive): void {
+  value = plotViews.get(moduleName)[attribute] ?? value;
   const input = genericModuleControls.get(moduleName)?.inputs.get(attribute);
   if (!input) {
     return;
@@ -3881,7 +3964,7 @@ function setGenericModuleOwner(moduleName: string, owner: string | null): void {
   controls.owner = owner;
   controls.card.classList.toggle("is-owned", owner !== null);
   for (const input of controls.inputs.values()) {
-    input.disabled = owner !== null;
+    input.disabled = owner !== null && !isLocalControl(input);
   }
   for (const button of controls.actions) {
     button.disabled = owner !== null;
@@ -3950,10 +4033,21 @@ function connectEvents(): void {
   const socket = new WebSocket(`${protocol}//${window.location.host}/ws/events`);
   eventSocket = socket;
   socket.addEventListener("open", () => {
-    if (eventSocket === socket) eventReconnect.connected();
+    if (eventSocket !== socket) return;
+    eventReconnect.connected();
+    // Subscribe first, then read a snapshot to recover changes missed during
+    // startup or a disconnect. A newer event takes precedence over the snapshot.
+    const modules = ["scope", ...asgModules, "hk", "ams", "sampler", ...genericModuleControls.keys(), "networkanalyzer", "lockbox"];
+    for (const module of modules) {
+      void refreshModuleSnapshot(module, socket).catch((error: Error) => { moduleStatus.textContent = error.message; });
+    }
+    void refreshControlStatus();
   });
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
+    if (typeof message.module === "string" && ["module.attribute.changed", "module.state.changed"].includes(message.type)) {
+      moduleStateRevisions.set(message.module, (moduleStateRevisions.get(message.module) ?? 0) + 1);
+    }
     if (message.type === "control.changed") {
       void refreshControlStatus();
       return;
@@ -3962,6 +4056,9 @@ function connectEvents(): void {
       eventCount += 1;
       if (message.module === "scope") {
         applyScopeControlValue(message.attribute, message.value);
+        if (message.attribute === "run_continuous") {
+          setRunningState(message.value ? "running_continuous" : "stopped");
+        }
         moduleStatus.textContent = `${message.attribute} = ${attributeValueLabel(message.attribute, message.value)}`;
       } else if (isAsgModule(message.module)) {
         const moduleName: AsgModuleId = message.module;
@@ -3971,8 +4068,15 @@ function connectEvents(): void {
       } else if (message.module === "hk") {
         applyHkControlValue(message.attribute, message.value);
         hkStatus.textContent = `${message.attribute} = ${attributeValueLabel(message.attribute, message.value)}`;
+      } else if (message.module === "ams") {
+        applyAmsState({ [message.attribute]: message.value });
+      } else if (message.module === "sampler") {
+        applySamplerState({ [message.attribute]: message.value });
+      } else if (message.module === "networkanalyzer") {
+        networkAnalyzerPanel.applyState({ [message.attribute]: message.value });
       } else if (isGenericModule(message.module)) {
         applyGenericModuleValue(message.module, message.attribute, message.value);
+        if (message.module === "iir") void iirPlot?.refresh().catch((error: Error) => { moduleStatus.textContent = error.message; });
         const controls = genericModuleControls.get(message.module);
         if (controls) {
           controls.status.textContent = `${message.attribute} = ${attributeValueLabel(message.attribute, message.value)}`;
@@ -3982,7 +4086,7 @@ function connectEvents(): void {
     }
     if (message.type !== "module.attribute.changed" || message.module !== "scope") {
       if (message.type === "module.state.changed" && message.module === "scope") {
-        applyScopeRuntimeState(message.state);
+        applyScopeState(message.state);
         if (message.state.trigger_test) {
           moduleStatus.textContent = formatTriggerResult(message.state.trigger_test);
         } else {
@@ -3995,8 +4099,13 @@ function connectEvents(): void {
       } else if (message.type === "module.state.changed" && message.module === "hk") {
         applyHkState(message.state ?? {});
         hkStatus.textContent = "Housekeeping state updated";
+      } else if (message.type === "module.state.changed" && message.module === "ams") {
+        applyAmsState(message.state ?? {});
+      } else if (message.type === "module.state.changed" && message.module === "sampler") {
+        applySamplerState(message.state ?? {});
       } else if (message.type === "module.state.changed" && isGenericModule(message.module)) {
         applyGenericModuleState(message.module, message.state ?? {});
+        if (message.module === "iir") void iirPlot?.refresh().catch((error: Error) => { moduleStatus.textContent = error.message; });
         const controls = genericModuleControls.get(message.module);
         if (controls && !controls.owner && message.module !== "spectrumanalyzer") {
           controls.status.textContent = `${message.module} state updated`;
@@ -4021,7 +4130,48 @@ function connectEvents(): void {
   });
 }
 
+async function refreshModuleSnapshot(module: string, socket: WebSocket): Promise<void> {
+  while (eventSocket === socket && socket.readyState === WebSocket.OPEN) {
+    const revision = moduleStateRevisions.get(module) ?? 0;
+    const response = await fetch(module === "lockbox" ? "/api/lockbox" : `/api/modules/${module}`);
+    if (!response.ok) throw new Error(`${module} state unavailable: ${response.status}`);
+    const payload = await response.json();
+    const state = module === "lockbox" ? payload : payload.state;
+    if (eventSocket !== socket) return;
+    if (revision !== (moduleStateRevisions.get(module) ?? 0)) continue;
+    if (module === "scope") applyScopeState(state);
+    else if (isAsgModule(module)) applyAsgState(module, state);
+    else if (module === "hk") applyHkState(state);
+    else if (module === "ams") applyAmsState(state);
+    else if (module === "sampler") applySamplerState(state);
+    else if (module === "networkanalyzer") networkAnalyzerPanel.applyState(state);
+    else if (module === "lockbox") await lockboxPanel.applySchema(state);
+    else if (isGenericModule(module)) applyGenericModuleState(module, state);
+    if (module === "iir") await iirPlot?.refresh();
+    return;
+  }
+}
+
+function updateObserverControls(): void {
+  const observer = controlRole === "observer";
+  for (const control of workspacePanels.querySelectorAll<HTMLElement>("input, select, textarea, button")) {
+    const blocked = observer && !isLocalControl(control);
+    control.inert = blocked;
+    if (blocked) control.setAttribute("aria-disabled", "true");
+    else control.removeAttribute("aria-disabled");
+  }
+  for (const id of ["config-text", "curve-viewer-params"]) {
+    requireElement<HTMLTextAreaElement>(`#${id}`).readOnly = observer;
+  }
+}
+
 function applyControlStatus(control: ControlStatus): void {
+  controlRole = control.role;
+  updateScopeAcquisitionButtons(runningState);
+  updateObserverControls();
+  saveCurveButton.textContent = controlRole === "observer" ? "Download CSV" : "Save Curve";
+  spectrumSaveCurveButton.textContent = controlRole === "observer" ? "Download CSV" : "Save Curve";
+  networkAnalyzerPanel.setReadOnly(controlRole === "observer");
   controlStrip.classList.remove("is-controller", "is-observer", "is-shared");
   controlStrip.classList.add(`is-${control.role}`);
   if (control.role === "shared") {
@@ -4080,10 +4230,10 @@ async function createStoredCurve(
   params: Record<string, unknown>,
   yImag?: number[],
 ): Promise<void> {
-  const response = await fetch("/api/curves", {
+  const response = await fetch("/api/curves?include_data=false", {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ x, y, y_imag: yImag, params }),
+    headers: { "content-type": "application/octet-stream" },
+    body: encodeCurveUpload(x, y, params, yImag),
   });
   if (!response.ok) throw new Error(`Save curve failed: ${response.status}`);
 }
@@ -4113,26 +4263,26 @@ async function persistScopeCurves(): Promise<number> {
     rolling_mode: scopeTriggerRolling.checked,
     trace_average: Number(scopeTraceAverage.value),
   };
-  await Promise.all(active.map(([channel]) => createStoredCurve(data.x, data.channels[channel], {
+  for (const [channel] of active) await createStoredCurve(data.x, data.channels[channel], {
     ...setup,
     name: `${scopeCurveName.value || "scope curve"} ch${channel + 1}`,
     module: "scope",
     ch: channel,
     curve_unit: "V",
-  })));
+  });
   return active.length;
 }
 
 async function persistSpectrumCurves(): Promise<number> {
   const data = spectrumPlot.getCurveData();
   if (!data) throw new Error("No spectrum curve to save");
-  await Promise.all(data.series.map((series, index) => createStoredCurve(data.x, series.values, {
+  for (const [index, series] of data.series.entries()) await createStoredCurve(data.x, series.values, {
     ...spectrumPlot.getCurveParameters(),
     name: `${spectrumCurveName.value || "pyrpl spectrum"} ${series.label.toLowerCase()}`,
     module: "spectrumanalyzer",
     ch: series.label === "Cross" ? "cross" : index,
     curve_unit: data.unit,
-  }, series.imaginary)));
+  }, series.imaginary);
   return data.series.length;
 }
 
@@ -4260,15 +4410,24 @@ stopScopeButton.addEventListener("click", () => {
     });
 });
 
-saveCurveButton.addEventListener("click", () => {
-  Promise.all([callScopeAction("save_curve"), persistScopeCurves()])
-    .then(([, curves]) => {
-      stream.downloadCsv(`scope-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
-      moduleStatus.textContent = `saved ${curves} curve${curves === 1 ? "" : "s"}`;
-    })
-    .catch((error: Error) => {
-      moduleStatus.textContent = error.message;
-    });
+saveCurveButton.addEventListener("click", async () => {
+  if (controlRole === "observer") {
+    stream.downloadCsv(`scope-${Date.now()}.csv`);
+    return;
+  }
+  saveCurveButton.disabled = true;
+  saveCurveButton.textContent = "Saving…";
+  moduleStatus.textContent = "Saving curves…";
+  try {
+    const [, curves] = await Promise.all([callScopeAction("save_curve"), persistScopeCurves()]);
+    stream.downloadCsv(`scope-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
+    moduleStatus.textContent = `saved ${curves} curve${curves === 1 ? "" : "s"}`;
+  } catch (error) {
+    moduleStatus.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    saveCurveButton.disabled = false;
+    saveCurveButton.textContent = "Save Curve";
+  }
 });
 
 zoomOutButton.addEventListener("click", () => stream.zoom(1.8));
@@ -4335,13 +4494,24 @@ spectrumStopButton.addEventListener("click", () => {
     });
 });
 
-spectrumSaveCurveButton.addEventListener("click", () => {
-  persistSpectrumCurves()
-    .then((curves) => {
-      spectrumPlot.downloadCsv(`spectrum-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
-      spectrumStatus.textContent = `saved ${curves} curve${curves === 1 ? "" : "s"}`;
-    })
-    .catch((error: Error) => { spectrumStatus.textContent = error.message; });
+spectrumSaveCurveButton.addEventListener("click", async () => {
+  if (controlRole === "observer") {
+    spectrumPlot.downloadCsv(`spectrum-${Date.now()}.csv`);
+    return;
+  }
+  spectrumSaveCurveButton.disabled = true;
+  spectrumSaveCurveButton.textContent = "Saving…";
+  spectrumStatus.textContent = "Saving curves…";
+  try {
+    const curves = await persistSpectrumCurves();
+    spectrumPlot.downloadCsv(`spectrum-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
+    spectrumStatus.textContent = `saved ${curves} curve${curves === 1 ? "" : "s"}`;
+  } catch (error) {
+    spectrumStatus.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    spectrumSaveCurveButton.disabled = false;
+    spectrumSaveCurveButton.textContent = "Save Curve";
+  }
 });
 
 scopeCurveName.addEventListener("change", () => {
@@ -4600,13 +4770,13 @@ async function startup(): Promise<void> {
   await loadTelemetry();
   await loadGenericPanels();
   await networkAnalyzerPanel.initialize();
-  await curveViewerPanel.load();
   await configPanel.load().catch((error: Error) => {
     requireElement<HTMLOutputElement>("#config-status").textContent = error.message;
   });
   await lockboxPanel.load();
   connectEvents();
   await loadWorkspaceStateFromConfig();
+  scopeReady = true;
   applyWorkspaceState();
   if (!workspaceState.activePanelId) {
     status.textContent = "No panel enabled";
@@ -4633,6 +4803,9 @@ takeControlButton.addEventListener("click", () => {
 });
 
 window.addEventListener("pagehide", () => controlClient.release());
+
+// Some modules rebuild their fields after state changes (e.g. Lockbox class).
+new MutationObserver(updateObserverControls).observe(workspacePanels, { childList: true, subtree: true });
 
 exposeDebugState();
 startup().catch((error: Error) => {

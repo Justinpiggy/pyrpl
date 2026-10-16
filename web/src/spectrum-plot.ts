@@ -25,6 +25,7 @@ export class SpectrumPlot {
   private plot: uPlot;
   private latestFrame: SpectrumFrame | null = null;
   private latestCurveFrame: SpectrumFrame | null = null;
+  private latestScopeBuffer: ArrayBuffer | null = null;
   private pendingFrame: SpectrumFrame | null = null;
   private panState:
     | { startX: number; startY: number; xMin: number; xMax: number; yMin: number; yMax: number }
@@ -93,6 +94,7 @@ export class SpectrumPlot {
         : this.settings.iqBandwidth,
     };
     const displayUnitChanged = nextSettings.displayUnit !== this.settings.displayUnit;
+    const windowChanged = nextSettings.window !== this.settings.window;
     const visibilityChanged =
       nextSettings.displayInput1Baseband !== this.settings.displayInput1Baseband ||
       nextSettings.displayInput2Baseband !== this.settings.displayInput2Baseband ||
@@ -102,6 +104,7 @@ export class SpectrumPlot {
       this.resetAveraging();
     }
     this.settings = nextSettings;
+    if (windowChanged && this.latestScopeBuffer) this.showScopeBuffer(this.latestScopeBuffer.slice(0));
     if ((displayUnitChanged || visibilityChanged) && this.averagedFrame) {
       this.pendingFrame = displaySpectrumFrame(this.averagedFrame, this.settings);
       this.scheduleRender();
@@ -118,6 +121,10 @@ export class SpectrumPlot {
 
   getAverageCount(): number {
     return this.currentAverage;
+  }
+
+  getRbw(): number | undefined {
+    return this.latestCurveFrame?.rbw;
   }
 
   connect(): void {
@@ -180,6 +187,7 @@ export class SpectrumPlot {
   }
 
   showScopeBuffer(buffer: ArrayBuffer): void {
+    this.latestScopeBuffer = buffer.slice(0);
     this.workerRequestId += 1;
     this.fftWorker.postMessage(
       {

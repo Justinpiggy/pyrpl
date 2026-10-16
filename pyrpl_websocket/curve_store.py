@@ -122,7 +122,9 @@ class CurveStore:
     def _save_no_lock(self, record: dict[str, Any]) -> None:
         path = self._path(record["pk"])
         temporary = path.with_suffix(path.suffix + ".tmp")
-        payload = [record["pk"], record["params"], [record["x"].tolist(), record["y"].tolist()]]
+        # CurveDB.get accepts arrays as well as legacy lists. Pickle array buffers
+        # directly instead of reducing every complex sample as a Python object.
+        payload = [record["pk"], record["params"], [record["x"], record["y"]]]
         with temporary.open("wb") as handle:
             pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
             handle.flush()

@@ -32,6 +32,10 @@ jobs:
           npm run build
       - name: Test backend
         run: python -m unittest discover -s pyrpl/test -p test_pyrpl_websocket_app.py
+      - name: Test PC deployment tooling
+        run: |
+          bash -n deploy_redpitaya.sh deploy/redpitaya-runtime.sh deploy/redpitaya-install.sh
+          python -m unittest discover -s pyrpl/test -p test_deploy_redpitaya.py
       - name: Install browser
         working-directory: web
         run: npx playwright install --with-deps chromium

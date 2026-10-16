@@ -58,6 +58,7 @@ export class IirPlot {
   private magnitudeHost: HTMLElement;
   private phaseHost: HTMLElement;
   private latest: IirPlotPayload | null = null;
+  private refreshRevision = 0;
   private selectedKey: string | null = null;
   private resizeFrame: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -88,6 +89,8 @@ export class IirPlot {
     private host: HTMLElement,
     private setAttribute: IirAttributeSetter,
     private setStatus: (message: string) => void,
+    private canEditHardware: () => boolean = () => true,
+    private viewSettings: () => Record<string, string | number | boolean> = () => ({}),
   ) {
     this.host.innerHTML = `
       <div class="iir-plot-toolbar">
@@ -118,11 +121,15 @@ export class IirPlot {
   }
 
   async refresh(): Promise<void> {
-    const response = await fetch("/api/modules/iir/plot");
+    const revision = ++this.refreshRevision;
+    const query = new URLSearchParams(Object.entries(this.viewSettings()).map(([key, value]) => [key, String(value)]));
+    const response = await fetch(`/api/modules/iir/plot?${query}`);
     if (!response.ok) {
       throw new Error(`IIR plot unavailable: ${response.status}`);
     }
-    this.latest = await response.json() as IirPlotPayload;
+    const payload = await response.json() as IirPlotPayload;
+    if (revision !== this.refreshRevision) return;
+    this.latest = payload;
     const logX = Float64Array.from(this.latest.x, (value) => Math.log10(Math.max(value, Number.MIN_VALUE)));
     const magnitude = Float32Array.from(this.latest.magnitude);
     const phase = Float32Array.from(this.latest.phase);
@@ -145,6 +152,8 @@ export class IirPlot {
     }
     this.renderMarkers();
     this.renderListEditors();
+    const curveName = this.host.closest(".module-panel")?.querySelector<HTMLInputElement>("#iir-data-curve-name");
+    if (curveName) curveName.value = this.latest.data_curve_name;
     const curve = this.latest.data_curve_name ? ` | ${this.latest.data_curve_name}` : "";
     this.plotStatus().textContent =
       `${this.latest.tf_type} | ${this.latest.markers.length} pole/zero marker(s)${curve}`;
@@ -288,6 +297,7 @@ export class IirPlot {
       return;
     }
     const frequency = this.frequencyFromEvent(plot, event);
+    if (!this.canEditHardware() && (event.ctrlKey || event.metaKey || event.shiftKey)) return;
     if (event.ctrlKey || event.metaKey) {
       await this.addMarker("poles", frequency, doubleClick);
     } else if (event.shiftKey) {
@@ -349,6 +359,7 @@ export class IirPlot {
       element.addEventListener("mousedown", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (!this.canEditHardware()) return;
         this.selectedKey = markerKey(marker);
         this.markerDrag = { marker, plot };
         element.classList.add("is-dragging");
@@ -478,6 +489,7 @@ export class IirPlot {
   }
 
   private async setList(list: IirListName, values: Array<number | string>): Promise<void> {
+    if (!this.canEditHardware()) return;
     await this.setAttribute(list, values as number[] | string[]);
     await this.refresh();
   }

@@ -118,6 +118,10 @@ pyrpl-web --hostname _FAKE_
 See [WEB_DEPLOYMENT.md](WEB_DEPLOYMENT.md) for Red Pitaya ARMv7 installation,
 the dependency audit, `monitor_server` startup expectations, authentication,
 single-writer browser control, SSH tunneling, and systemd deployment.
+To build locally, overwrite the deployed application, and run the complete web
+backend on the board, use `bash deploy_redpitaya.sh` from `pyrpl-env`. The UI is
+then available directly at `http://10.0.5.118:8801`; see the deployment guide for
+first-run dependencies and the read-only code policy.
 A GUI should open, let you configure the RedPitaya device you would like to use, and you can start playing around with pyrpl. Different strings for 'your_configuration_name' create different configurations that will be automatically remembered by PyRPL, for example if you have several different redpitayas. Different RedPitayas with different configuration names can be run simultaneously in separate terminals.
 
 ## Issues

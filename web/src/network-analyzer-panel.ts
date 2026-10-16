@@ -32,6 +32,9 @@ interface PointMessage {
 }
 
 export class NetworkAnalyzerPanel {
+  private state: Record<string, unknown> = {};
+  private subscriptionEnabled = false;
+  private readOnly = false;
   private magnitudePlot: uPlot;
   private phasePlot: uPlot;
   private socket: WebSocket | null = null;
@@ -94,13 +97,32 @@ export class NetworkAnalyzerPanel {
   }
 
   applyState(state: Record<string, unknown>): void {
-    const running = String(state.running_state ?? "stopped") !== "stopped";
+    this.state = { ...this.state, ...state };
+    for (const [name, value] of Object.entries(state)) {
+      const input = this.controlsHost.querySelector<HTMLInputElement | HTMLSelectElement>(`#networkanalyzer-${name.replaceAll("_", "-")}`);
+      if (!input || document.activeElement === input) continue;
+      if (input instanceof HTMLInputElement && input.type === "checkbox") input.checked = Boolean(value);
+      else input.value = String(value);
+    }
+    const running = String(this.state.running_state ?? "stopped") !== "stopped";
     this.runButton.textContent = running ? "Running" : "Continuous";
     this.runButton.disabled = running;
     this.stopButton.disabled = !running;
-    const iq = typeof state.iq_module === "string" ? ` on ${state.iq_module}` : "";
-    const stateLabel = `${String(state.running_state ?? "stopped")}${iq}`;
+    const iq = typeof this.state.iq_module === "string" ? ` on ${this.state.iq_module}` : "";
+    const stateLabel = `${String(this.state.running_state ?? "stopped")}${iq}`;
     this.status.textContent = !running && this.lastProgress ? `${this.lastProgress}, ${stateLabel}` : stateLabel;
+    if (running && this.subscriptionEnabled) this.connectSocket();
+    else if (!this.subscriptionEnabled || this.state.last_action === "stop") this.closeSocket();
+  }
+
+  setSubscriptionEnabled(enabled: boolean): void {
+    this.subscriptionEnabled = enabled;
+    this.applyState({});
+  }
+
+  setReadOnly(readOnly: boolean): void {
+    this.readOnly = readOnly;
+    this.saveButton.textContent = readOnly ? "Download CSV" : "Save Curve";
   }
 
   refreshLayout(): void {
@@ -131,6 +153,10 @@ export class NetworkAnalyzerPanel {
     this.runButton.addEventListener("click", () => void this.start("continuous"));
     this.stopButton.addEventListener("click", () => void this.stop());
     this.saveButton.addEventListener("click", () => {
+      if (this.readOnly) {
+        this.downloadCsv();
+        return;
+      }
       void this.persistCurve()
         .then(() => {
           this.downloadCsv();

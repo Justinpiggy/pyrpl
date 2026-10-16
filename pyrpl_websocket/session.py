@@ -829,11 +829,22 @@ class WebSession:
                 if temporary:
                     self._stop_spectrum_no_lock(reset_average=False)
 
-    def iir_plot(self, points: int = 1000) -> dict:
+    def iir_plot(self, points: int = 1000, view: dict | None = None) -> dict:
         with self._lock:
-            curve = self._iir_data_curve_no_lock()
-            iir_filter = make_hardware_iir_filter(self.client, self.iir_settings)
-            return iir_plot(self.iir_settings, points, curve, self.iir_measurement, iir_filter)
+            settings = deepcopy(self.iir_settings)
+            for name, value in (view or {}).items():
+                if name not in {"tf_type", "data_curve", "plot_data", "plot_data_times_filter", "plot_measurement"}:
+                    raise ValueError("Only IIR display settings may be overridden")
+                set_iir_attribute(settings, name, value)
+            curve = None
+            if settings.data_curve >= 0:
+                try:
+                    curve = self.curves.get(settings.data_curve)
+                except (OSError, EOFError, TypeError, ValueError):
+                    pass
+            settings.data_curve_name = str(curve.get("name", "")) if curve else ""
+            iir_filter = make_hardware_iir_filter(self.client, settings)
+            return iir_plot(settings, points, curve, self.iir_measurement, iir_filter)
 
     def _select_iir_data_curve_no_lock(self, pk: int) -> None:
         if pk < 0:
