@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .lockbox import UnitConversion
+
 import builtins
 import inspect
 import logging
@@ -80,7 +82,7 @@ class _RuntimeObject:
         adapter.set(name, value)
 
 
-class _HeadlessLockbox(_RuntimeObject):
+class _HeadlessLockbox(UnitConversion, _RuntimeObject):
     def calibrate_all(self, *args, **kwargs):
         adapter = object.__getattribute__(self, "_runtime_adapter")
         return adapter.runtime.calibrate_all(*args, **kwargs)
@@ -367,6 +369,7 @@ class _NamedObjects(Mapping[str, Any]):
 class _CalibrationProxy:
     _ALIASES = {
         "_analog_offset": "analog_offset",
+        "_asg_phase": "asg_phase",
         "_analog_offset_rms": "rms",
         "peak_to_peak": "peak_to_peak",
     }
@@ -480,8 +483,7 @@ class _HardwareModuleProxy:
     def load_state(self, state_name: str) -> None:
         runtime = object.__getattribute__(self, "_runtime")
         name = object.__getattribute__(self, "name")
-        for attribute, value in runtime.session._module_states[name][str(state_name)].items():
-            runtime.session._set_module_attribute_no_lock(name, attribute, value)
+        runtime.session._apply_module_setup_no_lock(name, runtime.session._module_states[name][str(state_name)])
 
     def single(self, timeout=None):
         runtime = object.__getattribute__(self, "_runtime")
@@ -493,7 +495,7 @@ class _HardwareModuleProxy:
             frame = session._fake_scope_frame(0, session._fake_scope_clock, 2**14)
             session._fake_scope_clock += 2**14
         else:
-            acquisition = session._acquire_hardware_scope_frame(0, 2**14)
+            acquisition = session._acquire_hardware_scope_frame(0, 2**14, wait=True)
             if acquisition.frame is None:
                 return tuple()
             frame = acquisition.frame

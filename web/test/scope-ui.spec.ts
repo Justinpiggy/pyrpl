@@ -33,6 +33,7 @@ async function resetServerConfig(page: Page): Promise<void> {
   await page.request.post("/api/modules/spectrumanalyzer/actions/stop");
   await page.request.post("/api/modules/networkanalyzer/actions/stop");
   await page.request.post("/api/lockbox/actions/unlock");
+  await page.request.post("/api/lockbox/class", { data: { classname: "Linear" } });
   await page.request.post("/api/workspace", { data: { workspace: defaultWorkspace } });
   const curveListResponse = await page.request.get("/api/curves");
   if (curveListResponse.ok()) {
@@ -189,7 +190,7 @@ test("module menu and Scope initialize without crypto.randomUUID", async ({ page
 async function configureObserver(observer: Page) {
   const observerWrites: string[] = [];
   const observerErrors: string[] = [];
-  observer.on("pageerror", (error) => observerErrors.push(error.message));
+  observer.on("pageerror", (error) => observerErrors.push(error.stack ?? error.message));
   await observer.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() === "GET" || path.startsWith("/api/control") ||
@@ -237,7 +238,7 @@ test("Scope observers follow controller acquisition on open, actions, reload and
     await expect(observer.locator("#connect-scope")).toHaveText("Run continuous");
     await observer.reload();
     await expect(observer.locator("#panel-scope-enabled")).toBeAttached();
-    expect(await observer.evaluate(() => window.pyrplScope?.getFrameSequence())).toBeNull();
+    await expect.poll(() => observer.evaluate(() => window.pyrplScope?.getFrameSequence())).not.toBeNull();
     await page.locator("#connect-scope").click();
     await expectUpdates();
     await observer.reload();
@@ -322,7 +323,7 @@ test("observer layouts stay local while module settings and analyzer streams fol
     await setModuleAttribute(page, "networkanalyzer", "trace_average", 1);
     await expect(observer.locator("#networkanalyzer-points")).toHaveValue("16");
     await page.request.post("/api/modules/networkanalyzer/actions/continuous");
-    await expect(observer.locator("#network-run")).toHaveText("Running");
+    await expect(observer.locator("#network-run")).toHaveText("Pause");
     await expect.poll(() => observer.evaluate(() => window.pyrplScope?.getNetworkAnalyzerCurveData()?.x.length ?? 0)).toBe(16);
     await page.request.post("/api/modules/networkanalyzer/actions/stop");
     await expect(observer.locator("#network-run")).toHaveText("Continuous");
@@ -1079,10 +1080,10 @@ test("repeated side-by-side layout changes keep Scope plot dimensions stable", a
   await expect(page.locator("#scope-plot .uplot")).toBeVisible();
   const heights: number[] = [];
   for (let index = 0; index < 5; index += 1) {
-    await page.locator(".menu-dropdown summary").click();
+    if (await page.locator(".menu-dropdown").getAttribute("open") === null) await page.locator(".menu-dropdown summary").click();
     await page.locator("#workspace-layout-mode").selectOption("split-horizontal");
     await expect(page.locator("#spectrumanalyzer-panel")).toBeVisible();
-    await page.locator(".menu-dropdown summary").click();
+    if (await page.locator(".menu-dropdown").getAttribute("open") === null) await page.locator(".menu-dropdown summary").click();
     await page.locator("#workspace-layout-mode").selectOption("tabs");
     await page.getByRole("button", { name: "Scope", exact: true }).click();
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -1438,7 +1439,7 @@ test("PID IQ IIR trigger and PWM panels expose migrated DSP controls", async ({ 
   await expect(page.locator(".iir-marker.is-zero")).toHaveCount(2);
   await page.locator("#iir-inputfilter").fill("1000, 0, -2000");
   await page.locator("#iir-inputfilter").blur();
-  await expect(page.locator("#iir-status")).toContainText("inputfilter = 1000, 0, -2000");
+  await expect(page.locator("#iir-status")).toContainText("inputfilter = 1214.2929101024397");
   await expect(page.locator("#iir-overflow")).toHaveAttribute("readonly", "");
   await page.locator("#iir-data-curve").selectOption(String(curvePk));
   await expect(page.locator("#iir-data-curve-name")).toHaveValue("IIR browser reference");
@@ -1652,7 +1653,7 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
     const payload = await response.json();
     return payload.state.current_avg;
   }).toBe(3);
-  await expect(page.locator("#spectrum-status")).toContainText("Spectrum frame 2");
+  await expect(page.locator("#spectrum-status")).toContainText(/Spectrum frame \d+, 131073 bins/);
   await expect(page.locator("#spectrum-current-average")).toHaveText("3 / 3");
   await expect(page.locator("#spectrum-single")).toHaveText("Run single");
   await expect(page.locator("#spectrum-stop")).toBeDisabled();
@@ -1678,6 +1679,24 @@ test("network analyzer streams a complete sweep and releases its IQ", async ({ p
   const frameBefore = await page.locator(".network-plot-frame").first().boundingBox();
   expect(frameBefore?.width ?? 0).toBeGreaterThan(400);
   expect(frameBefore?.height ?? 0).toBeGreaterThan(100);
+  await page.locator("#network-run").click();
+  await expect(page.locator("#network-run")).toHaveText("Pause");
+  await page.locator("#networkanalyzer-points").fill("48");
+  await page.locator("#networkanalyzer-points").blur();
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getNetworkAnalyzerCurveData()?.x.length)).toBe(48);
+  await expect(page.locator("#network-run")).toHaveText("Pause");
+  await expect(page.locator("#network-stop")).toBeEnabled();
+  await page.locator("#networkanalyzer-points").fill("32");
+  await page.locator("#networkanalyzer-points").blur();
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getNetworkAnalyzerCurveData()?.x.length)).toBe(32);
+  await page.locator("#network-run").click();
+  await expect(page.locator("#network-run")).toHaveText("Resume");
+  const paused = (await (await page.request.get("/api/modules/networkanalyzer")).json()).state;
+  expect(paused.running_state).toBe("paused_continuous");
+  expect((await (await page.request.get(`/api/modules/${paused.iq_module}`)).json()).state.amplitude).toBe(0);
+  await page.locator("#network-run").click();
+  await expect(page.locator("#network-run")).toHaveText("Pause");
+  await page.locator("#network-stop").click();
   await page.locator("#network-single").click();
   await expect(page.locator("#network-status")).toContainText("32/32", { timeout: 10000 });
   await expect.poll(async () => {
@@ -1846,7 +1865,10 @@ test("lockbox panel switches classes, edits stages, and renders static plots", a
   await page.locator("#lockbox-add-stage").click();
   await expect.poll(() => page.evaluate(() => window.pyrplScope?.getLockboxStageCount())).toBe((initialStages ?? 0) + 1);
   await page.locator("#lockbox-stages input[type='number']").first().fill("0.125");
-  await page.locator("#lockbox-stages input[type='number']").first().blur();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/lockbox/stages/0/attributes/") && response.request().method() === "POST"),
+    page.locator("#lockbox-stages input[type='number']").first().blur(),
+  ]);
   await expect(page.locator("#lockbox-status")).toContainText("FabryPerot");
   await page.locator("#lockbox-stages button", { hasText: "Go to this stage" }).first().click();
   await expect(page.locator("#lockbox-status")).toContainText(/stage|lock_on/);
@@ -1927,4 +1949,48 @@ test("configuration panel edits PyRPL YAML branches and validates input", async 
   await page.locator("#config-text").fill(original);
   await page.locator("#config-save").click();
   await expect(page.locator("#config-status")).toHaveText("Saved scope");
+});
+
+test("late observers replay completed shared Scope and Spectrum averages", async ({ page, browser }) => {
+  await resetServerConfig(page);
+  await page.goto("/");
+  await expect(page.locator("#connect-scope")).toHaveText("Pause");
+  await page.request.post("/api/modules/scope/actions/stop");
+  await setModuleAttribute(page, "scope", "rolling_mode", false);
+  await setModuleAttribute(page, "scope", "trace_average", 3);
+  await page.request.post("/api/modules/scope/actions/single");
+  await expect(page.locator("#scope-current-average")).toHaveText("3 / 3");
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("paused_single");
+  const scopeFingerprint = await page.evaluate(() => window.pyrplScope?.getDisplayedDataFingerprint());
+  const context = await browser.newContext();
+  const observer = await context.newPage();
+  const { observerWrites, observerErrors } = await configureObserver(observer);
+  try {
+    await observer.goto(page.url());
+    await expect.poll(() => observer.evaluate(() => window.pyrplScope?.getDisplayedDataFingerprint())).toEqual(scopeFingerprint);
+    await expect(observer.locator("#scope-current-average")).toHaveText("3 / 3");
+    await observer.close();
+
+    // Complete a spectrum while no browser subscribes to that instrument.
+    await setModuleAttribute(page, "spectrumanalyzer", "trace_average", 3);
+    await page.request.post("/api/modules/spectrumanalyzer/actions/single");
+    await expect.poll(async () => (await (await page.request.get("/api/modules/spectrumanalyzer")).json()).state.current_avg).toBe(3);
+    const late = await context.newPage();
+    const lateActivity = await configureObserver(late);
+    await late.goto(page.url());
+    await late.locator(".menu-dropdown summary").click();
+    await late.locator("#panel-spectrumanalyzer-enabled").setChecked(true);
+    await late.getByRole("button", { name: "Spectrum Analyzer", exact: true }).click();
+    await expect.poll(() => late.evaluate(() => window.pyrplScope?.getSpectrumAverageCount())).toBe(3);
+    await expect.poll(() => late.evaluate(() => window.pyrplScope?.getSpectrumBinCount() ?? 0)).toBe(131073);
+    await late.locator("#spectrumanalyzer-window").selectOption("hamming");
+    await expect.poll(() => late.evaluate(() => window.pyrplScope?.getSpectrumAverageCount())).toBe(3);
+    expect((await (await page.request.get("/api/modules/spectrumanalyzer")).json()).state.running_state).toBe("stopped");
+    expect(observerWrites).toEqual([]);
+    expect(observerErrors).toEqual([]);
+    expect(lateActivity.observerWrites).toEqual([]);
+    expect(lateActivity.observerErrors).toEqual([]);
+  } finally {
+    await context.close();
+  }
 });

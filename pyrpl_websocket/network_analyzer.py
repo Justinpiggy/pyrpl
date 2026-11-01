@@ -39,9 +39,9 @@ class NetworkAnalyzerRun:
     bandwidth_options: np.ndarray = field(default_factory=lambda: VALID_RBWS.copy())
     time_first_point: float | None = None
 
-    def prepare(self, settings: NetworkAnalyzerSettings) -> None:
+    def prepare(self, settings: NetworkAnalyzerSettings, frequency_correction: float = 1.0) -> None:
         self.run_id += 1
-        self.frequencies = sweep_frequencies(settings)
+        self.frequencies = sweep_frequencies(settings, frequency_correction)
         self.data = np.zeros(settings.points, dtype=np.complex128)
         self.amplitudes = np.full(settings.points, settings.amplitude, dtype=np.float64)
         self.current_point = 0
@@ -49,7 +49,7 @@ class NetworkAnalyzerRun:
         self.time_first_point = None
 
 
-def sweep_frequencies(settings: NetworkAnalyzerSettings) -> np.ndarray:
+def sweep_frequencies(settings: NetworkAnalyzerSettings, frequency_correction: float = 1.0) -> np.ndarray:
     if settings.start_freq == settings.stop_freq:
         raw = np.full(settings.points, settings.start_freq, dtype=np.float64)
     elif settings.logscale:
@@ -62,13 +62,13 @@ def sweep_frequencies(settings: NetworkAnalyzerSettings) -> np.ndarray:
         )
     else:
         raw = np.linspace(settings.start_freq, settings.stop_freq, settings.points, endpoint=True, dtype=np.float64)
-    return np.asarray([normalize_frequency(frequency) for frequency in raw], dtype=np.float64)
+    return np.asarray([normalize_frequency(frequency, frequency_correction) for frequency in raw], dtype=np.float64)
 
 
-def normalize_frequency(frequency: float) -> float:
+def normalize_frequency(frequency: float, frequency_correction: float = 1.0) -> float:
     """Return the real FPGA IQ frequency, matching PyRPL FrequencyRegister."""
 
-    return 125e6 / 2**32 * frequency_to_register(frequency, bits=32)
+    return 125e6 * frequency_correction / 2**32 * frequency_to_register(frequency / frequency_correction, bits=32)
 
 
 def select_rbw(
@@ -95,7 +95,7 @@ def configure_iq(
     options = filter_bandwidth_options(client, base, 0x230, 0x234, 0x238)
     run.bandwidth_options = np.asarray(options or VALID_RBWS, dtype=np.float64)
     run.bandwidth = select_rbw(settings, frequency, run.bandwidth_options)
-    settings.rbw = run.bandwidth
+    settings.rbw = float(run.bandwidth_options[np.argmin(np.abs(run.bandwidth_options - settings.rbw))])
     iq.amplitude = 0.0
     iq.frequency = frequency
     iq.bandwidth = [run.bandwidth, run.bandwidth]
@@ -108,6 +108,7 @@ def configure_iq(
     iq.quadrature_factor = 1.0
     iq.on = True
     sync_iq_settings(client, module_name, iq)
+    settings.acbandwidth = iq.acbandwidth
     run.averages = max(1, int(round(FPGA_CLOCK / run.bandwidth * settings.average_per_point)))
     run.sleep_cycles = max(1, int(round(FPGA_CLOCK / run.bandwidth * SLEEP_TIMES)))
     client.writes(base + 0x130, [run.averages])
@@ -149,7 +150,7 @@ def acquire_point(
     sync_iq_setting(client, module_name, iq, "frequency")
     started = time.monotonic()
     if not isinstance(client, DummyClient):
-        time.sleep((run.sleep_cycles + run.averages) / FPGA_CLOCK * (3.0 if index == 0 else 1.0))
+        time.sleep((run.sleep_cycles + run.averages) / (FPGA_CLOCK * client.frequency_correction) * (3.0 if index == 0 else 1.0))
     raw = (
         fake_response(settings, frequency, run.current_avg, iq.amplitude)
         if isinstance(client, DummyClient)
@@ -157,7 +158,7 @@ def acquire_point(
     )
     amplitude = max(abs(iq.amplitude), np.finfo(float).eps)
     value = raw * (2.0 ** (-IQ_LPF_BITS) * 4.0) / run.averages / amplitude
-    value /= iq_transfer_function(frequency, settings.acbandwidth)
+    value /= iq_transfer_function(frequency, settings.acbandwidth, client.frequency_correction)
     settings.measured_time_per_point = time.monotonic() - started
     return frequency, value, iq.amplitude
 
@@ -207,7 +208,7 @@ def read_iq_accumulator(client: MonitorClient, module_name: str) -> complex:
     raise RuntimeError("Network analyzer IQ accumulator did not become ready")
 
 
-def iq_transfer_function(frequency: float, acbandwidth: float) -> complex:
+def iq_transfer_function(frequency: float, acbandwidth: float, frequency_correction: float = 1.0) -> complex:
     if frequency <= 0:
         return 1.0 + 0.0j
     transfer = 1.0 + 0.0j
@@ -215,7 +216,7 @@ def iq_transfer_function(frequency: float, acbandwidth: float) -> complex:
     if acbandwidth > 0:
         transfer /= 1.0 - 1j * acbandwidth / frequency
         delay_cycles += 1.0
-    transfer *= np.exp(-1j * delay_cycles * 8e-9 * frequency * 2.0 * np.pi)
+    transfer *= np.exp(-1j * delay_cycles * 8e-9 / frequency_correction * frequency * 2.0 * np.pi)
     return complex(transfer)
 
 

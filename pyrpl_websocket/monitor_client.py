@@ -56,6 +56,8 @@ class MonitorStats:
 class MonitorClient:
     """TCP client for the C monitor_server running on Red Pitaya."""
 
+    frequency_correction = 1.0
+
     def __init__(
         self,
         hostname: str,
@@ -177,6 +179,8 @@ class MonitorClient:
 class DummyClient:
     """Small fake monitor client for local web UI development."""
 
+    frequency_correction = 1.0
+
     def __init__(self):
         self.stats = MonitorStats()
         self._io_lock = RLock()
@@ -185,6 +189,13 @@ class DummyClient:
             0x40380000: 10,
             0x40390000: 11,
         }
+        for index in (0, 1, 2, 4, 5, 6, 7):
+            base = 0x40300000 + index * 0x10000
+            stages, shift, minbw = (4, 5, 10) if index < 3 else (1, 3, 1000) if index == 4 else (1, 6, 50)
+            self.fpgamemory.update({base + 0x220: stages, base + 0x224: shift, base + 0x228: minbw})
+            if index in (5, 6, 7):
+                self.fpgamemory.update({base + 0x230: 4 if index == 7 else 2, base + 0x234: 6, base + 0x238: 10})
+        self.fpgamemory.update({0x40340200: 32, 0x40340204: 29, 0x40340208: 14})
         self.phase = 0
 
     def reads(self, addr: int, length: int):

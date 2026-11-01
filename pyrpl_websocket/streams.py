@@ -18,8 +18,11 @@ class StreamFailure:
 class StreamFanout:
     """Run one acquisition producer and deliver each item to all subscribers."""
 
-    def __init__(self, producer: Producer, queue_size: int = 2):
+    def __init__(self, producer: Producer, queue_size: int = 2, *, keep_alive: bool = False, replay=None):
         self._producer = producer
+        self._keep_alive = keep_alive
+        self._replay = replay
+        self._latest = None
         self._queue_size = max(1, int(queue_size))
         self._subscribers: set[asyncio.Queue[Any]] = set()
         self._task: asyncio.Task[None] | None = None
@@ -29,11 +32,21 @@ class StreamFanout:
     def subscribe(self) -> asyncio.Queue[Any]:
         queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=self._queue_size)
         self._subscribers.add(queue)
+        latest = self._replay() if self._replay else self._latest
+        if latest is not None:
+            queue.put_nowait(latest)
         self._ensure_running()
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue[Any]) -> None:
         self._subscribers.discard(queue)
+
+    @property
+    def latest(self):
+        return self._latest
+
+    def start(self) -> None:
+        self._ensure_running()
 
     def has_subscribers(self) -> bool:
         return bool(self._subscribers)
@@ -48,6 +61,9 @@ class StreamFanout:
 
     async def close(self) -> None:
         self._subscribers.clear()
+        self._keep_alive = False
+        self._suspended = True
+        self._generation += 1
         task = self._task
         if task is not None and not task.done():
             try:
@@ -57,7 +73,7 @@ class StreamFanout:
         self._task = None
 
     def _ensure_running(self) -> None:
-        if self._suspended or not self._subscribers:
+        if self._suspended or not (self._keep_alive or self._subscribers):
             return
         if self._task is None or self._task.done():
             generation = self._generation
@@ -67,8 +83,8 @@ class StreamFanout:
         failed = False
         try:
             await self._producer(
-                self._publish,
-                lambda: bool(self._subscribers) and generation == self._generation,
+                lambda item: self._publish(item) if generation == self._generation else None,
+                lambda: (self._keep_alive or bool(self._subscribers)) and generation == self._generation,
             )
         except Exception as exc:
             failed = True
@@ -79,6 +95,7 @@ class StreamFanout:
                 self._ensure_running()
 
     def _publish(self, item: Any) -> None:
+        self._latest = item
         for queue in tuple(self._subscribers):
             if queue.full():
                 try:

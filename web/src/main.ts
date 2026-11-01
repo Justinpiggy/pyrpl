@@ -2347,10 +2347,11 @@ const scopeParameterControls: Array<HTMLInputElement | HTMLSelectElement | HTMLB
   scopeCurveName,
 ];
 
+let scopeOwner: string | null = null;
 let stream = new ScopeStream(
   plotHost,
   (message) => {
-    status.textContent = message;
+    status.textContent = scopeOwner ? `Scope stopped: ${scopeOwner === "spectrumanalyzer" ? "Spectrum" : scopeOwner} owns the scope resource` : message;
   },
   (currentAverage) => {
     scopeCurrentAverage.textContent = `${currentAverage} / ${scopeTraceAverage.value || "1"}`;
@@ -2993,14 +2994,9 @@ function syncScopeStream(): void {
   if (!scopeReady) return;
   if (!workspaceState.panels.scope.enabled) {
     if (connectButton.dataset.connected === "true") stopStream("Scope panel disabled");
-  } else if (runningState.startsWith("running_")) {
-    // Subscription is read-only: all clients follow the server's acquisition.
+  } else {
     startStream();
-  } else if (runningState === "stopped" && connectButton.dataset.connected === "true") {
-    stopStream("Scope stopped");
   }
-  // Keep a paused subscription so the final single-shot frame can arrive even
-  // when its state event is delivered first on the separate events socket.
 }
 
 function updateScopeAcquisitionButtons(state: string): void {
@@ -3071,12 +3067,9 @@ function syncSpectrumStream(): void {
   if (!scopeReady) return;
   if (!workspaceState.panels.spectrumanalyzer.enabled) {
     if (spectrumRunButton.dataset.connected === "true") stopSpectrumStream("Spectrum panel disabled");
-  } else if (spectrumRunningState.startsWith("running_")) {
+  } else {
     startSpectrumStream();
-  } else if (spectrumRunningState === "stopped" && !["single", "resume_single"].includes(spectrumLastAction)) {
-    if (spectrumRunButton.dataset.connected === "true") stopSpectrumStream();
   }
-  // Single-shot completion can precede the final data on the other WebSocket.
 }
 
 function startStream(): void {
@@ -3292,9 +3285,11 @@ function applyScopeRuntimeState(state: ScopeState): void {
 }
 
 function setScopeOwner(owner: string | null): void {
+  scopeOwner = owner;
+  if (owner) status.textContent = `Scope stopped: ${owner === "spectrumanalyzer" ? "Spectrum" : owner} owns the scope resource`;
   scopeControlsPane.classList.toggle("is-owned", owner !== null);
   for (const control of scopeParameterControls) {
-    control.disabled = owner !== null && !isLocalControl(control);
+    if (!isLocalControl(control)) control.disabled = owner !== null;
   }
   if (owner === null) {
     updateRollingControls();
@@ -4169,8 +4164,8 @@ function applyControlStatus(control: ControlStatus): void {
   controlRole = control.role;
   updateScopeAcquisitionButtons(runningState);
   updateObserverControls();
-  saveCurveButton.textContent = controlRole === "observer" ? "Download CSV" : "Save Curve";
-  spectrumSaveCurveButton.textContent = controlRole === "observer" ? "Download CSV" : "Save Curve";
+  if (!saveCurveButton.disabled) saveCurveButton.textContent = controlRole === "observer" ? "Download CSV" : "Save Curve";
+  if (!spectrumSaveCurveButton.disabled) spectrumSaveCurveButton.textContent = controlRole === "observer" ? "Download CSV" : "Save Curve";
   networkAnalyzerPanel.setReadOnly(controlRole === "observer");
   controlStrip.classList.remove("is-controller", "is-observer", "is-shared");
   controlStrip.classList.add(`is-${control.role}`);

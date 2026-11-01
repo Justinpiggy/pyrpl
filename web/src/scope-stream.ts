@@ -5,7 +5,6 @@ import { PLOT_COLORS, plotAxis } from "./plot-theme";
 import { evaluateScopeMath } from "./scope-math";
 import { ReconnectScheduler } from "./websocket-reconnect";
 import {
-  averageFrameData,
   clampXRange,
   frameToData,
   parseScopeFrame,
@@ -452,12 +451,9 @@ export class ScopeStream {
       this.setCurrentAverage(0);
       return this.plotData(next);
     }
-    const averaged = averageFrameData(next, this.averagedData, this.currentAverage, this.traceAverage);
-    this.averagedData = averaged.data;
-    this.displayedData = averaged.data;
-    this.currentAverage = averaged.currentAverage;
-    this.setCurrentAverage(this.currentAverage);
-    return this.plotData(averaged.data);
+    // The server publishes the shared average; rendering may skip frames.
+    this.displayedData = next;
+    return this.plotData(next);
   }
 
   private plotData(data: ScopeFrameData): uPlot.AlignedData {

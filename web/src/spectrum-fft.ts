@@ -11,6 +11,7 @@ export interface SpectrumSeries {
 
 export interface SpectrumFrame {
   sequence: number;
+  currentAverage?: number;
   x: Float64Array;
   series: SpectrumSeries[];
   span: number;
@@ -243,4 +244,54 @@ function largestPowerOfTwo(value: number): number {
 
 function normalizedPaddingFactor(value: number): number {
   return 2 ** Math.floor(Math.log2(Math.max(1, value)));
+}
+
+
+export function spectrumFromCorrelationBuffer(buffer: ArrayBuffer, settings: SpectrumSettings): SpectrumFrame {
+  const size = new DataView(buffer).getUint32(4, true);
+  const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 8, size)));
+  const count = Number(meta.samples);
+  const correlations = new Float64Array(buffer, 8 + size);
+  const length = count * 2;
+  const fftCount = count * SPECTRUM_PADDING_FACTOR;
+  const padded = (row: number): Float64Array => {
+    const data = correlations.subarray(row * length, (row + 1) * length);
+    const result = new Float64Array(fftCount);
+    result.set(data.subarray(0, count));
+    result.set(data.subarray(count), fftCount - count);
+    return result;
+  };
+  const state = { ...settings, baseband: meta.baseband, span: meta.span, center: meta.center, window: meta.window, iqBandwidth: meta.iqBandwidth };
+  const window = spectrumWindow(state.window, count);
+  const sum = window.reduce((a, b) => a + b, 0);
+  const rbw = state.span * window.reduce((a, b) => a + b * b, 0) / (sum * sum);
+  const bins = state.baseband ? fftCount / 2 + 1 : fftCount;
+  const x = new Float64Array(bins);
+  const series: SpectrumSeries[] = [];
+  if (state.baseband) {
+    for (let row = 0; row < 3; row += 1) {
+      const transform = complexFft(padded(row), new Float64Array(fftCount));
+      const values = transform.real.slice(0, bins);
+      let imaginary: Float64Array | undefined;
+      if (row === 2) imaginary = complexFft(padded(3), new Float64Array(fftCount)).imag.slice(0, bins);
+      for (let index = 0; index < bins; index += 1) {
+        x[index] = index * state.span / fftCount;
+        const correction = scopePowerCorrection(x[index], state.span);
+        values[index] *= correction;
+        if (row < 2) values[index] = Math.max(0, values[index]);
+        if (imaginary) imaginary[index] *= correction;
+      }
+      series.push({ label: ["Input 1", "Input 2", "Cross"][row], values, ...(imaginary ? { imaginary } : {}) });
+    }
+  } else {
+    const transform = complexFft(padded(0), padded(1));
+    const values = new Float64Array(bins);
+    for (let index = 0; index < bins; index += 1) {
+      const offset = (index - bins / 2) * state.span / bins;
+      x[index] = state.center + offset;
+      values[index] = Math.max(0, transform.real[(index + bins / 2) % bins]) * iqPowerCorrection(offset, state);
+    }
+    series.push({ label: "IQ", values });
+  }
+  return { ...spectrumFrame(meta.sequence, x, series, rbw, state), currentAverage: meta.count };
 }

@@ -1,0 +1,344 @@
+MIGRATION PARITY REVIEW — 2026-11-01 (America/New_York)
+Repository: pyrpl-websocket
+Baseline commit: 6c80a053f48fcc9364dcf9d70f3e71635d6e4700
+Mode: review only. No implementation fixes, test edits, FPGA changes, deployment,
+or commits were made during this review.
+
+BASELINE AND METHOD
+The working tree already contained the ASG DDS-wrap fix and its four regression
+tests from the preceding task, plus the user's .vscode/settings.json edit. They
+are preserved. The wrap fix is treated as fixed locally, not as a new open finding.
+Source references below refer to this working tree and use path:line notation.
+
+Reviewed the migrated ASG, Scope, PID, IQ, IIR, Trigger, PWM, housekeeping,
+Sampler/AMS, Spectrum Analyzer, Network Analyzer, Lockbox, config/state/ownership,
+curve storage, and browser acquisition/display paths against their original
+PyRPL counterparts. Focus: descriptor side effects, setup batching, effective
+register values, persistence, acquisition lifecycle and data ownership.
+
+Evidence labels:
+  OFFLINE PROBE = executed the current Python code using DummyClient, temporary
+  YAML files, mocked register changes or a simulated clock. No real FPGA touched.
+  STATIC CONTROL-FLOW CONFIRMATION = direct source comparison; no runtime test.
+P1 = prioritize before relying on the affected measurement/control workflow.
+P2 = material compatibility/operational defect with a narrower trigger or scope.
+This is not a proof of complete parity. The board was unavailable by user report;
+no hardware connection was attempted during this review. Custom user modules,
+all operating points and electrical timing have not been exhaustively validated.
+
+RESULT
+21 open findings are detailed below. Their triggers and impacts differ; they are
+not 21 independently observed board failures. Several share the same migration
+root cause: bypassing the original descriptors/setup lifecycle or treating a
+cached UI model as the hardware state. The existing parity audit's broad
+'migrated' descriptions should not be read as verification of these paths.
+
+CONFIRMED FINDINGS, WITH SOURCE LOCATIONS AND REPRODUCTION EVIDENCE
+
+C01 [P1] Autosave discards legacy settings outside the migrated attribute list
+  Web location(s): pyrpl_websocket/session.py:1241; pyrpl_websocket/config.py:106.
+  Original location(s): pyrpl/attributes.py:161.
+  Expected: Saving one attribute updates its config key and preserves other keys in the module branch.
+  Actual: The web server replaces the entire YAML module branch with its supported setup-attribute dictionary.
+  Evidence: OFFLINE PROBE: loaded asg0 with bursts=7 and delay_between_bursts=123; changing amplitude removed both keys from the file.
+  Impact: Using the web UI on an existing desktop config can irreversibly discard settings. This compounds unsupported-feature and IIR migration problems.
+
+C02 [P1] Legacy IIR poles and zeros are silently ignored
+  Web location(s): pyrpl_websocket/dsp_registers.py:71; pyrpl_websocket/session.py:1357.
+  Original location(s): pyrpl/hardware_modules/iir/iir.py:264.
+  Expected: Desktop IIR configurations store the master lists poles and zeros; restoring them reconstructs real/complex lists and designs the filter.
+  Actual: The web setup whitelist accepts only real_poles/complex_poles/real_zeros/complex_zeros. Master poles and zeros are skipped.
+  Evidence: OFFLINE PROBE: iir: {zeros: [-2000], poles: [-1000], gain: 0.5} loaded as empty pole/zero lists with gain=0.5.
+  Impact: A configured compensator can become a different filter on migration. A subsequent autosave can also erase the original master lists (C01).
+
+C03 [P1] Lockbox configuration and calibration persistence is incomplete
+  Web location(s): pyrpl_websocket/session.py:277; pyrpl_websocket/session.py:1197; pyrpl_websocket/session.py:2253; pyrpl_websocket/lockbox.py:609.
+  Original location(s): pyrpl/software_modules/lockbox/lockbox.py:101; pyrpl/software_modules/lockbox/input.py:26; pyrpl/modules.py:154.
+  Expected: Lockbox settings, nested inputs/outputs, stage sequences and calibration data participate in the original descriptor/config persistence.
+  Actual: Only classname is explicitly saved/restored for the web Lockbox. Other setters update in-memory models; the ordinary setup restoration/state list excludes lockbox.
+  Evidence: OFFLINE PROBE: changed is_locked_threshold from 1 to 3.5 and appended a second stage. YAML contained only classname; reopening returned threshold=1 and one stage.
+  Impact: Restart/redeployment loses experimental configuration and calibration. Saving a new classname replaces the whole lockbox branch, including pre-existing nested values.
+
+C04 [P1] Filter requests bypass the original nearest-supported-frequency normalization
+  Web location(s): pyrpl_websocket/modules.py:1000; pyrpl_websocket/modules.py:1027; pyrpl_websocket/dsp_registers.py:409; pyrpl_websocket/dsp_registers.py:423.
+  Original location(s): pyrpl/attributes.py:742; pyrpl/attributes.py:788.
+  Expected: FilterProperty first chooses the nearest supported cutoff from FPGA-dependent choices, then FilterRegister encodes it; getters report the implemented value.
+  Actual: Web settings retain arbitrary input floats and encode them directly through the logarithmic shift conversion. There is no preceding nearest-option normalization or effective-value update.
+  Evidence: OFFLINE PROBE with stages=4, shiftbits=6, minbw=1: requested 1 MHz -> web register 0x97, equivalent cutoff 1,386,669 Hz; original nearest-option path -> 0x96, 656,885 Hz. Requesting 1000 Hz reports 1000 while the register implements 1214.293 Hz.
+  Impact: The same PID/IQ/IIR filter request can implement a different transfer function. Cached cutoffs can also make plots and analyzer corrections disagree with hardware. The copied raw register formula itself matches the original.
+
+C05 [P1] Lockbox reset_offset updates the model but does not clear the PID integrator
+  Web location(s): pyrpl_websocket/session.py:1595; pyrpl_websocket/session.py:1638; pyrpl_websocket/dsp_registers.py:32.
+  Original location(s): pyrpl/software_modules/lockbox/output.py:179.
+  Expected: Unlock with reset_offset=True writes zero directly to pid.ival; sweep initialization also clears it.
+  Actual: These web paths assign pid.ival=0 in the settings object and call sync_pid_settings, whose setup list correctly excludes ival. No integrator-register write follows.
+  Evidence: OFFLINE PROBE: PID register held 6144 (0.75 V); Lockbox Unlock left register=6144 while cached ival became 0.
+  Impact: Unlock/sweep can leave a DC offset in the real output while reporting that it was cleared. The explicit stage-offset helper does write ival; that working path does not repair the unlock/sweep paths.
+
+C06 [P1] Lockbox additional_filter is plotted but not applied to the PID
+  Web location(s): pyrpl_websocket/session.py:299; pyrpl_websocket/session.py:1638; pyrpl_websocket/lockbox.py:892.
+  Original location(s): pyrpl/software_modules/lockbox/output.py:21.
+  Expected: additional_filter is a live proxy for the output PID inputfilter register.
+  Actual: The web model stores it and includes it in the transfer-function plot, but hardware configuration never copies it to pid.inputfilter.
+  Evidence: OFFLINE PROBE: set additional_filter=[1000]; model changed, PID settings remained [0,0,0,0], filter register remained zero.
+  Impact: The displayed controller design can include a filter that is absent from the physical feedback loop.
+
+C07 [P1] Lockbox extra_module=iir does not insert the IIR in the feedback path
+  Web location(s): pyrpl_websocket/session.py:1606; pyrpl_websocket/lockbox.py:898.
+  Original location(s): pyrpl/software_modules/lockbox/output.py:257.
+  Expected: The original routes the error signal into the selected extra module, routes its output into the PID, disables its direct output, and includes IIR gain in loop-gain calculation.
+  Actual: The web lock path assigns the input signal directly to the PID regardless of extra_module, while the plot can multiply by the IIR response.
+  Evidence: OFFLINE PROBE: selected extra_module=iir and applied lock; PID input remained in1 and no IIR input-routing register was written.
+  Impact: An apparently configured IIR compensator can have no effect on the actual loop. This finding concerns the implemented original iir path, not the original unfinished pid/iq choices.
+
+C08 [P1] Lockbox hardware loop gains omit output-unit conversion
+  Web location(s): pyrpl_websocket/session.py:1617.
+  Original location(s): pyrpl/software_modules/lockbox/output.py:236; pyrpl/software_modules/lockbox/lockbox.py:175.
+  Expected: Convert the output unit into the selected setpoint unit before calculating p/i gains.
+  Actual: The web calculation multiplies dc_gain by expected_slope but omits the conversion factor.
+  Evidence: OFFLINE PROBE: output unit mV/V, setpoint unit V, dc_gain=1, slope=1 and requested p=1 produced PID p=1. The original formula includes 0.001 and requires p=1000.
+  Impact: Nonmatching physical units can give gains wrong by orders of magnitude. Equal-unit configurations conceal the discrepancy.
+
+C09 [P1] Scope rearming timeout prevents long post-trigger acquisitions from completing
+  Web location(s): pyrpl_websocket/scope_registers.py:147; pyrpl_websocket/session.py:2121.
+  Original location(s): pyrpl/acquisition_module.py:251.
+  Expected: After arming, wait for the existing capture to finish; the original readiness coroutine polls without a fixed duration-plus-250-ms acquisition cutoff.
+  Actual: Web readiness times out after max(0.25, duration+0.25), and the next acquisition attempt resets/rearms the FPGA instead of continuing to wait.
+  Evidence: OFFLINE SIMULATED-CLOCK PROBE: duration=1.048576 ms, trigger_delay=1 s, simulated hardware needing 1 s after arming. Four attempts all failed; resets occurred every ~251 ms.
+  Impact: A supported long trigger delay can yield no trace indefinitely. Rare external triggers can also be missed around repeated rearming windows. This probe modeled readiness, not an electrical trigger.
+
+C10 [P1] Spectrum acquisition inherits Scope rolling mode
+  Web location(s): pyrpl_websocket/session.py:2040; pyrpl_websocket/session.py:2137.
+  Original location(s): pyrpl/software_modules/spectrum_analyzer.py:735.
+  Expected: Spectrum explicitly configures rolling_mode=False before each triggered Scope record.
+  Actual: The web Spectrum setup never clears scope_settings.rolling_mode, yet uses the common Scope acquisition path with running_continuous.
+  Evidence: OFFLINE PROBE: enabled Scope rolling, selected Spectrum span near 100 kHz; resulting duration=0.134217728 s, rolling_mode=True, rolling acquisition branch=True.
+  Impact: At narrow spans, FFT input comes from a newly armed live rolling buffer rather than a completed triggered record; partial/NaN/stale samples can corrupt the spectrum.
+
+C11 [P2] Network Analyzer auto-bandwidth overwrites its own upper limit
+  Web location(s): pyrpl_websocket/network_analyzer.py:98; pyrpl_websocket/network_analyzer.py:74.
+  Original location(s): pyrpl/software_modules/network_analyzer.py:430; pyrpl/software_modules/network_analyzer.py:439.
+  Expected: Keep the configured rbw limit separate from _current_bandwidth so bandwidth can grow with sweep frequency.
+  Actual: configure_iq replaces settings.rbw with the initial low-frequency bandwidth. Future select_rbw calls use that reduced value as the maximum.
+  Evidence: OFFLINE PROBE: rbw=10000 Hz, auto_bandwidth=True, q_factor_min=10, default 1 kHz-to-1 MHz sweep. Initial and final selected bandwidths both stayed 75.891 Hz; settings.rbw also became 75.891.
+  Impact: High-frequency points remain unnecessarily narrow/slow, and the displayed/configured RBW limit changes during startup.
+
+C12 [P1] Network Analyzer run-state callbacks are lost on editing and restoration
+  Web location(s): pyrpl_websocket/session.py:565; pyrpl_websocket/session.py:1315.
+  Original location(s): pyrpl/software_modules/network_analyzer.py:634; pyrpl/acquisition_module.py:411.
+  Expected: A call_setup attribute restarts a continuous sweep; restoring run_continuous=True actually starts acquisition.
+  Actual: Normal web edits stop a running analyzer without restarting it. The config/state restoration helper changes settings without invoking the analyzer action. Setting run_continuous=True while stopped only changes the flag.
+  Evidence: OFFLINE PROBE: started continuous, changed amplitude -> stopped/run_continuous=False. Then set run_continuous=True -> still stopped with no owned IQ.
+  Impact: Continuous acquisition silently stops on normal edits, and saved running states do not restore operation. Config/state edits during a run can also leave prepared arrays/hardware inconsistent with new settings.
+
+C13 [P1] Trigger configuration/state restoration omits the final arm operation
+  Web location(s): pyrpl_websocket/session.py:1357; pyrpl_websocket/session.py:732; pyrpl_websocket/dsp_registers.py:208.
+  Original location(s): pyrpl/hardware_modules/trig.py:75; pyrpl/modules.py:519.
+  Expected: Original config/state setup finishes with Trig._setup(), which arms the trigger.
+  Actual: Web restoration applies each attribute separately and never calls sync_trig_settings/arm_trig at the end.
+  Evidence: OFFLINE PROBE: config with pos_edge and auto_rearm=True produced no write to 0x40330100. Explicit Setup subsequently wrote armed=1.
+  Impact: After restart/state load the trigger can look configured but never trigger until Setup is pressed. Individual field edits are not the discrepancy here: original individual Trigger descriptors also do not all rearm.
+
+C14 [P2] IQ configuration/state restoration omits phase synchronization
+  Web location(s): pyrpl_websocket/session.py:1357; pyrpl_websocket/dsp_registers.py:168; pyrpl_websocket/dsp_registers.py:174.
+  Original location(s): pyrpl/hardware_modules/iq.py:445.
+  Expected: Original IQ setup calls synchronize_iqs after the settings have been applied.
+  Actual: Web explicit Setup synchronizes correctly, but restoring config/state calls only the individual register setters.
+  Evidence: OFFLINE PROBE: restoring iq0.frequency produced zero writes to the shared synchronization register; explicit IQ Setup produced its two-write sequence.
+  Impact: Phase relationships after restoration can differ from original PyRPL. Electrical phase error was not measured because the board was unavailable.
+
+C15 [P2] ASG Off followed by Trigger remains muted despite the wrap fix
+  Web location(s): pyrpl_websocket/asg_registers.py:115; pyrpl_websocket/asg_registers.py:107; pyrpl_websocket/asg_registers.py:131.
+  Original location(s): pyrpl/hardware_modules/asg.py:226; pyrpl/hardware_modules/asg.py:374.
+  Expected: Original trigger_source changes run the full setup callback, including sm_reset=False and on=True.
+  Actual: The web Trigger path now repairs wrapping but does not clear set_zero. Off sets that mute bit; subsequent Trigger leaves it set.
+  Evidence: OFFLINE PROBE: Setup -> Off -> Trigger left the ASG control word at 0x90 (wrap enabled, output muted).
+  Impact: The generator can remain silent after a valid trigger. Explicit Setup still recovers it. This is a separate residual lifecycle issue from the already-fixed cycle-boundary distortion.
+
+C16 [P2] Selecting a periodic ASG waveform does not clear inherited random-phase mode
+  Web location(s): pyrpl_websocket/asg_registers.py:38; pyrpl_websocket/asg_registers.py:78.
+  Original location(s): pyrpl/hardware_modules/asg.py:67.
+  Expected: Selecting sin/cos/etc. clears random_phase when leaving noise mode.
+  Actual: Neither web waveform upload nor full setup clears the random-enable control bit.
+  Evidence: OFFLINE PROBE: seeded ASG0 random bit 12 as left by another FPGA client, selected sin; bit 12 remained set.
+  Impact: When sharing an already-loaded FPGA with legacy/direct clients, a sine table can be read at random addresses. A fresh FPGA reset hides this problem.
+
+C17 [P2] Hardware status is often the last requested value, not live register state
+  Web location(s): pyrpl_websocket/session.py:412; pyrpl_websocket/modules.py:395.
+  Original location(s): pyrpl/hardware_modules/pid.py:157; pyrpl/hardware_modules/trig.py:40.
+  Expected: PID ival and Trigger armed are register-backed properties; ordinary hardware-backed settings read actual values, including quantization.
+  Actual: Most web module_state paths serialize cached dataclasses. PID integrator evolution and hardware trigger disarming do not update those objects automatically. Lockbox saturation checks refresh ival in a separate path, but generic PID readback does not.
+  Evidence: OFFLINE PROBE: set PID ival=0.5, simulated integrator changing to 0.75 by changing its backing register; module_state still returned 0.5. Filter effective-value mismatch is also reproduced in C04.
+  Impact: Controllers and observers can agree with each other while both show stale hardware information.
+
+C18 [P2] Unsupported IIR hardware is masked by fallback capability constants
+  Web location(s): pyrpl_websocket/dsp_registers.py:509; pyrpl_websocket/dsp_registers.py:269.
+  Original location(s): pyrpl/hardware_modules/iir/iir.py:562.
+  Expected: An FPGA reporting zero IIR stages is rejected explicitly.
+  Actual: _read_constant substitutes 14 stages for zero or a read failure, so the subsequent stages<=0 rejection cannot catch a reported zero.
+  Evidence: OFFLINE PROBE: set capability register 0x40340208 to zero; IIR Setup still wrote coefficient memory and reported on=True.
+  Impact: An incompatible bitstream or broken capability read can be presented as successful IIR configuration. Valid current hardware may not exercise this path.
+
+C19 [P2] Acquisition progress depends on having a WebSocket subscriber
+  Web location(s): pyrpl_websocket/streams.py:59; pyrpl_websocket/streams.py:71; pyrpl_websocket/app.py:1297.
+  Original location(s): pyrpl/acquisition_module.py:239; pyrpl/acquisition_module.py:332.
+  Expected: Starting an acquisition creates a persistent acquisition task independent of whether its widget is visible.
+  Actual: Web producer loops exist only while subscribed. Disconnecting all browsers stops software acquisition progress but does not necessarily stop the hardware or update running_state.
+  Evidence: STATIC CONTROL-FLOW CONFIRMATION: subscribe starts StreamFanout; active() depends on subscriber count; analyzer point stepping occurs only inside that producer. No new browser/hardware test was run for this case.
+  Impact: A hidden/disconnected acquisition may remain marked running; an NA output can stay at its last frequency/amplitude until a client returns. Server-side autonomous acquisition semantics differ from desktop PyRPL.
+
+C20 [P2] Different Scope/Spectrum sample-count subscriptions create competing producers
+  Web location(s): pyrpl_websocket/app.py:1238; pyrpl_websocket/app.py:1282.
+  Original location(s): pyrpl/acquisition_module.py:288.
+  Expected: One instrument run should perform one acquisition sequence, with client-specific display sampling applied to that shared result.
+  Actual: Fanout is keyed by requested sample count, so clients requesting different lengths cause separate acquisition loops to operate the same instrument and averaging counters.
+  Evidence: STATIC CONTROL-FLOW CONFIRMATION: each new samples value constructs its own produce_scope/produce_spectrum fanout. Locks serialize register access but do not turn these into a single acquisition.
+  Impact: API clients using different sample counts can alter acquisition cadence and consume single-run averages. Ordinary identical browser subscriptions are correctly shared.
+
+C21 [P2] Late-joining/reloaded clients cannot reconstruct the same acquired result
+  Web location(s): web/src/scope-stream.ts:455; web/src/spectrum-plot.ts:435; web/src/network-analyzer-panel.ts:238; pyrpl_websocket/streams.py:29.
+  Original location(s): pyrpl/acquisition_module.py:461; pyrpl/acquisition_module.py:260.
+  Expected: The instrument owns acquired/averaged results, so viewing an existing run does not lose already-collected data.
+  Actual: Scope/Spectrum averages are browser-local and fanout does not replay earlier frames. NA stores server data but its WebSocket delivers only subsequent points, not a snapshot of earlier points.
+  Evidence: STATIC CONTROL-FLOW CONFIRMATION: newly subscribed queues are empty; frontend average arrays start empty; NA initializes missing points to NaN. The earlier observer tests cover future streaming, not exact history/average equality.
+  Impact: An observer joining halfway through a single average can display fewer averaged traces than the controller. Reloading after completion can lose the displayed curve; a partial NA sweep can have missing earlier points. Local plot styling is intentional, but this affects measurement data.
+
+ADDITIONAL CONFIRMED COMPATIBILITY GAPS
+
+G01 [P2] ASG noise is missing from the migrated waveform choices.
+  Web: pyrpl_websocket/modules.py:119.
+  Original: pyrpl/hardware_modules/asg.py:332 and WaveformAttribute/AsgAmplitudeAttribute.
+  The original GUI supports Gaussian noise with random phase and RMS amplitude;
+  the web validator rejects noise. Separate from C16's stale random-enable bit.
+
+G02 [P2] Network Analyzer Pause/Resume is missing.
+  Web: pyrpl_websocket/session.py:1939.
+  Original: pyrpl/software_modules/network_analyzer.py:524 and AcquisitionModule.pause/resume.
+  Web supports Single/Continuous/Stop only. Original can pause/resume at the
+  current point and preserve averaging; stopping/restarting is not equivalent.
+
+G03 [P2, non-default clock calibration] frequency_correction is not migrated.
+  Web: pyrpl_websocket/settings.py:9; pyrpl_websocket/dsp_registers.py:537; pyrpl_websocket/asg_registers.py:16.
+  Original: pyrpl/attributes.py:668; pyrpl/modules.py:777.
+  The web assumes exactly 125 MHz; original frequency conversions use the board's
+  correction factor. Boards/configs using a nonunity factor lose calibrated
+  frequency behavior. No calibrated board was available to quantify the error.
+
+G04 [P2] Generic DSP inputs do not accept original logical signal names.
+  Web: pyrpl_websocket/modules.py:1000; pyrpl_websocket/modules.py:1027; pyrpl_websocket/session.py:1704.
+  Original: pyrpl/hardware_modules/dsp.py:69; InputSelectProperty.
+  Generic web fields accept a fixed DSP list. The original resolves logical
+  signals such as Lockbox signal paths. A limited Lockbox-specific resolver
+  exists in the web backend but is not used by every generic module setter.
+  Original configurations using those names can be rejected/skipped on restore.
+
+RELATED AUDIT OBSERVATION — NOT CLASSIFIED AS A PROVEN ORIGINAL-PYRPL REGRESSION
+
+O01 Saved-state loading and configuration editing can bypass web resource guards.
+  Web: pyrpl_websocket/session.py:732; pyrpl_websocket/session.py:773; pyrpl_websocket/session.py:1320.
+  Probe: reserved iq2 for a running Network Analyzer, then loaded an iq2 saved
+  state; it succeeded, kept owner=networkanalyzer and changed IQ frequency to
+  1234 Hz. Ordinary attribute edits reject this operation. The web ownership
+  contract is inconsistent, but the original programmatic load_state also has
+  permissive paths, so this is not counted as a demonstrated migration-only bug.
+
+INTENTIONAL DIFFERENCES / ALREADY-KNOWN BOUNDARIES — NOT NEW BUG FINDINGS
+
+D01 Observer-local plot visibility, units, FFT windows, math and layout were
+  explicitly requested. Their independence is not a parity defect. C21 concerns
+  lost measurement history/averages, not independent view preferences.
+D02 The single-writer lease, observer read-only hardware controls and observer
+  local CSV downloads are web requirements, not regressions.
+D03 Scope single acquisition intentionally ends paused_single for manual rearm;
+  the original ends stopped. This is documented in WEB_PARITY_AUDIT.md.
+D04 Arbitrary Python/NumPy eval in plot expressions, nested Pyrpl construction,
+  Qt widgets/signals and desktop plot windows are documented compatibility
+  boundaries. They were not treated as unannounced migration bugs here.
+D05 The prior DDS-wrap fix passes its offline regression tests and remains in
+  the working tree. C15/C16 are residual ASG lifecycle issues, not evidence that
+  the remainder-preserving wrap repair failed.
+
+CHECKS THAT DID NOT PRODUCE A NEW MIGRATION FINDING
+
+V01 ASG sine-table endpoint exclusion, 14-bit encoding, phase-step formula and
+  remainder-preserving RTL wrap were traced. The earlier actual-channel RTL
+  simulation passed with wrapping enabled. No FPGA redesign is indicated by
+  that evidence; initialization omissions are distinct.
+V02 PID base/offset maps and p/i scaling match the original. Excluding ival from
+  normal PID setup/save is correct; explicit offset operations still must write
+  it, which is where C05 occurs.
+V03 IQ gain duplication, inverted phase, modulation/demodulation flags and the
+  explicit synchronization helper match the original register intent. Calling
+  global IQ synchronization from Spectrum's per-trace setup also exists in
+  original PyRPL; it was not falsely counted as a migration-only defect.
+V04 Scope 14-bit decode, trigger-alignment roll and duration option rounding
+  match the inspected original algorithms. C09 is a lifecycle timeout change,
+  not an identified decoding error.
+V05 IIR reuses the original design mathematics and inspected coefficient packing
+  follows its sign/word ordering. The original always reenables the filter at
+  the end of _setup; that behavior alone is not a new regression. C02/C18 concern
+  configuration loading and capability validation.
+V06 Housekeeping direction/value address mapping, PWM input routing and
+  Sampler/AMS conversion paths were compared. No new concrete discrepancy was
+  established in this review; this is not exhaustive hardware certification.
+V07 Browser Spectrum window normalization, 16x padding, cross-spectrum sign and
+  decimation=1 correction branch follow the inspected original formulas. Full
+  end-to-end amplitude/phase equivalence remains hardware work, especially with
+  actual quantized IQ filters (C04).
+V08 Curve storage preserves real/complex NumPy arrays and the inspected PyRPL
+  record shape. No new storage-format mismatch was established. Saved-curve
+  metadata and every external CurveDB backend were not exhaustively tested.
+V09 The IIR overflow text's broad bitmask condition masks its narrower messages
+  in both original and web code. This is inherited and was not classified as a
+  migration regression.
+
+VALIDATION AND LIMITS
+- Executed offline scenarios for C01-C18; C12's running-state behavior and its
+  shared restore path were checked by a combination of probes and source trace.
+- C19-C21 are confirmed architectural/control-flow differences; the exact
+  client-visible symptoms were not retested in browsers during this review.
+- The current 88-test backend suite passed in the preceding ASG-fix task. That
+  result does not certify parity: the probes here exercise missing scenarios.
+- The offline clients cannot prove analog stability, clipping, electrical
+  phase synchronization, FPGA timing closure or whether the unavailable board
+  currently exhibits any particular finding.
+- A local routed timing report already reports failures, but it was not tied to
+  the board's loaded bitstream; it is not evidence that these migration changes
+  caused the user's hardware symptom.
+- Review scope includes the built-in control paths and selected trusted-runtime
+  adapters. Arbitrary third-party Lockbox implementations require separate
+  compatibility tests; no universal compatibility claim is made.
+
+SUGGESTED ORDER FOR A LATER FIX PASS (NO FIXES APPLIED HERE)
+1. Prevent configuration loss and restore original IIR/Lockbox configuration.
+2. Repair Lockbox register effects, routing, unit conversion and reset behavior.
+3. Restore setup callbacks and acquisition lifecycle semantics; complete ASG
+   start/noise-exit handling.
+4. Normalize to actual supported register values and read dynamic hardware state.
+5. Make acquisition results independent of viewer presence, replay shared
+   results, and fan out one acquisition to every sample-count request.
+6. Validate the repaired paths against original PyRPL on the same board,
+   including 1/2 MHz ASG, non-default filter cutoffs, delayed Scope triggers,
+   auto-bandwidth sweeps, reload/late-observer behavior and Lockbox restart.
+
+OFFLINE PROBE TRANSCRIPT (SELECTED CURRENT-CODE OUTPUT)
+{"case": "restore_callbacks", "trig_armed_word": null, "iq_sync_writes": []}
+{"case": "explicit_setup", "trig_armed_word": 1, "iq_sync_writes": [[1077215244, [0]], [1077215244, [0]]]}
+{"case": "lockbox_before_restart", "threshold": 3.5, "stages": 2, "saved": {"classname": "Linear"}}
+{"case": "lockbox_after_restart", "threshold": 1.0, "stages": 1}
+{"case": "pid_readback", "hardware_ival": 0.75, "reported": 0.5}
+{"case": "unlock_integrator", "hardware_word": 6144, "cached_ival": 0.0}
+{"case": "lockbox_additional_filter", "model": [1000], "pid_setting": [0.0, 0.0, 0.0, 0.0], "register": 0}
+{"case": "lockbox_extra_module_and_units", "extra_module": "iir", "pid_input": "in1", "pid_gain": 1.0, "unit": "mV/V", "slope": 1.0, "dc_gain": 1.0, "iir_routing": null}
+{"case": "na_auto_bandwidth", "requested_limit": 10000, "stored_limit": 75.89113552886508, "start_bandwidth": 75.89113552886508, "last_bandwidth": 75.89113552886508}
+{"case": "na_edit_continuous", "state": "stopped", "run_continuous": false}
+{"case": "na_run_flag", "state": "stopped", "run_continuous": true, "owner": []}
+{"case": "spectrum_inherits_rolling", "duration": 0.134217728, "rolling": true, "rolling_path": true}
+{"case": "filter_state", "requested": 1000, "reported": [1000.0], "actual": [1214.2929101024397, 0.0, 0.0, 0.0]}
+{"case": "filter_register_mismatch", "requested": 1000000, "legacy_selected": 656885.0955548416, "web_word": "0x97", "legacy_word": "0x96"}
+{"case": "iir_zero_stages", "reported_stages": 0, "coefficients_written": true, "on": true}
+{"case": "owned_state_load", "owner": "networkanalyzer", "frequency": 1234.0}
+{"case": "asg_off_then_trigger", "muted": true, "control": "0x90"}
+{"case": "asg_sine_after_random_mode", "random_enabled": true}
+{"case": "legacy_iir_config", "zeros": [], "poles": [], "gain": 0.5}
+{"case": "long_trigger_delay", "ready": [false, false, false, false], "elapsed": 1.0051943040000002, "rearms": [-100.0, 0.0, 0.2510485760000002, 0.5020971520000004, 0.7531457280000006]}

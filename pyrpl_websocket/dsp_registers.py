@@ -9,7 +9,7 @@ from functools import lru_cache
 
 from .modules import IirSettings, IqSettings, PidSettings, PwmSettings, TrigSettings
 from .monitor_client import DummyClient, MonitorClient
-from .scope_registers import DSP_ADDR_BASE, DSP_INPUT_VALUES
+from .scope_registers import DSP_ADDR_BASE, DSP_INPUT_VALUES, dsp_input_value
 
 
 DSP_OUTPUT_DIRECT_VALUES = {"off": 0, "out1": 1, "out2": 2, "both": 3}
@@ -101,7 +101,7 @@ IIR_COEFFICIENT_ATTRIBUTES = {
 def sync_pid_setting(client: MonitorClient | DummyClient, module_name: str, settings: PidSettings, attribute: str) -> None:
     base = dsp_addr_base(module_name)
     if attribute == "input":
-        _write_word(client, base + 0x0, DSP_INPUT_VALUES[settings.input])
+        _write_word(client, base + 0x0, dsp_input_value(client, settings.input))
     elif attribute == "output_direct":
         _write_word(client, base + 0x4, DSP_OUTPUT_DIRECT_VALUES[settings.output_direct])
     elif attribute == "setpoint":
@@ -111,7 +111,7 @@ def sync_pid_setting(client: MonitorClient | DummyClient, module_name: str, sett
     elif attribute == "i":
         _write_word(client, base + 0x10C, float_to_register(settings.i, bits=24, norm=2**32 * 2.0 * 3.141592653589793 * 8e-9))
     elif attribute == "inputfilter":
-        sync_filter_register(client, base, 0x120, 0x220, 0x224, 0x228, settings.inputfilter)
+        settings.inputfilter = sync_filter_register(client, base, 0x120, 0x220, 0x224, 0x228, settings.inputfilter)
     elif attribute == "ival":
         _write_word(client, base + 0x100, float_to_register(settings.ival, bits=16, norm=2**13))
     elif attribute == "min_voltage":
@@ -126,6 +126,13 @@ def sync_pid_setting(client: MonitorClient | DummyClient, module_name: str, sett
         _write_bool_bit(client, base + 0xC, DSP_INPUT_VALUES[module_name], settings.paused, invert=True)
 
 
+    scales = {"setpoint": (14, 2**13), "p": (24, 2**12), "i": (24, 2**32 * 2.0 * math.pi * 8e-9),
+              "ival": (16, 2**13), "min_voltage": (14, 2**13), "max_voltage": (14, 2**13)}
+    if attribute in scales:
+        bits, norm = scales[attribute]
+        setattr(settings, attribute, quantized_float(getattr(settings, attribute), bits, norm))
+
+
 def sync_pid_settings(client: MonitorClient | DummyClient, module_name: str, settings: PidSettings) -> None:
     for attribute in PID_SETUP_ATTRIBUTES:
         sync_pid_setting(client, module_name, settings, attribute)
@@ -134,17 +141,19 @@ def sync_pid_settings(client: MonitorClient | DummyClient, module_name: str, set
 def sync_iq_setting(client: MonitorClient | DummyClient, module_name: str, settings: IqSettings, attribute: str) -> None:
     base = dsp_addr_base(module_name)
     if attribute == "input":
-        _write_word(client, base + 0x0, DSP_INPUT_VALUES[settings.input])
+        _write_word(client, base + 0x0, dsp_input_value(client, settings.input))
     elif attribute == "output_direct":
         _write_word(client, base + 0x4, DSP_OUTPUT_DIRECT_VALUES[settings.output_direct])
     elif attribute == "output_signal":
         _write_word(client, base + 0x10C, IQ_OUTPUT_SIGNAL_VALUES[settings.output_signal])
     elif attribute == "frequency":
-        _write_word(client, base + 0x108, frequency_to_register(settings.frequency, bits=32))
+        word = frequency_to_register(settings.frequency / client.frequency_correction, bits=32)
+        _write_word(client, base + 0x108, word)
+        settings.frequency = word * 125e6 * client.frequency_correction / 2**32
     elif attribute == "bandwidth":
-        sync_filter_register(client, base, 0x124, 0x230, 0x234, 0x238, settings.bandwidth)
+        settings.bandwidth = sync_filter_register(client, base, 0x124, 0x230, 0x234, 0x238, settings.bandwidth)
     elif attribute == "acbandwidth":
-        sync_filter_register(client, base, 0x120, 0x220, 0x224, 0x228, [-abs(float(settings.acbandwidth))])
+        settings.acbandwidth = abs(sync_filter_register(client, base, 0x120, 0x220, 0x224, 0x228, [-abs(float(settings.acbandwidth))])[0])
     elif attribute == "phase":
         _write_word(client, base + 0x104, phase_to_register(settings.phase, bits=32, invert=True))
     elif attribute == "gain":
@@ -163,6 +172,12 @@ def sync_iq_setting(client: MonitorClient | DummyClient, module_name: str, setti
         _write_bool_bit(client, base + 0x100, 0, settings.on)
     elif attribute == "pfd_on":
         _write_bool_bit(client, base + 0x100, 1, settings.pfd_on)
+
+    if attribute in {"amplitude", "gain", "quadrature_factor"}:
+        norm = {"amplitude": 2**17, "gain": 2**11, "quadrature_factor": 1}[attribute]
+        setattr(settings, attribute, quantized_float(getattr(settings, attribute), 18, norm))
+    elif attribute == "phase":
+        settings.phase = (-phase_to_register(settings.phase, 32, invert=True) * 360.0 / 2**32) % 360.0
 
 
 def sync_iq_settings(client: MonitorClient | DummyClient, module_name: str, settings: IqSettings) -> None:
@@ -184,7 +199,7 @@ def sync_iq_phases(client: MonitorClient | DummyClient, module_name: str = "iq0"
 def sync_trig_setting(client: MonitorClient | DummyClient, settings: TrigSettings, attribute: str) -> None:
     base = dsp_addr_base("trig")
     if attribute == "input":
-        _write_word(client, base + 0x0, DSP_INPUT_VALUES[settings.input])
+        _write_word(client, base + 0x0, dsp_input_value(client, settings.input))
     elif attribute == "output_direct":
         _write_word(client, base + 0x4, DSP_OUTPUT_DIRECT_VALUES[settings.output_direct])
     elif attribute == "output_signal":
@@ -218,7 +233,7 @@ def arm_trig(client: MonitorClient | DummyClient, settings: TrigSettings) -> Non
 
 def sync_pwm_setting(client: MonitorClient | DummyClient, module_name: str, settings: PwmSettings, attribute: str) -> None:
     if attribute == "input":
-        _write_word(client, pwm_addr_base(module_name) + 0x0, DSP_INPUT_VALUES[settings.input])
+        _write_word(client, pwm_addr_base(module_name) + 0x0, dsp_input_value(client, settings.input))
 
 
 def sync_pwm_settings(client: MonitorClient | DummyClient, module_name: str, settings: PwmSettings) -> None:
@@ -229,7 +244,7 @@ def sync_pwm_settings(client: MonitorClient | DummyClient, module_name: str, set
 def sync_iir_setting(client: MonitorClient | DummyClient, settings: IirSettings, attribute: str) -> None:
     base = dsp_addr_base("iir")
     if attribute == "input":
-        _write_word(client, base + 0x0, DSP_INPUT_VALUES[settings.input])
+        _write_word(client, base + 0x0, dsp_input_value(client, settings.input))
     elif attribute == "output_direct":
         _write_word(client, base + 0x4, DSP_OUTPUT_DIRECT_VALUES[settings.output_direct])
     elif attribute in IIR_COEFFICIENT_ATTRIBUTES:
@@ -239,7 +254,7 @@ def sync_iir_setting(client: MonitorClient | DummyClient, settings: IirSettings,
     elif attribute == "bypass":
         _write_bool_bit(client, base + 0x104, 1, settings.bypass)
     elif attribute == "inputfilter":
-        sync_filter_register(client, base, 0x120, 0x220, 0x224, 0x228, settings.inputfilter)
+        settings.inputfilter = sync_filter_register(client, base, 0x120, 0x220, 0x224, 0x228, settings.inputfilter)
 
 
 def sync_iir_settings(client: MonitorClient | DummyClient, settings: IirSettings) -> None:
@@ -270,9 +285,9 @@ def sync_iir_design(client: MonitorClient | DummyClient, settings: IirSettings) 
     """Run PyRPL's IIR design step and write loops plus coefficient RAM."""
 
     base = dsp_addr_base("iir")
-    bitlength = _read_constant(client, base + 0x200, 32)
-    shift = _read_constant(client, base + 0x204, 29)
-    stages = _read_constant(client, base + 0x208, 14)
+    bitlength = _read_constant(client, base + 0x200)
+    shift = _read_constant(client, base + 0x204)
+    stages = _read_constant(client, base + 0x208)
     if stages <= 0:
         raise RuntimeError("This FPGA bitfile does not report IIR coefficient stages.")
 
@@ -282,6 +297,7 @@ def sync_iir_design(client: MonitorClient | DummyClient, settings: IirSettings) 
         totalbits=bitlength,
         shiftbits=shift,
         iirstages=stages,
+        frequency_correction=client.frequency_correction,
     )
     settings.loops = int(iir_filter.loops)
     _write_word(client, base + 0x100, settings.loops)
@@ -295,6 +311,7 @@ def make_iir_filter(
     totalbits: int = 32,
     shiftbits: int = 29,
     iirstages: int = 14,
+    frequency_correction: float = 1.0,
 ):
     """Build the same PyRPL IirFilter used for coefficient writes and plots."""
 
@@ -304,7 +321,7 @@ def make_iir_filter(
         poles=_iir_values(settings.real_poles, settings.complex_poles),
         gain=settings.gain,
         loops=max(3, min(1023, int(settings.loops))),
-        dt=8e-9,
+        dt=8e-9 * frequency_correction,
         minloops=3,
         maxloops=1023,
         iirstages=iirstages,
@@ -324,9 +341,10 @@ def make_hardware_iir_filter(client: MonitorClient | DummyClient, settings: IirS
     base = dsp_addr_base("iir")
     return make_iir_filter(
         settings,
-        totalbits=_read_constant(client, base + 0x200, 32),
-        shiftbits=_read_constant(client, base + 0x204, 29),
-        iirstages=_read_constant(client, base + 0x208, 14),
+        totalbits=_read_constant(client, base + 0x200),
+        shiftbits=_read_constant(client, base + 0x204),
+        iirstages=_read_constant(client, base + 0x208),
+        frequency_correction=client.frequency_correction,
     )
 
 
@@ -414,10 +432,15 @@ def sync_filter_register(
     shiftbits_offset: int,
     minbw_offset: int,
     value,
-) -> None:
+) -> list[float]:
     stages, shiftbits, minbw = _filter_config(client, base, stages_offset, shiftbits_offset, minbw_offset)
-    word = filter_register_from_python(value, stages=stages, shiftbits=shiftbits, minbw=minbw)
+    options = filter_bandwidth_options(client, base, stages_offset, shiftbits_offset, minbw_offset)
+    choices = [-v for v in reversed(options)] + [0.0] + options
+    values = list(value) if isinstance(value, (list, tuple)) else [value]
+    normalized = [min(choices, key=lambda option: abs(option - float(v))) for v in values[:stages]]
+    word = filter_register_from_python(normalized, stages=stages, shiftbits=shiftbits, minbw=minbw)
     _write_word(client, base + value_offset, word)
+    return filter_register_to_python(word, stages=stages, shiftbits=shiftbits, minbw=minbw)
 
 
 def filter_register_from_python(value, stages: int = 4, shiftbits: int = 6, minbw: int = 1) -> int:
@@ -473,6 +496,8 @@ def filter_bandwidth_options(
     """Return the positive FilterProperty choices from loaded FPGA constants."""
 
     stages, shiftbits, minbw = _filter_config(client, base, stages_offset, shiftbits_offset, minbw_offset)
+    if stages == 0:
+        return []
     maxshift = _filter_maxshift(minbw)
     values = []
     for shift in range(max(0, maxshift - 2)):
@@ -489,9 +514,9 @@ def _filter_config(
     shiftbits_offset: int,
     minbw_offset: int,
 ) -> tuple[int, int, int]:
-    stages = _read_constant(client, base + stages_offset, 4)
-    shiftbits = _read_constant(client, base + shiftbits_offset, 6)
-    minbw = _read_constant(client, base + minbw_offset, 1)
+    stages = _read_constant(client, base + stages_offset)
+    shiftbits = _read_constant(client, base + shiftbits_offset)
+    minbw = _read_constant(client, base + minbw_offset)
     return stages, shiftbits, minbw
 
 
@@ -506,12 +531,8 @@ def _filter_maxshift(minbw: int) -> int:
     return int(math.floor(math.log2(value))) + 1
 
 
-def _read_constant(client: MonitorClient | DummyClient, addr: int, fallback: int) -> int:
-    try:
-        value = int(client.reads(addr, 1)[0])
-    except Exception:
-        return fallback
-    return value if value > 0 else fallback
+def _read_constant(client: MonitorClient | DummyClient, addr: int) -> int:
+    return int(client.reads(addr, 1)[0])
 
 
 def float_to_register(value: float, bits: int = 14, norm: float = 2**13, signed: bool = True) -> int:
@@ -562,3 +583,8 @@ def _write_bool_bit(
 
 def _write_word(client: MonitorClient | DummyClient, addr: int, value: int) -> None:
     client.writes(addr, [int(value) & 0xFFFFFFFF])
+
+
+def quantized_float(value: float, bits: int, norm: float) -> float:
+    word = float_to_register(value, bits=bits, norm=norm)
+    return (word - 2**bits if word & (1 << (bits - 1)) else word) / norm

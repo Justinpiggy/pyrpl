@@ -66,9 +66,9 @@ def sync_scope_setting(client: MonitorClient | DummyClient, settings: ScopeSetti
     """Write a changed scope setting to the same FPGA register PyRPL uses."""
 
     if attribute == "input1":
-        _write_word(client, _dsp_addr_base("asg0"), DSP_INPUT_VALUES[settings.input1])
+        _write_word(client, _dsp_addr_base("asg0"), dsp_input_value(client, settings.input1))
     elif attribute == "input2":
-        _write_word(client, _dsp_addr_base("asg1"), DSP_INPUT_VALUES[settings.input2])
+        _write_word(client, _dsp_addr_base("asg1"), dsp_input_value(client, settings.input2))
     elif attribute == "trigger_source":
         _write_word(client, SCOPE_TRIGGER_SOURCE_ADDR, SCOPE_TRIGGER_VALUES[settings.trigger_source])
     elif attribute == "duration":
@@ -199,3 +199,9 @@ def _float_to_signed_register(value: float, bits: int = 14, norm: float = 2**13)
     if raw < 0:
         raw += 2**bits
     return raw
+
+
+def dsp_input_value(client, name: str) -> int:
+    if name not in DSP_INPUT_VALUES:
+        name = client.resolve_input(name)
+    return DSP_INPUT_VALUES[name]

@@ -11,6 +11,7 @@ class ServerSettings:
 
     hostname: str = "_FAKE_"
     port: int = 2222
+    frequency_correction: float | None = None
     bind_host: str = "127.0.0.1"
     bind_port: int = 8000
     scope_interval: float = 0.05

@@ -1,0 +1,163 @@
+PyRPL WebSocket migration parity fixes — engineering handoff
+Date: 2026-11-01
+Baseline review: MIGRATION_PARITY_REVIEW_2026-11-01.txt
+
+Scope
+These changes address the review findings in the Qt-free web implementation.
+The original pyrpl hardware modules and FPGA RTL are reference material and
+are unchanged. No bitstream rebuild is required. No deployment or electrical
+verification was performed: the Red Pitaya is unavailable.
+
+Review disposition (one entry per finding)
+C01 config.py: setup autosave merges supported fields, including nested maps,
+    preserving unsupported legacy/custom keys. Explicit YAML editing still
+    replaces the selected branch, as requested by that API.
+C02 modules.py/session.py: accept legacy IIR zeros/poles master lists, persist
+    updated master lists, and design once after all restored settings are set.
+C03 lockbox.py/session.py: persist and restore Lockbox settings, input/output
+    setup, calibration_data and sequence; include Lockbox in named saved states.
+    Resolve setup metadata referencing _gui_attributes. Runtime thread/plot
+    objects and running lock state are not serialized.
+C04 dsp_registers.py: normalize filter requests to the nearest supported choice
+    before encoding. Read capabilities from the FPGA and retain the effective
+    values in PID/IQ/IIR settings, Lockbox filters and Spectrum correction data.
+C05 session.py: offset/reset paths explicitly write PID ival. Ordinary PID setup
+    still preserves its running integrator.
+C06 session.py: Lockbox additional_filter writes PID inputfilter; normalized
+    values feed the model and its transfer-function plot.
+C07 session.py: extra_module=iir reserves IIR, routes input -> IIR -> PID,
+    disables IIR direct output and includes IIR gain in the gain calculation.
+    Release the IIR reservation when no Lockbox output selects it. The original
+    unfinished pid/iq extra-module choices have not been invented here.
+C08 lockbox.py/lockbox_runtime.py/session.py: apply output-unit -> setpoint-unit
+    conversion, including prefixes, built-in model conversions and custom
+    runtime conversion attributes, before calculating PID gains.
+C09 session.py: preserve a pending Scope arm and poll it across producer calls.
+    Wait at least the capture duration before testing readiness. A late trigger
+    or long post-trigger delay no longer causes repeated resets. Intentional
+    setup/stop changes cancel the pending capture. Synchronous calibration and
+    trusted-model capture calls, and the standalone hardware-validation runner,
+    retain their bounded blocking wait.
+C10 session.py: Spectrum explicitly disables Scope rolling mode.
+C11 network_analyzer.py: keep the configured RBW ceiling separate from the
+    current sweep-point bandwidth, allowing auto bandwidth to rise again.
+C12 session.py: setup-affecting Network Analyzer changes restart a continuous
+    run; run_continuous starts/stops acquisition. Batch restoration applies the
+    complete settings before starting once. The browser keeps its data stream
+    connected when a setting edit restarts a continuous sweep.
+C13 session.py: Trigger configuration/state restoration finishes with setup
+    and arming, matching the original module.
+C14 session.py: IQ restoration finishes with the original phase synchronization
+    transition. Ordinary frequency edits do not synchronize all IQs.
+C15 asg_registers.py/session.py: Trigger applies the waveform/setup and unmutes
+    ASG after Off. Trigger-source setup also establishes a usable generator.
+C16 asg_registers.py: periodic waveforms explicitly clear random-phase mode;
+    noise explicitly enables it.
+C17 session.py/app.py/dsp_registers.py: read live PID integrator and Trigger
+    armed status, publish changes to all browsers, and retain quantized PID/IQ
+    numeric settings and actual filter/DDS frequencies in returned state.
+C18 monitor_client.py/dsp_registers.py: fake hardware reports its capabilities;
+    real capability zero/read failures are no longer replaced by fake defaults.
+    An FPGA with zero IIR coefficient stages cannot be programmed as a full IIR.
+C19 app.py/streams.py: acquisition producers start with the application lifespan
+    and run independently of browser subscriptions. Hiding/closing an observer
+    does not drive acquisition state. Existing controller Stop/disable actions
+    still stop hardware acquisition intentionally.
+C20 app.py/measurements.py: one full-buffer producer per instrument; Scope
+    sample-count requests resize that shared capture. HTTP frame reads return
+    cached measurements instead of starting another hardware acquisition.
+C21 measurements.py/frontend: maintain shared Scope/Spectrum averages and replay
+    completed results to late/reconnecting subscribers. NA replays its measured
+    points, including a complete snapshot at sweep completion. Display units,
+    Spectrum windows, channel visibility, zoom and layout remain browser-local.
+G01 asg_registers.py/modules.py: restore Gaussian noise waveform with RMS encoded
+    in the waveform table, unity FPGA amplitude and random-phase addressing.
+G02 session.py/network-analyzer-panel.ts: Pause mutes the NA drive and retains
+    point/average progress and IQ ownership; Resume continues that run.
+G03 settings.py/__main__.py/session.py: accept --frequency-correction, otherwise
+    read redpitaya.frequency_correction (default 1). Apply original calibrated
+    DDS frequency conversion, NA timing/phase correction and IIR design dt.
+    This calibration does not change the FPGA clock or add a new Scope clock
+    calibration model; the legacy Scope duration/filter-option conventions stay.
+G04 modules.py/session.py/scope_registers.py: expose and resolve per-session
+    lockbox.inputs.* / lockbox.outputs.* signals in DSP input selectors and
+    restored setup. Retain logical names in settings/configuration.
+O01 session.py: named-state loading and YAML application use the same existing
+    hardware-ownership check as individual controls, before changing state/disk.
+
+ASG DDS fix carried into this commit
+The earlier uncommitted fix establishes the full 2^30 phase modulus and enables
+remainder-preserving wrap, including settings restored without a Setup click.
+It repairs the missing original initialization that produced the 2 MHz cycle
+boundary glitch. Ordinary frequency tuning does not rewrite the shared ASG
+control register unnecessarily. The original RTL already supports normal DDS.
+
+Shared measurements and protocol
+Scope WebSocket frames remain PWS1 float32 interleaved channels. They now contain
+shared averaged samples, so the web client must not average them a second time.
+A smaller samples query covers the same whole capture, not a second acquisition.
+
+With trace_average=1, Spectrum retains the lightweight PWS1 raw-sample path.
+With trace averaging enabled it uses PWA1 for shared averaged correlations: 4-byte magic, uint32 LE
+JSON-header size, JSON padded to an 8-byte boundary, then float64 LE rows of
+length 2*N. Metadata includes samples, sequence, count, baseband, span, center,
+iqBandwidth and window. Baseband rows encode channel-1 autocorrelation,
+channel-2 autocorrelation, even cross correlation and odd cross correlation.
+IQ mode carries real/imaginary autocorrelation. The browser pads correlations
+and performs the display FFT, producing the same 16x-padded powers as averaging
+raw-record FFTs. Float64 protects the spectral dynamic range from cancellation.
+All supported window averages are updated from the same captures, with bounded
+memory independent of trace_average. Window selection is a read-only query.
+Changing Scope/Spectrum trace_average starts a fresh average without restarting
+the current acquisition mode.
+
+Network Analyzer messages are individual point objects or {snapshot: [points]}.
+The bundled client accepts both and preserves the completed curve on reconnect.
+
+GET /api/scope/frame is a passive cached read (204 before any measurement).
+GET /api/spectrumanalyzer/frame?window=blackman is likewise a cached read,
+returning the complete averaged spectrum in Vpk^2 (204 before any measurement).
+The legacy Spectrum samples/sequence query no longer controls acquisition.
+Update external consumers of these interfaces together with the server.
+
+Validation
+See final recorded results below and REDPITAYA_PARITY_HARDWARE_CHECKS_2026-11-01.txt.
+Hardware correctness and board throughput remain unverified until that checklist
+is run. Existing offline tests use the fake client, register simulations and
+original PyRPL design math; these do not establish electrical performance.
+
+Board performance considerations
+Averaged Spectrum records use bounded correlation storage for five windows.
+For N=16384, an unaveraged PWS1 message is about 128 KiB; a baseband PWA1 message is approximately 1 MiB per observer. The
+measured all-window calculation on this development PC was about 14 ms/record;
+this is not a Red Pitaya estimate. Measure ARM CPU/RAM, network throughput and
+control latency with the desired trace interval before relying on that rate.
+
+Reproduction commands (from repo root, in the project Python/Node environment)
+python -m unittest discover -s pyrpl/test -p 'test_pyrpl_websocket_*.py'
+python -m unittest discover -s pyrpl/test -p test_deploy_redpitaya.py
+python -m unittest discover -s pyrpl/test -p test_migration_parity.py
+npm --prefix web test
+npm --prefix web run build
+npm --prefix web run test:e2e -- --workers=1
+
+e2e uses a localhost fake-hardware server and /tmp/pyrpl-websocket-e2e-user-dir.
+Run tests serially because all browser tests share that one instrument session.
+The generated frontend assets are committed with their corresponding sources.
+The pre-fix review remains unchanged as the historical baseline.
+
+Recorded offline results
+Environment: Python 3.10.20, NumPy 2.2.5; Chromium via Playwright.
+- WebSocket app/protocol/scope/hardware-validation tests: 97 passed.
+- Migration parity regression tests: 14 passed.
+- Deployment script tests: 8 passed.
+- Frontend TypeScript check and unit tests: 28 passed.
+- Complete browser suite: 22 passed (57.4 seconds). After the final NA
+  setting-edit callback change, the affected NA and observer cases were rerun:
+  3 passed (10.2 seconds).
+- Final TypeScript/Vite production build: passed.
+- Offline wheel build (--no-deps --no-build-isolation): passed. Verified every
+  bundled frontend file and measurements.py match the checkout byte for byte.
+- git diff --check: passed.
+These are targeted web-runtime checks, not the legacy desktop test suite or
+real-board acceptance. No deployment, FPGA build or hardware measurement ran.

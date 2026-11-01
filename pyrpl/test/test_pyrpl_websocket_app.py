@@ -19,7 +19,7 @@ import yaml
 from fastapi import WebSocketDisconnect
 
 from pyrpl_websocket.app import _parse_curve_payload, control_socket, create_app, handle_control_message, stream_fanout_socket
-from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH
+from pyrpl_websocket.asg_registers import ASG_ADDR_BASE, ASG_DATA_LENGTH, ASG_DEFAULT_COUNTER_WRAP
 from pyrpl_websocket.control import ControlConflict, ControlCoordinator
 from pyrpl_websocket.curve_store import CurveStore, configured_curve_store
 from pyrpl_websocket.dependency_audit import audit_report
@@ -101,8 +101,20 @@ async def asgi_http_request(
     return sent
 
 
+def acquire_ready(session, sequence, sample_count):
+    deadline = time.monotonic() + session.scope_settings.duration + 0.25
+    while time.monotonic() < deadline:
+        acquisition = session.acquire_scope_frame(sequence, sample_count)
+        if acquisition.frame is not None:
+            return acquisition
+        time.sleep(0.001)
+    raise AssertionError("Scope did not complete")
+
+
 class SimulatedHardwareScopeClient:
     """Non-Dummy scope client that behaves like a fresh FPGA capture per arm."""
+
+    frequency_correction = 1.0
 
     def __init__(self):
         self.stats = MonitorStats()
@@ -847,8 +859,8 @@ class WebAppTest(unittest.TestCase):
             iq = session.iq_settings["iq0"]
             self.assertEqual(session.module_state("iq0")["owner"], "lockbox")
             self.assertEqual(iq.input, "in2")
-            self.assertEqual(iq.frequency, 2.5e6)
-            self.assertEqual(iq.amplitude, 0.2)
+            self.assertAlmostEqual(iq.frequency, 2.5e6, delta=125e6 / 2**32)
+            self.assertAlmostEqual(iq.amplitude, 0.2, delta=1 / 2**17)
             self.assertEqual(iq.phase, 45.0)
             self.assertEqual(iq.output_direct, "out2")
             self.assertEqual(iq.output_signal, "quadrature")
@@ -1384,6 +1396,92 @@ class WebAppTest(unittest.TestCase):
         finally:
             session.close()
 
+    def test_asg_individual_settings_initialize_dds_without_setup(self):
+        # FPGA reset leaves wrapping disabled. Every UI/config setting path
+        # must establish continuous DDS phase without requiring the Setup button.
+        for channel in (0, 1):
+            for attribute, value in (
+                ("waveform", "sin"), ("frequency", 2e6), ("amplitude", 0.5),
+                ("offset", 0.1), ("start_phase", 90), ("cycles_per_burst", 0),
+                ("output_direct", "out1"), ("trigger_source", "immediately"),
+                ("trigger_source", "ext_positive_edge"), ("trigger_source", "high"),
+            ):
+                with self.subTest(channel=channel, attribute=attribute, value=value):
+                    session = WebSession(ServerSettings(hostname="_FAKE_"))
+                    try:
+                        client = session.client
+                        control = 0x02000200  # RTL reset: advanced trigger reset, wrap off.
+                        client.fpgamemory[ASG_ADDR_BASE] = control
+                        # Also repair a stale/nonstandard table modulus.
+                        size_addr = ASG_ADDR_BASE + 0x8 + channel * 0x20
+                        client.fpgamemory[size_addr] = 0x3FFF0000
+                        with mock.patch.object(client, "writes", wraps=client.writes) as writes:
+                            session.set_module_attribute(f"asg{channel}", attribute, value)
+                        self.assertTrue(client.fpgamemory[ASG_ADDR_BASE] & (1 << (4 + 16 * channel)))
+                        self.assertEqual(client.fpgamemory[size_addr], ASG_DEFAULT_COUNTER_WRAP)
+                        other_mask = 0xFFFF << (16 * (1 - channel))
+                        self.assertEqual(client.fpgamemory[ASG_ADDR_BASE] & other_mask, control & other_mask)
+                        # A start request must never reach the FPGA with wrap off.
+                        for call in writes.call_args_list:
+                            addr, words = call.args
+                            if addr == ASG_ADDR_BASE and (words[0] >> (16 * channel)) & 7:
+                                self.assertTrue(words[0] & (1 << (4 + 16 * channel)))
+                    finally:
+                        session.close()
+
+    def test_asg_trigger_action_initializes_dds_before_trigger(self):
+        for channel in (0, 1):
+            with self.subTest(channel=channel):
+                session = WebSession(ServerSettings(hostname="_FAKE_"))
+                try:
+                    client = session.client
+                    client.fpgamemory[ASG_ADDR_BASE] = 0x02000200
+                    with mock.patch.object(client, "writes", wraps=client.writes) as writes:
+                        session.call_module_action(f"asg{channel}", "trigger")
+                    self.assertEqual(client.fpgamemory[ASG_ADDR_BASE + 0x8 + channel * 0x20], ASG_DEFAULT_COUNTER_WRAP)
+                    control_words = [call.args[1][0] for call in writes.call_args_list if call.args[0] == ASG_ADDR_BASE]
+                    self.assertTrue(any((word >> (16 * channel)) & 7 == 1 for word in control_words))
+                    self.assertTrue(all(word & (1 << (4 + 16 * channel)) for word in control_words))
+                finally:
+                    session.close()
+
+    def test_asg_config_restore_initializes_dds_even_when_trigger_is_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "asg.yml"
+            path.write_text(yaml.safe_dump({
+                name: {"trigger_source": "immediately", "frequency": 2e6,
+                       "waveform": "sin", "amplitude": 0.5, "output_direct": "out1"}
+                for name in ("asg0", "asg1")
+            }, sort_keys=False), encoding="utf-8")
+            client = DummyClient()
+            client.fpgamemory[ASG_ADDR_BASE] = 0x02000200
+            with mock.patch("pyrpl_websocket.session.DummyClient", return_value=client), \
+                 mock.patch.object(client, "writes", wraps=client.writes) as writes:
+                session = WebSession(ServerSettings(hostname="_FAKE_", config=str(path)))
+            try:
+                for channel in (0, 1):
+                    self.assertEqual(client.fpgamemory[ASG_ADDR_BASE + 0x8 + channel * 0x20], ASG_DEFAULT_COUNTER_WRAP)
+                    self.assertEqual(client.fpgamemory[ASG_ADDR_BASE + 0x10 + channel * 0x20], round(2e6 / 125e6 * 2**30))
+                    for call in writes.call_args_list:
+                        addr, words = call.args
+                        if addr == ASG_ADDR_BASE and (words[0] >> (16 * channel)) & 7:
+                            self.assertTrue(words[0] & (1 << (4 + 16 * channel)))
+            finally:
+                session.close()
+
+    def test_asg_frequency_update_does_not_reset_or_retrigger_initialized_dds(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        try:
+            for channel in (0, 1):
+                session.set_module_attribute(f"asg{channel}", "trigger_source", "immediately")
+            for channel in (0, 1):
+                with mock.patch.object(session.client, "writes", wraps=session.client.writes) as writes:
+                    session.set_module_attribute(f"asg{channel}", "frequency", 2e6)
+                # No control/reset, offset, modulus or table writes during tuning.
+                writes.assert_called_once_with(ASG_ADDR_BASE + 0x10 + channel * 0x20, [round(2e6 / 125e6 * 2**30)])
+        finally:
+            session.close()
+
     def test_session_housekeeping_registers_follow_pyrpl_layout(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))
         try:
@@ -1507,10 +1605,10 @@ class WebAppTest(unittest.TestCase):
                 self.assertEqual(session._pop_module_no_lock(("iq0", "iq1", "iq2"), "test"), "iq2")
                 self.assertEqual(session.module_state("iq2")["owner"], "test")
                 session._set_module_attribute_no_lock("iq2", "frequency", 2e6)
-                self.assertEqual(session.iq_settings["iq2"].frequency, 2e6)
+                self.assertAlmostEqual(session.iq_settings["iq2"].frequency, 2e6, delta=125e6 / 2**32)
                 session._release_module_no_lock("iq2", "test")
                 self.assertIsNone(session.module_state("iq2")["owner"])
-                self.assertEqual(session.iq_settings["iq2"].frequency, 1e6)
+                self.assertAlmostEqual(session.iq_settings["iq2"].frequency, 1e6, delta=125e6 / 2**32)
 
                 session._reserve_module_no_lock("iq2", "occupied")
                 self.assertEqual(session._pop_module_no_lock(("iq0", "iq1", "iq2"), "test"), "iq1")
@@ -1527,7 +1625,7 @@ class WebAppTest(unittest.TestCase):
             session.call_module_action("networkanalyzer", "continuous")
             for _ in range(22):
                 session.acquire_network_analyzer_point()
-            self.assertAlmostEqual(session.iq_settings["iq2"].amplitude, 0.05)
+            self.assertAlmostEqual(session.iq_settings["iq2"].amplitude, 0.05, delta=1 / 2**17)
             session.call_module_action("networkanalyzer", "stop")
         finally:
             session.close()
@@ -1546,7 +1644,7 @@ class WebAppTest(unittest.TestCase):
 
             state = session.call_module_action("spectrumanalyzer", "continuous")
             self.assertEqual(state["resources"], ["iq2", "scope"])
-            self.assertEqual(session.iq_settings["iq2"].bandwidth, [session.spectrum_settings.span] * 4)
+            self.assertEqual(session.iq_settings["iq2"].bandwidth, [656885.0955548416] * 4)
             self.assertEqual(session.module_state("iq2")["owner"], "spectrumanalyzer")
             self.assertEqual(session.module_state("scope")["owner"], "spectrumanalyzer")
             with self.assertRaises(ValueError):
@@ -1655,7 +1753,7 @@ class WebAppTest(unittest.TestCase):
             session.set_module_attribute("pid0", "inputfilter", "1000, -2000")
             self.assertEqual(
                 session.client.fpgamemory[base + 0x120],
-                filter_register_from_python([1000, -2000]),
+                0xCB8A,  # nearest supported cutoffs, PID: stages=4, shiftbits=5, minbw=10
             )
             session.set_module_attribute("pid0", "ival", 0.125)
             self.assertEqual(session.client.fpgamemory[base + 0x100], float_to_register(0.125, bits=16))
@@ -1681,12 +1779,12 @@ class WebAppTest(unittest.TestCase):
             session.set_module_attribute("iq1", "acbandwidth", 1000)
             self.assertEqual(
                 session.client.fpgamemory[base + 0x120],
-                filter_register_from_python([-1000]),
+                0xC8,  # IQ HPF: stages=1, shiftbits=6, minbw=50
             )
             session.set_module_attribute("iq1", "bandwidth", [1000, 2000])
             self.assertEqual(
                 session.client.fpgamemory[base + 0x124],
-                filter_register_from_python([1000, 2000]),
+                0x8B8A,  # IQ LPF: stages=2, shiftbits=6, minbw=10
             )
             session.set_module_attribute("iq1", "phase", 90.0)
             self.assertEqual(session.client.fpgamemory[base + 0x104], phase_to_register(90.0, bits=32, invert=True))
@@ -1727,7 +1825,7 @@ class WebAppTest(unittest.TestCase):
             session.set_module_attribute("iir", "inputfilter", "1000, 0, -2000")
             self.assertEqual(
                 session.client.fpgamemory[base + 0x120],
-                filter_register_from_python([1000, 0, -2000]),
+                0x83,  # IIR implements one input-filter stage (minbw=1000)
             )
             session.set_module_attribute("iir", "on", True)
             self.assertEqual(session.client.fpgamemory[base + 0x104] & 1, 1)
@@ -2098,8 +2196,10 @@ class WebAppTest(unittest.TestCase):
         try:
             session.call_module_action("scope", "continuous")
             session.set_module_attribute("scope", "run_mode", "continuous")
-            first = session.acquire_scope_frame(sequence=1, sample_count=8)
-            second = session.acquire_scope_frame(sequence=2, sample_count=8)
+            first = acquire_ready(session, sequence=1, sample_count=8)
+            second = (session.acquire_scope_frame(sequence=2, sample_count=8)
+                      if session.scope_settings.running_state == "paused_single"
+                      else acquire_ready(session, sequence=2, sample_count=8))
 
             self.assertIsNotNone(first.frame)
             self.assertIsNotNone(second.frame)
@@ -2117,8 +2217,10 @@ class WebAppTest(unittest.TestCase):
         session.client = SimulatedHardwareScopeClient()
         try:
             session.call_module_action("scope", "single")
-            first = session.acquire_scope_frame(sequence=1, sample_count=8)
-            second = session.acquire_scope_frame(sequence=2, sample_count=8)
+            first = acquire_ready(session, sequence=1, sample_count=8)
+            second = (session.acquire_scope_frame(sequence=2, sample_count=8)
+                      if session.scope_settings.running_state == "paused_single"
+                      else acquire_ready(session, sequence=2, sample_count=8))
 
             self.assertIsNotNone(first.frame)
             self.assertTrue(first.state_changed)
@@ -2215,7 +2317,7 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(payload["pyrpl"]["name"], "web_config")
             self.assertEqual(payload["scope"]["threshold"], 0.25)
             self.assertFalse(payload["scope"]["ch2_active"])
-            self.assertEqual(payload["iq1"]["frequency"], 1e6)
+            self.assertAlmostEqual(payload["iq1"]["frequency"], 1e6, delta=125e6 / 2**32)
             self.assertEqual(payload["scope_states"]["high"]["threshold"], 0.25)
             self.assertEqual(payload["pyrpl_websocket"]["workspace"]["layoutMode"], "split-horizontal")
 
@@ -2223,7 +2325,7 @@ class WebAppTest(unittest.TestCase):
             try:
                 self.assertEqual(second.get_module_attribute("scope", "threshold"), 0.25)
                 self.assertFalse(second.get_module_attribute("scope", "ch2_active"))
-                self.assertEqual(second.get_module_attribute("iq1", "frequency"), 1e6)
+                self.assertAlmostEqual(second.get_module_attribute("iq1", "frequency"), 1e6, delta=125e6 / 2**32)
                 self.assertEqual(second.module_states("scope")[0]["name"], "high")
                 self.assertEqual(second.workspace_state()["workspaceSplitSizes"], [60, 40])
             finally:

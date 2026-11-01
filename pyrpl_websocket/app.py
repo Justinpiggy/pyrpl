@@ -7,6 +7,7 @@ import json
 import secrets
 import struct
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -33,6 +34,8 @@ from .scope import SCOPE_DATA_LENGTH, clamp_sample_count
 from .session import WebSession
 from .settings import ServerSettings
 from .streams import StreamFailure, StreamFanout
+from .measurements import ScopeAverage, SpectrumAverage, resize_scope_frame, spectrum_average_bytes, spectrum_snapshot_arrays
+from .modules import SPECTRUM_WINDOWS
 
 
 class RegisterReadRequest(BaseModel):
@@ -595,9 +598,17 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             settings,
             lockbox_state_callback=publish_lockbox_state,
         )
-        app.state.scope_streams = {}
-        app.state.spectrum_streams = {}
-        app.state.network_analyzer_stream = None
+        app.state.scope_average = ScopeAverage()
+        app.state.spectrum_average = SpectrumAverage()
+        app.state.acquisition_sequences = {"scope": 0, "spectrumanalyzer": 0}
+        app.state.scope_streams = {SCOPE_DATA_LENGTH: StreamFanout(produce_scope, keep_alive=True)}
+        app.state.spectrum_streams = {SCOPE_DATA_LENGTH: StreamFanout(produce_spectrum, keep_alive=True)}
+        app.state.network_points = {}
+        app.state.network_run_id = -1
+        app.state.network_analyzer_stream = StreamFanout(produce_network_analyzer, queue_size=8, keep_alive=True, replay=network_snapshot)
+        for stream in (*app.state.scope_streams.values(), *app.state.spectrum_streams.values(), app.state.network_analyzer_stream):
+            stream.start()
+        status_task = asyncio.create_task(publish_hardware_status())
         try:
             yield
         finally:
@@ -607,6 +618,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             ]
             if app.state.network_analyzer_stream is not None:
                 streams.append(app.state.network_analyzer_stream)
+            status_task.cancel()
+            await asyncio.gather(status_task, return_exceptions=True)
             await asyncio.gather(*(stream.close() for stream in streams))
             app.state.session.close()
 
@@ -918,7 +931,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @app.post("/api/lockbox/stages/{index}/actions/{action}")
     async def call_lockbox_stage_action(index: int, action: str):
         try:
-            schema = await asyncio.to_thread(app.state.session.call_lockbox_stage_action, index, action)
+            await asyncio.to_thread(app.state.session.call_lockbox_stage_action, index, action)
+            schema = app.state.session.lockbox_schema()
         except (IndexError, KeyError) as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox stage or action") from exc
         except (TypeError, ValueError, TrustedModelError) as exc:
@@ -1152,26 +1166,19 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @app.get("/api/scope/frame")
     async def scope_frame(samples: int = SCOPE_DATA_LENGTH):
         sample_count = clamp_sample_count(samples)
-        acquisition = await asyncio.to_thread(
-            app.state.session.acquire_scope_frame,
-            0,
-            sample_count,
-        )
-        if acquisition.state_changed:
-            await app.state.events.publish(module_state_event("scope", app.state.session.module_state("scope")))
-        if acquisition.frame is None:
+        frame = app.state.scope_streams[SCOPE_DATA_LENGTH].latest
+        if frame is None:
             return Response(status_code=204)
-        return Response(acquisition.frame.to_bytes(), media_type="application/octet-stream")
+        return Response(resize_scope_frame(frame, sample_count), media_type="application/octet-stream")
 
     @app.get("/api/spectrumanalyzer/frame")
-    async def spectrum_frame(samples: int = 4096, sequence: int = 0):
-        sample_count = clamp_sample_count(samples)
-        frame = await asyncio.to_thread(
-            app.state.session.acquire_spectrum_frame,
-            sequence,
-            sample_count,
-        )
-        return frame
+    async def spectrum_frame(window: str = "blackman"):
+        if window not in SPECTRUM_WINDOWS:
+            raise HTTPException(status_code=422, detail="Invalid spectrum window")
+        snapshot = app.state.spectrum_streams[SCOPE_DATA_LENGTH].latest
+        if snapshot is None:
+            return Response(status_code=204)
+        return await asyncio.to_thread(spectrum_snapshot_arrays, snapshot, window)
 
     @app.get("/api/modules/iir/plot")
     async def iir_plot(points: int = 1000, tf_type: str | None = None, data_curve: int | None = None,
@@ -1207,6 +1214,78 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             return
         await event_socket(websocket, app.state.events)
 
+    async def produce_scope(publish, active) -> None:
+        average = app.state.scope_average
+        previous_state = None
+        while active():
+            session = app.state.session
+            if session.scope_settings.running_state.startswith("running_") or session._scope_calibration_is_active() or session._scope_calibration_frame_pending:
+                acquisition = await asyncio.to_thread(session.acquire_scope_frame, app.state.acquisition_sequences["scope"], SCOPE_DATA_LENGTH)
+                if acquisition.frame is not None:
+                    state = session.scope_settings
+                    publish(average.add(acquisition.frame, session.acquisition_revision["scope"], state.trace_average, session._hardware_rolling_mode_active(state.running_state)))
+                    app.state.acquisition_sequences["scope"] += 1
+                    snapshot = session.module_state("scope")
+                    if snapshot != previous_state:
+                        await app.state.events.publish(module_state_event("scope", snapshot))
+                        previous_state = snapshot
+            await asyncio.sleep(settings.scope_interval)
+
+    async def produce_spectrum(publish, active) -> None:
+        average = app.state.spectrum_average
+        previous_state = None
+        while active():
+            session = app.state.session
+            # Capture metadata before completion releases Scope/IQ resources.
+            state = deepcopy(session.spectrum_settings)
+            revision = session.acquisition_revision["spectrumanalyzer"]
+            frame = await asyncio.to_thread(session.acquire_spectrum_scope_frame, app.state.acquisition_sequences["spectrumanalyzer"], SCOPE_DATA_LENGTH)
+            if frame is not None:
+                state.iq_bandwidth = list(session.spectrum_settings.iq_bandwidth)
+                snapshot = await asyncio.to_thread(average.add, frame, revision, state)
+                publish(snapshot)
+                app.state.acquisition_sequences["spectrumanalyzer"] += 1
+                state = session.module_state("spectrumanalyzer")
+                if state != previous_state:
+                    await publish_acquisition_state("spectrumanalyzer")
+                    previous_state = state
+            await asyncio.sleep(settings.scope_interval)
+
+    def network_snapshot():
+        return {"snapshot": list(app.state.network_points.values())} if app.state.network_points else None
+
+    async def produce_network_analyzer(publish, active) -> None:
+        while active():
+            point = await asyncio.to_thread(app.state.session.acquire_network_analyzer_point)
+            if point is not None:
+                if point["run_id"] != app.state.network_run_id:
+                    app.state.network_points = {}
+                    app.state.network_run_id = point["run_id"]
+                app.state.network_points[point["index"]] = point
+                publish(network_snapshot() if point["scan_complete"] else point)
+                if point["scan_complete"]:
+                    await publish_acquisition_state("networkanalyzer")
+            else:
+                await asyncio.sleep(0.05)
+
+    async def publish_acquisition_state(module):
+        state = app.state.session.module_state(module)
+        await app.state.events.publish(module_state_event(module, state))
+        for resource in _resource_event_modules(module, state):
+            await app.state.events.publish(module_state_event(resource, app.state.session.module_state(resource)))
+
+    async def publish_hardware_status():
+        previous = {}
+        while True:
+            for module in ("pid0", "pid1", "pid2", "trig"):
+                state = await asyncio.to_thread(app.state.session.module_state, module)
+                attribute = "armed" if module == "trig" else "ival"
+                value = state[attribute]
+                if previous.get(module) != value:
+                    await app.state.events.publish(module_attribute_event(module, attribute, value))
+                    previous[module] = value
+            await asyncio.sleep(0.25)
+
     @app.websocket("/ws/scope")
     async def scope_stream(websocket: WebSocket):
         if not await authenticate_websocket(websocket):
@@ -1220,29 +1299,11 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             await websocket.close(code=1008, reason="Invalid sample count")
             return
 
-        async def produce_scope(publish, active) -> None:
-            sequence = 0
-            while active():
-                acquisition = await asyncio.to_thread(
-                    app.state.session.acquire_scope_frame,
-                    sequence,
-                    sample_count,
-                )
-                if acquisition.frame is not None:
-                    publish(acquisition.frame.to_bytes())
-                    sequence += 1
-                if acquisition.state_changed:
-                    await app.state.events.publish(module_state_event("scope", app.state.session.module_state("scope")))
-                await asyncio.sleep(settings.scope_interval)
-
-        fanout = app.state.scope_streams.get(sample_count)
-        if fanout is None:
-            fanout = StreamFanout(produce_scope)
-            app.state.scope_streams[sample_count] = fanout
+        fanout = app.state.scope_streams[SCOPE_DATA_LENGTH]
         queue = fanout.subscribe()
         await websocket.accept()
         try:
-            await stream_fanout_socket(websocket, queue, websocket.send_bytes, "Scope acquisition failed")
+            await stream_fanout_socket(websocket, queue, lambda frame: websocket.send_bytes(resize_scope_frame(frame, sample_count)), "Scope acquisition failed")
         finally:
             fanout.unsubscribe(queue)
 
@@ -1259,34 +1320,15 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             await websocket.close(code=1008, reason="Invalid sample count")
             return
 
-        async def produce_spectrum(publish, active) -> None:
-            sequence = 0
-            while active():
-                frame = await asyncio.to_thread(
-                    app.state.session.acquire_spectrum_scope_frame,
-                    sequence,
-                    sample_count,
-                )
-                if frame is not None:
-                    publish(frame.to_bytes())
-                    sequence += 1
-                    state = app.state.session.module_state("spectrumanalyzer")
-                    if state.get("running_state") == "stopped":
-                        await app.state.events.publish(module_state_event("spectrumanalyzer", state))
-                        for resource_module in _resource_event_modules("spectrumanalyzer", state):
-                            await app.state.events.publish(
-                                module_state_event(resource_module, app.state.session.module_state(resource_module))
-                            )
-                await asyncio.sleep(settings.scope_interval)
-
-        fanout = app.state.spectrum_streams.get(sample_count)
-        if fanout is None:
-            fanout = StreamFanout(produce_spectrum)
-            app.state.spectrum_streams[sample_count] = fanout
+        window = websocket.query_params.get("window", "blackman")
+        if window not in SPECTRUM_WINDOWS:
+            await websocket.close(code=1008, reason="Invalid spectrum window")
+            return
+        fanout = app.state.spectrum_streams[SCOPE_DATA_LENGTH]
         queue = fanout.subscribe()
         await websocket.accept()
         try:
-            await stream_fanout_socket(websocket, queue, websocket.send_bytes, "Spectrum acquisition failed")
+            await stream_fanout_socket(websocket, queue, lambda snapshot: websocket.send_bytes(spectrum_average_bytes(snapshot, window)), "Spectrum acquisition failed")
         finally:
             fanout.unsubscribe(queue)
 
@@ -1294,25 +1336,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     async def network_analyzer_stream(websocket: WebSocket):
         if not await authenticate_websocket(websocket):
             return
-        async def produce_network_analyzer(publish, active) -> None:
-            while active():
-                point = await asyncio.to_thread(app.state.session.acquire_network_analyzer_point)
-                if point is not None:
-                    publish(point)
-                    if point["running_state"] == "stopped":
-                        state = app.state.session.module_state("networkanalyzer")
-                        await app.state.events.publish(module_state_event("networkanalyzer", state))
-                        for resource_module in _resource_event_modules("networkanalyzer", state):
-                            await app.state.events.publish(
-                                module_state_event(resource_module, app.state.session.module_state(resource_module))
-                            )
-                else:
-                    await asyncio.sleep(0.05)
-
         fanout = app.state.network_analyzer_stream
-        if fanout is None:
-            fanout = StreamFanout(produce_network_analyzer, queue_size=8)
-            app.state.network_analyzer_stream = fanout
         queue = fanout.subscribe()
         await websocket.accept()
         try:

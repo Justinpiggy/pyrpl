@@ -104,7 +104,8 @@ class WebConfig:
         return dict(self.data[name])
 
     def set_module_setup(self, module_name: str, state: dict[str, Any]) -> None:
-        self.data[module_name] = _jsonable(state)
+        branch = self.data.setdefault(module_name, {})
+        _merge_setup(branch, _jsonable(state))
         self.save()
 
     def module_states(self, module_name: str) -> dict[str, dict[str, Any]]:
@@ -200,3 +201,12 @@ def _unique(values: list[str]) -> list[str]:
         if value not in result:
             result.append(value)
     return result
+
+
+def _merge_setup(target: dict, updates: dict) -> None:
+    """Update supported settings without discarding legacy/custom setup keys."""
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _merge_setup(target[key], value)
+        else:
+            target[key] = value

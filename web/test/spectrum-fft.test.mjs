@@ -27,6 +27,7 @@ function loadModule(url, imports = {}) {
     Number,
     String,
     Uint8Array,
+    TextDecoder,
     exports: module.exports,
     module,
     require(path) {
@@ -102,4 +103,50 @@ test("Spectrum IQ mode returns the full shifted padded frequency axis", () => {
   assert.equal(frame.series[0].label, "IQ");
   assert.ok(Math.abs(frame.x[0] - (10e6 - 62.5e6)) < 1e-6);
   assert.ok(Math.abs(frame.x.at(-1) - (10e6 + 62.5e6 - 125e6 / (64 * 16))) < 1e-6);
+});
+
+test("shared correlation frames reproduce raw FFTs for local windows and both acquisition modes", () => {
+  for (const baseband of [true, false]) for (const window of ["boxcar", "blackman", "hamming", "flattop", "gaussian"]) {
+    const state = settings({ baseband, window, span: 1e6, center: 2e6, iqBandwidth: [1e6, 1e6] });
+    const buffer = makeScopeFrame(64, 7);
+    const expected = spectrumFft.spectrumFromScopeBuffer(buffer, state);
+    const samples = new Float32Array(buffer, 24);
+    const weights = spectrumFft.spectrumWindow(window, 64);
+    const x = Array.from({ length: 64 }, (_, i) => samples[2*i] * weights[i]);
+    const y = Array.from({ length: 64 }, (_, i) => samples[2*i+1] * weights[i]);
+    const corr = (a, b, lag) => a.reduce((sum, value, n) => sum + value * (b[n + lag] ?? 0), 0);
+    const rows = Array.from({ length: baseband ? 4 : 2 }, () => new Float64Array(128));
+    for (let lag = -63; lag < 64; lag++) {
+      const i = (lag + 128) % 128;
+      if (baseband) {
+        rows[0][i] = corr(x, x, lag);
+        rows[1][i] = corr(y, y, lag);
+        rows[2][i] = (corr(x, y, lag) + corr(x, y, -lag)) / 2;
+        rows[3][i] = (corr(x, y, lag) - corr(x, y, -lag)) / 2;
+      } else {
+        rows[0][i] = corr(x, x, lag) + corr(y, y, lag);
+        rows[1][i] = corr(x, y, lag) - corr(y, x, lag);
+      }
+    }
+    const metadata = { samples: 64, sequence: 11, count: 3, ...state };
+    const json = JSON.stringify(metadata);
+    const size = Math.ceil(json.length / 8) * 8;
+    const packet = new ArrayBuffer(8 + size + rows.length * 128 * 8);
+    new Uint8Array(packet, 0, 4).set(new TextEncoder().encode("PWA1"));
+    new DataView(packet).setUint32(4, size, true);
+    new Uint8Array(packet, 8, size).fill(32);
+    new Uint8Array(packet, 8, json.length).set(new TextEncoder().encode(json));
+    rows.forEach((row, i) => new Float64Array(packet, 8 + size + i * 128 * 8, 128).set(row));
+    const actual = spectrumFft.spectrumFromCorrelationBuffer(packet, state);
+    assert.equal(actual.currentAverage, 3);
+    assert.equal(actual.rbw, expected.rbw);
+    for (let series = 0; series < actual.series.length; series++) {
+      for (const key of ["values", "imaginary"]) {
+        if (!actual.series[series][key]) continue;
+        for (let i = 0; i < actual.x.length; i++) {
+          assert.ok(Math.abs(actual.series[series][key][i] - expected.series[series][key][i]) < 1e-9, `${baseband} ${window} ${series} ${key} bin ${i}`);
+        }
+      }
+    }
+  }
 });

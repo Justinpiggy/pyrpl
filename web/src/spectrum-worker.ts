@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { spectrumFromScopeBuffer, type SpectrumFrame, type SpectrumSettings } from "./spectrum-fft";
+import { spectrumFromCorrelationBuffer, spectrumFromScopeBuffer, type SpectrumFrame, type SpectrumSettings } from "./spectrum-fft";
 
 interface SpectrumWorkerRequest {
   id: number;
@@ -21,7 +21,8 @@ const worker = self as unknown as DedicatedWorkerGlobalScope;
 worker.onmessage = (event: MessageEvent<SpectrumWorkerRequest>) => {
   const { id, generation, buffer, settings } = event.data;
   try {
-    const frame = spectrumFromScopeBuffer(buffer, settings);
+    const averaged = new DataView(buffer).getUint32(0, true) === 0x31415750;
+    const frame = averaged ? spectrumFromCorrelationBuffer(buffer, settings) : spectrumFromScopeBuffer(buffer, settings);
     const transfers: Transferable[] = [frame.x.buffer];
     for (const series of frame.series) {
       transfers.push(series.values.buffer);

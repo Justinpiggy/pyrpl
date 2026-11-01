@@ -1,0 +1,77 @@
+Red Pitaya parity fixes — hardware acceptance handoff
+Date: 2026-11-01
+Status: NOT RUN. Board unavailable. No remote files or services were modified.
+
+Launch
+1. Use the existing PC-side deploy_redpitaya.sh workflow and its configured
+   board address (previously 10.0.5.118). Read its --help/current defaults before
+   launch; this change does not change deployment paths, ports or dependencies.
+2. Keep the PC checkout as the source of truth. Redeploy from PC for every code
+   change; do not edit the deployed source on the board. Reuse existing cached
+   build artifacts under artifacts/redpitaya as documented there.
+3. Preserve a copy of the board's YAML configuration before the acceptance run.
+   Open the controller and a separate observer browser/profile on the exposed
+   HTTP port. Both must load the new bundled frontend, not a cached older build.
+
+Electrical/register checks
+01 ASG: From an FPGA/server restart, load a sine configuration without pressing
+   Setup first. Inspect internal out1 and physical OUT1 -> ADC at 1 MHz and
+   2 MHz at a nonclipping amplitude. Verify the cycle boundary is smooth and
+   the extra harmonic comb disappears. Check both ASG channels independently.
+02 ASG: Off -> Trigger, trigger-source changes, frequency tuning and noise ->
+   sine. Verify output enable, phase wrap, no random-phase mode on sine and
+   no unexpected resets of the other channel. Noise amplitude is RMS before
+   waveform clipping; use a small amplitude when measuring its distribution.
+03 Filters: Request 1 MHz on a PID inputfilter; compare the returned cutoff,
+   encoded filter word and measured response. Repeat an IQ HPF/LPF and the
+   IIR inputfilter, using the capability constants on the loaded FPGA.
+04 IIR: Restore a YAML design using zeros/poles, compare coefficients and the
+   measured transfer function with original PyRPL. Verify unsupported-IIR
+   bitfiles fail rather than accepting writes to a fictitious coefficient RAM.
+05 Trigger/IQ: Restore named states and YAML branches. Check Trigger arms and
+   IQ setup phase-aligns the IQs. Ordinary frequency edits must not phase-reset
+   other IQ modules. Confirm armed status clears in both browsers on triggering.
+06 Lockbox: Set a known integrator offset; Unlock/reset_offset must clear the
+   actual PID accumulator. Apply additional_filter and extra_module=iir and
+   verify routing/filter registers and measured loop response. Compare gains
+   for equivalent V/V and mV/V configurations and physical-unit model settings.
+07 Persistence: Change Lockbox threshold, calibration, output setup and a
+   multi-stage sequence. Restart and reload a named state. Verify every saved
+   value, and verify unrelated legacy/custom YAML keys survive an ordinary edit.
+08 Logical signals/calibration: Select a lockbox.inputs.* and outputs.* signal
+   in Scope/PID/IQ. Check the resolved physical routing. Check calibrated ASG/
+   IQ frequencies against the configured redpitaya.frequency_correction.
+
+Acquisition/observer checks
+09 Scope: Use an external trigger that arrives several seconds late and a
+   post-trigger delay much longer than the capture duration. Verify one arm
+   remains pending and eventually produces a trace; Stop/Setup remains usable.
+10 Scope: Average several single-shot captures; after completion open/reload an
+   observer. Both browsers must show the same samples and average count. Change
+   an observer's plot width/sample count and verify no extra hardware arm occurs.
+11 Spectrum: Begin with Scope rolling enabled, then start a narrow-span spectrum.
+   Verify it uses complete triggered captures. Average several records, close
+   every browser while running, and reconnect after completion. Verify the same
+   result; change only the observer's window/units/zoom and compare power and
+   cross-spectrum phase against an independent reference FFT.
+12 NA: Sweep low -> high frequency with auto bandwidth and a high RBW ceiling;
+   bandwidth should rise at higher frequencies. Edit a continuous sweep setting
+   and verify restart. Pause must mute the drive without losing the point or
+   averages; Resume continues. Reconnect after a single sweep and compare all
+   measured points. Confirm release of the assigned IQ after Stop/completion.
+13 Ownership: With Spectrum/NA/Lockbox occupying a module, attempts to load its
+   manual saved state or apply its YAML branch must fail without register writes.
+   Observer plot controls and resizing remain usable, while hardware controls
+   stay read-only and display the controller's current state.
+14 Performance: At the intended capture interval and observer count, record ARM
+   CPU/RAM, frame rate, network load and control-response time, especially with
+   Spectrum trace averaging enabled. Test Save Curve during acquisition. Confirm
+   acquisition and final stored/displayed averages are independent of dropped
+   render frames. Server-side averages intentionally continue without viewers.
+
+Record results
+For each numbered item record PASS/FAIL, board model/OS, bitfile hash, server
+commit, Python/NumPy versions, YAML settings, instruments, measured values and
+any logs/captures. Report failures against the PC checkout; redeploy any follow-up
+fix rather than patching the board. Do not describe this checklist as passed
+based solely on the offline suite or the prior RTL simulation.

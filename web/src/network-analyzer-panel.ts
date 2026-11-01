@@ -104,15 +104,16 @@ export class NetworkAnalyzerPanel {
       if (input instanceof HTMLInputElement && input.type === "checkbox") input.checked = Boolean(value);
       else input.value = String(value);
     }
-    const running = String(this.state.running_state ?? "stopped") !== "stopped";
-    this.runButton.textContent = running ? "Running" : "Continuous";
-    this.runButton.disabled = running;
-    this.stopButton.disabled = !running;
+    const running = String(this.state.running_state ?? "stopped").startsWith("running_");
+    const paused = String(this.state.running_state ?? "stopped").startsWith("paused_");
+    this.runButton.textContent = running ? "Pause" : paused ? "Resume" : "Continuous";
+    this.runButton.disabled = this.readOnly;
+    this.stopButton.disabled = this.readOnly || (!running && !paused);
     const iq = typeof this.state.iq_module === "string" ? ` on ${this.state.iq_module}` : "";
     const stateLabel = `${String(this.state.running_state ?? "stopped")}${iq}`;
     this.status.textContent = !running && this.lastProgress ? `${this.lastProgress}, ${stateLabel}` : stateLabel;
-    if (running && this.subscriptionEnabled) this.connectSocket();
-    else if (!this.subscriptionEnabled || this.state.last_action === "stop") this.closeSocket();
+    if (this.subscriptionEnabled) this.connectSocket();
+    else this.closeSocket();
   }
 
   setSubscriptionEnabled(enabled: boolean): void {
@@ -150,7 +151,10 @@ export class NetworkAnalyzerPanel {
 
   private bindActions(): void {
     this.singleButton.addEventListener("click", () => void this.start("single"));
-    this.runButton.addEventListener("click", () => void this.start("continuous"));
+    this.runButton.addEventListener("click", () => {
+      const state = String(this.state.running_state);
+      void this.start(state.startsWith("running_") ? "pause" : state.startsWith("paused_") ? "resume" : "continuous");
+    });
     this.stopButton.addEventListener("click", () => void this.stop());
     this.saveButton.addEventListener("click", () => {
       if (this.readOnly) {
@@ -179,7 +183,7 @@ export class NetworkAnalyzerPanel {
     });
   }
 
-  private async start(action: "single" | "continuous"): Promise<void> {
+  private async start(action: "single" | "continuous" | "pause" | "resume"): Promise<void> {
     const response = await fetch(`/api/modules/networkanalyzer/actions/${action}`, { method: "POST" });
     if (!response.ok) {
       this.status.textContent = `Network analyzer ${action} failed: ${response.status}`;
@@ -215,7 +219,11 @@ export class NetworkAnalyzerPanel {
       if (this.socket === socket) this.reconnectScheduler.connected();
     });
     socket.addEventListener("message", (event) => {
-      if (this.socket === socket) this.showPoint(JSON.parse(String(event.data)) as PointMessage);
+      if (this.socket !== socket) return;
+      const message = JSON.parse(String(event.data));
+      if (message.snapshot) {
+        for (const point of message.snapshot) this.showPoint(point as PointMessage);
+      } else this.showPoint(message as PointMessage);
     });
     socket.addEventListener("close", () => {
       if (this.socket !== socket) return;
@@ -259,11 +267,6 @@ export class NetworkAnalyzerPanel {
     const rate = point.time_per_point > 0 ? `${formatNumber(point.time_per_point * 1e3)} ms/point` : "";
     this.lastProgress = `${point.index + 1}/${point.points}, average ${point.current_avg}${rate ? `, ${rate}` : ""}`;
     this.status.textContent = this.lastProgress;
-    if (point.running_state === "stopped") {
-      this.closeSocket();
-      this.runButton.disabled = false;
-      this.stopButton.disabled = true;
-    }
   }
 
   private renderControls(attributes: AttributeSchema[]): void {
@@ -336,9 +339,6 @@ export class NetworkAnalyzerPanel {
       this.status.textContent = `${attribute.label} update failed: ${response.status}`;
       return;
     }
-    this.closeSocket();
-    this.runButton.disabled = false;
-    this.stopButton.disabled = true;
     this.status.textContent = `${attribute.label} updated`;
   }
 
@@ -390,7 +390,7 @@ export class NetworkAnalyzerPanel {
 
   private resetZoom(): void {
     this.userScaled = false;
-    const x = finiteRange(this.x, 0, 1);
+    const x = finiteRange(this.x, this.logscale ? 0.03 : 0, 1, this.logscale);
     const magnitude = finiteRange(this.magnitude, -120, 20);
     const phase = finiteRange(this.phase, -180, 180);
     this.magnitudePlot.setScale("x", x);
@@ -451,11 +451,12 @@ function formatNumber(value: number): string {
   return value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2);
 }
 
-function finiteRange(values: number[], fallbackMin: number, fallbackMax: number): { min: number; max: number } {
+function finiteRange(values: number[], fallbackMin: number, fallbackMax: number, logarithmic = false): { min: number; max: number } {
   const finite = values.filter(Number.isFinite);
   if (finite.length === 0) return { min: fallbackMin, max: fallbackMax };
   const min = Math.min(...finite);
   const max = Math.max(...finite);
+  if (logarithmic) return { min: min / 1.1, max: max * 1.1 };
   if (min === max) return { min: min - 1, max: max + 1 };
   const padding = (max - min) * 0.04;
   return { min: min - padding, max: max + padding };

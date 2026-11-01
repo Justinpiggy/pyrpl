@@ -356,7 +356,7 @@ class LockboxSchemaLibrary:
         for base in reversed(info.bases):
             attrs.extend(self.resolve_setup_attributes(base))
         if info.raw_setup_attributes is not None:
-            value = self._eval_expr(info.raw_setup_attributes, class_name, {})
+            value = self._eval_expr(info.raw_setup_attributes, class_name, {"_gui_attributes": self.resolve_gui_attributes(class_name)})
             if isinstance(value, list):
                 attrs.extend(str(item) for item in value)
         self._setup_cache[class_name] = _unique(attrs)
@@ -450,6 +450,7 @@ class LockboxCalibration:
     mean: float = 0.0
     rms: float = 0.0
     analog_offset: float = 0.0
+    asg_phase: float = 0.0
     amplitude: float = 1.0
     offset: float = 0.0
 
@@ -594,7 +595,93 @@ class LockboxStage:
         }
 
 
-class LockboxState:
+class UnitConversion:
+    # Conversion factors used by the built-in interferometer/cavity models.
+    _rad_in_deg = 180.0 / np.pi
+
+    @property
+    def _deg_in_m(self):
+        return self.wavelength / 720.0
+
+    @property
+    def _rad_in_m(self):
+        return self._rad_in_deg * self._deg_in_m
+
+    @property
+    def _linewidth_in_m(self):
+        return self.wavelength / self.finesse / 2.0
+
+    @property
+    def _linewidth_in_Hz(self):
+        return 2.998e8 / self.round_trip_length / self.finesse
+
+    @property
+    def _bandwidth_in_m(self):
+        return self._linewidth_in_m / 2.0
+
+    @property
+    def _bandwidth_in_Hz(self):
+        return self._linewidth_in_Hz / 2.0
+
+    def _unit1_in_unit2(self, unit1, unit2, try_prefix=True):
+        """helper function to convert unit2 to unit 1"""
+        if unit1 == unit2:
+            return 1.0
+        try:
+            return getattr(self, "_" + unit1 + "_in_" + unit2)
+        except AttributeError:
+            try:
+                return 1.0 / getattr(self, "_" + unit2 + "_in_" + unit1)
+            except AttributeError:
+                if not try_prefix:
+                    raise
+        # did not find the unit. Try scaling of unit1
+        _unit_prefixes = dict(
+            [
+                (
+                    "",
+                    1.0,
+                ),
+                ("m", 1e-3),
+                ("u", 1e-6),
+                ("n", 1e-9),
+                ("p", 1e-12),
+                ("k", 1e3),
+                ("M", 1e6),
+                ("G", 1e9),
+                ("T", 1e12),
+            ]
+        )
+        for prefix2 in _unit_prefixes:
+            if unit2.startswith(prefix2) and len(unit2) > len(prefix2):
+                for prefix1 in _unit_prefixes:
+                    if unit1.startswith(prefix1) and len(unit1) > len(prefix1):
+                        try:
+                            return (
+                                self._unit1_in_unit2(
+                                    unit1[len(prefix1) :],
+                                    unit2[len(prefix2) :],
+                                    try_prefix=False,
+                                )
+                                * _unit_prefixes[prefix1]
+                                / _unit_prefixes[prefix2]
+                            )
+                        except AttributeError:
+                            pass
+        raise AttributeError(
+            "Could not find attribute %s in Lockbox class. " % (unit1 + "_in_" + unit2)
+        )
+
+    def _unit_in_setpoint_unit(self, unit):
+        # helper function to convert unit into setpoint_unit
+        return self._unit1_in_unit2(unit, self.setpoint_unit)
+
+    def _setpoint_unit_in_unit(self, unit):
+        # helper function to convert setpoint_unit into unit
+        return self._unit1_in_unit2(self.setpoint_unit, unit)
+
+
+class LockboxState(UnitConversion):
     """Minimal lockbox model generated from PyRPL lockbox class metadata."""
 
     def __init__(self, classname: str = "Linear", library: LockboxSchemaLibrary | None = None):
@@ -675,6 +762,60 @@ class LockboxState:
             # assisted-design radios and analog transfer-function dialog.
             attrs = _unique([*attrs, "assisted_design", "tf_type", "tf_curve"])
         return [properties[name] for name in attrs if name in properties]
+
+    def setup_dict(self) -> dict[str, Any]:
+        attributes = self.library.resolve_setup_attributes(self.classname)
+        result = {name: self.values[name] for name in attributes if name in self.values}
+        result["classname"] = self.classname
+        result["inputs"] = {}
+        for name, model in self.inputs.items():
+            keys = self.library.resolve_setup_attributes(model.class_name)
+            values = {key: model.values[key] for key in keys if key in model.values}
+            calibration = model.calibration.as_dict()
+            calibration["_analog_offset"] = calibration.pop("analog_offset")
+            calibration["_asg_phase"] = calibration.pop("asg_phase")
+            values["calibration_data"] = calibration
+            result["inputs"][name] = values
+        result["outputs"] = {
+            name: {key: model.values[key] for key in self.library.resolve_setup_attributes(model.class_name) if key in model.values}
+            for name, model in self.outputs.items()
+        }
+        result["sequence"] = [{key: value for key, value in asdict(stage).items() if key != "name"} for stage in self.sequence]
+        return result
+
+    def restore_setup(self, state: dict) -> None:
+        for key in self.library.resolve_setup_attributes(self.classname):
+            if key in state and key != "classname":
+                self.values[key] = _copy_default(state[key])
+        for group in ("inputs", "outputs"):
+            for name, values in state.get(group, {}).items():
+                if name not in getattr(self, group):
+                    continue
+                model = getattr(self, group)[name]
+                for key in self.library.resolve_setup_attributes(model.class_name):
+                    if key in values:
+                        model.values[key] = _copy_default(values[key])
+                if group == "inputs":
+                    calibration = values.get("calibration_data", {})
+                    for key, value in calibration.items():
+                        key = {"_analog_offset": "analog_offset", "_asg_phase": "asg_phase"}.get(key, key)
+                        if key in model.calibration.__dataclass_fields__:
+                            setattr(model.calibration, key, float(value))
+                    model.calibration.amplitude = (model.calibration.max - model.calibration.min) / 2.0
+                    model.calibration.offset = (model.calibration.max + model.calibration.min) / 2.0
+                else:
+                    self._synchronize_output_design(model)
+        if "sequence" in state:
+            self.sequence = []
+            for index, values in enumerate(state["sequence"]):
+                self.sequence.append(self._new_stage(f"stage{index}"))
+                for key, value in values.items():
+                    if key == "outputs":
+                        for output, attrs in value.items():
+                            for attribute, setting in attrs.items():
+                                self.set_stage_output_attribute(index, output, attribute, setting)
+                    elif key != "name":
+                        self.set_stage_attribute(index, key, value)
 
     def schema(self) -> dict[str, Any]:
         return {

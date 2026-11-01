@@ -19,6 +19,7 @@ LOGGER = logging.getLogger(__name__)
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the PyRPL websocket server.")
     parser.add_argument("--hostname", default="_FAKE_", help="Red Pitaya hostname or _FAKE_.")
+    parser.add_argument("--frequency-correction", type=float, default=None, help="Clock calibration multiplier (otherwise read redpitaya.frequency_correction).")
     parser.add_argument("--port", type=int, default=2222, help="monitor_server TCP port.")
     parser.add_argument("--bind-host", default="127.0.0.1", help="HTTP bind host.")
     parser.add_argument("--bind-port", type=int, default=8000, help="HTTP bind port.")
@@ -69,6 +70,7 @@ def main() -> None:
     settings = ServerSettings(
         hostname=args.hostname,
         port=args.port,
+        frequency_correction=args.frequency_correction,
         bind_host=args.bind_host,
         bind_port=args.bind_port,
         scope_interval=args.scope_interval,

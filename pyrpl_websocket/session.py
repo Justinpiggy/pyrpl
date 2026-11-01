@@ -101,6 +101,7 @@ from .network_analyzer import NetworkAnalyzerRun, acquire_point, configure_iq, s
 from .scope import SCOPE_DATA_LENGTH, ScopeFrame, read_rolling_scope_frame, read_scope_frame, read_trigger_aligned_scope_frame
 from .scope_registers import (
     DSP_INPUT_VALUES,
+    scope_curve_ready,
     scope_trigger_roll_offset,
     start_scope_rolling_acquisition,
     start_scope_trace_acquisition,
@@ -136,6 +137,7 @@ class WebSession:
         self._scope_calibration_frame: ScopeFrame | None = None
         self._scope_calibration_frame_pending = False
         self.client = DummyClient() if settings.fake else MonitorClient(settings.hostname, settings.port)
+        self.acquisition_revision = {"scope": 0, "spectrumanalyzer": 0}
         self.scope_settings = ScopeSettings()
         self.asg_settings = {"asg0": AsgSettings(), "asg1": AsgSettings()}
         self.hk_settings = HkSettings()
@@ -152,8 +154,16 @@ class WebSession:
         self.curves = configured_curve_store(settings.curve_dir)
         self.lockbox = LockboxState()
         self.lockbox_runtime = TrustedLockboxRuntime(self, self.lockbox)
+        self.client.resolve_input = self._resolve_lockbox_dsp_signal_no_lock
         config_enabled = settings.config is not None or settings.source is not None
         self.config = None if settings.state_file or not config_enabled else WebConfig(settings.config, settings.source)
+        correction = settings.frequency_correction
+        if correction is None:
+            correction = self.config.module_setup("redpitaya").get("frequency_correction", 1.0) if self.config else 1.0
+        self.client.frequency_correction = float(correction)
+        if self.client.frequency_correction <= 0:
+            raise ValueError("frequency_correction must be positive")
+        settings.frequency_correction = self.client.frequency_correction
         self.module_manager = ModuleManager(
             [
                 "scope",
@@ -170,11 +180,12 @@ class WebSession:
         # Keep this read-only-by-convention alias for API payloads and trusted
         # compatibility proxies. Reservations must use ``module_manager``.
         self.module_owners = self.module_manager.owners
+        self._fake_scope_clock = 0
+        self._hardware_rolling_started = False
+        self._hardware_trace_started: float | None = None
         self._restore_lockbox_class_from_config()
         self._load_config_setup_attributes()
         self._module_states: dict[str, dict[str, dict]] = self._load_saved_states()
-        self._fake_scope_clock = 0
-        self._hardware_rolling_started = False
         self._lockbox_state_callback = lockbox_state_callback
         self._lockbox_sequence_stop = Event()
         self._lockbox_sequence_thread: Thread | None = None
@@ -277,6 +288,7 @@ class WebSession:
     def set_lockbox_attribute(self, attribute: str, value) -> dict:
         with self._lock:
             schema = self.lockbox.set_attribute(attribute, value)
+            self._persist_lockbox_class_no_lock()
         self._wake_lockbox_monitor()
         return schema
 
@@ -284,6 +296,7 @@ class WebSession:
         with self._lock:
             schema = self.lockbox.set_input_attribute(input_name, attribute, value)
             self._configure_lockbox_input_no_lock(input_name)
+            self._persist_lockbox_class_no_lock()
         self._wake_lockbox_monitor()
         return schema
 
@@ -294,12 +307,16 @@ class WebSession:
             if action != "calibrate":
                 raise KeyError(action)
             self._calibrate_lockbox_inputs_no_lock([input_name])
+            self._persist_lockbox_class_no_lock()
             return self.lockbox.schema()
 
     def set_lockbox_output_attribute(self, output_name: str, attribute: str, value) -> dict:
         with self._lock:
             schema = self.lockbox.set_output_attribute(output_name, attribute, value)
             self._reapply_lockbox_output_no_lock(output_name)
+            if attribute == "extra_module" and not any(output.extra_module == "iir" for output in self.lockbox.outputs.values()):
+                self._release_module_no_lock("iir", "lockbox")
+            self._persist_lockbox_class_no_lock()
         self._wake_lockbox_monitor()
         return schema
 
@@ -307,6 +324,7 @@ class WebSession:
         with self._lock:
             schema = self.lockbox.append_stage()
             self.lockbox_runtime.refresh_stages()
+            self._persist_lockbox_class_no_lock()
         self._wake_lockbox_monitor()
         return schema
 
@@ -314,18 +332,21 @@ class WebSession:
         with self._lock:
             schema = self.lockbox.delete_stage(index)
             self.lockbox_runtime.refresh_stages()
+            self._persist_lockbox_class_no_lock()
         self._wake_lockbox_monitor()
         return schema
 
     def set_lockbox_stage_attribute(self, index: int, attribute: str, value) -> dict:
         with self._lock:
             schema = self.lockbox.set_stage_attribute(index, attribute, value)
+            self._persist_lockbox_class_no_lock()
         self._wake_lockbox_monitor()
         return schema
 
     def set_lockbox_stage_output_attribute(self, index: int, output_name: str, attribute: str, value) -> dict:
         with self._lock:
             schema = self.lockbox.set_stage_output_attribute(index, output_name, attribute, value)
+            self._persist_lockbox_class_no_lock()
         self._wake_lockbox_monitor()
         return schema
 
@@ -347,6 +368,7 @@ class WebSession:
             return schema
         with self._lock:
             schema = self._call_lockbox_action_no_lock(action)
+            self._persist_lockbox_class_no_lock()
         self._wake_lockbox_monitor()
         return schema
 
@@ -383,6 +405,13 @@ class WebSession:
             )
 
     def module_attributes(self, module_name: str) -> list[dict]:
+        attributes = self._module_attributes(module_name)
+        for attribute in attributes:
+            if attribute["name"] in {"input", "input1", "input2", "input1_baseband", "input2_baseband"}:
+                attribute["options"] = list(dict.fromkeys([*attribute.get("options", []), *self._signal_options_no_lock()]))
+        return attributes
+
+    def _module_attributes(self, module_name: str) -> list[dict]:
         if module_name == "scope":
             return scope_attribute_schema(self.scope_settings)
         if module_name in self.asg_settings:
@@ -422,6 +451,8 @@ class WebSession:
         if module_name == "ams":
             return self._read_ams_no_lock()
         if module_name in self.pid_settings:
+            word = int(self.client.reads(dsp_addr_base(module_name) + 0x100, 1)[0]) & 0xFFFF
+            self.pid_settings[module_name].ival = (word - 0x10000 if word & 0x8000 else word) / 8192.0
             return self._with_owner(module_name, self.pid_settings[module_name].as_dict())
         if module_name in self.iq_settings:
             return self._with_owner(module_name, self.iq_settings[module_name].as_dict())
@@ -429,6 +460,7 @@ class WebSession:
             _, self.iir_settings.overflow = read_iir_overflow(self.client)
             return self._with_owner(module_name, self.iir_settings.as_dict())
         if module_name == "trig":
+            self.trig_settings.armed = bool(int(self.client.reads(dsp_addr_base("trig") + 0x100, 1)[0]) & 1)
             return self._with_owner(module_name, self.trig_settings.as_dict())
         if module_name in self.pwm_settings:
             return self._with_owner(module_name, self.pwm_settings[module_name].as_dict())
@@ -483,11 +515,15 @@ class WebSession:
         with self._lock:
             self._ensure_manual_control_allowed(module_name)
             if module_name == "scope":
-                normalized = set_scope_attribute(self.scope_settings, attribute, value)
+                normalized = set_scope_attribute(self.scope_settings, attribute, value, inputs=self._signal_options_no_lock())
+                if attribute in {"input1", "input2", "duration", "average", "trigger_source", "trigger_delay", "threshold", "hysteresis", "rolling_mode", "run_continuous", "trace_average"}:
+                    self.scope_settings.current_avg = 0
+                    self.acquisition_revision["scope"] += 1
                 if attribute == "run_continuous":
                     self.scope_settings.running_state = "running_continuous" if normalized else "stopped"
                 sync_scope_setting(self.client, self.scope_settings, attribute)
                 self._hardware_rolling_started = False
+                self._hardware_trace_started = None
                 self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name in self.asg_settings:
@@ -495,7 +531,7 @@ class WebSession:
                 normalized = set_asg_attribute(settings, attribute, value)
                 sync_asg_setting(self.client, _asg_channel(module_name), settings, attribute)
                 self._persist_module_setup_if_needed(module_name, attribute)
-                return normalized
+                return getattr(settings, attribute)
             if module_name == "hk":
                 normalized = set_hk_attribute(self.hk_settings, attribute, value)
                 sync_hk_setting(self.client, self.hk_settings, attribute)
@@ -509,36 +545,39 @@ class WebSession:
                 return normalized
             if module_name in self.pid_settings:
                 settings = self.pid_settings[module_name]
-                normalized = set_pid_attribute(settings, attribute, value)
+                normalized = set_pid_attribute(settings, attribute, value, inputs=self._signal_options_no_lock())
                 sync_pid_setting(self.client, module_name, settings, attribute)
                 self._persist_module_setup_if_needed(module_name, attribute)
-                return normalized
+                return getattr(settings, attribute)
             if module_name in self.iq_settings:
                 settings = self.iq_settings[module_name]
-                normalized = set_iq_attribute(settings, attribute, value)
+                normalized = set_iq_attribute(settings, attribute, value, inputs=self._signal_options_no_lock())
                 sync_iq_setting(self.client, module_name, settings, attribute)
                 self._persist_module_setup_if_needed(module_name, attribute)
-                return normalized
+                return getattr(settings, attribute)
             if module_name == "iir":
-                normalized = set_iir_attribute(self.iir_settings, attribute, value)
+                normalized = set_iir_attribute(self.iir_settings, attribute, value, inputs=self._signal_options_no_lock())
                 if attribute == "data_curve":
                     self._select_iir_data_curve_no_lock(normalized)
                 sync_iir_setting(self.client, self.iir_settings, attribute)
                 self._persist_module_setup_if_needed(module_name, attribute)
-                return normalized
+                return getattr(self.iir_settings, attribute)
             if module_name == "trig":
-                normalized = set_trig_attribute(self.trig_settings, attribute, value)
+                normalized = set_trig_attribute(self.trig_settings, attribute, value, inputs=self._signal_options_no_lock())
                 sync_trig_setting(self.client, self.trig_settings, attribute)
                 self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name in self.pwm_settings:
                 settings = self.pwm_settings[module_name]
-                normalized = set_pwm_attribute(settings, attribute, value)
+                normalized = set_pwm_attribute(settings, attribute, value, inputs=self._signal_options_no_lock())
                 sync_pwm_setting(self.client, module_name, settings, attribute)
                 self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name == "spectrumanalyzer":
-                normalized = set_spectrum_attribute(self.spectrum_settings, attribute, value)
+                normalized = set_spectrum_attribute(self.spectrum_settings, attribute, value, inputs=self._signal_options_no_lock())
+                if attribute == "trace_average":
+                    self.spectrum_settings.current_avg = 0
+                    self.acquisition_revision["spectrumanalyzer"] += 1
                 call_setup = attribute in {
                     "input",
                     "center",
@@ -561,9 +600,10 @@ class WebSession:
                 self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             if module_name == "networkanalyzer":
-                normalized = set_network_analyzer_attribute(self.network_analyzer_settings, attribute, value)
-                if attribute not in {"trace_average", "curve_name"} and self.network_analyzer_settings.running_state != "stopped":
-                    self._stop_network_analyzer_no_lock()
+                normalized = set_network_analyzer_attribute(self.network_analyzer_settings, attribute, value, inputs=self._signal_options_no_lock())
+                if attribute not in {"trace_average", "curve_name"}:
+                    action = "continuous" if self.network_analyzer_settings.run_continuous else "stop"
+                    self._call_network_analyzer_action_no_lock(action)
                 self._persist_module_setup_if_needed(module_name, attribute)
                 return normalized
             raise KeyError(module_name)
@@ -620,6 +660,7 @@ class WebSession:
                 if action == "setup":
                     sync_asg_settings(self.client, channel, settings)
                 elif action == "trigger":
+                    sync_asg_settings(self.client, channel, settings)
                     trigger_asg(self.client, channel)
                     settings.trigger_source = "off"
                 elif action == "off":
@@ -643,21 +684,27 @@ class WebSession:
             if action == "setup":
                 sync_scope_settings(self.client, self.scope_settings)
                 self._hardware_rolling_started = False
+                self._hardware_trace_started = None
                 self.scope_settings.current_avg = 0
+                self.acquisition_revision["scope"] += 1
                 self.scope_settings.running_state = (
                     "running_continuous" if self.scope_settings.run_continuous else "stopped"
                 )
             elif action == "single":
                 sync_scope_settings(self.client, self.scope_settings)
                 self._hardware_rolling_started = False
+                self._hardware_trace_started = None
                 self.scope_settings.run_continuous = False
                 self.scope_settings.current_avg = 0
+                self.acquisition_revision["scope"] += 1
                 self.scope_settings.running_state = "running_single"
             elif action == "continuous":
                 sync_scope_settings(self.client, self.scope_settings)
                 self._hardware_rolling_started = False
+                self._hardware_trace_started = None
                 self.scope_settings.run_continuous = True
                 self.scope_settings.current_avg = 0
+                self.acquisition_revision["scope"] += 1
                 self.scope_settings.running_state = "running_continuous"
             elif action == "pause":
                 if self.scope_settings.running_state == "running_single":
@@ -683,8 +730,10 @@ class WebSession:
                 self.scope_settings.running_state = "running_continuous"
             elif action == "stop":
                 self._hardware_rolling_started = False
+                self._hardware_trace_started = None
                 self.scope_settings.run_continuous = False
                 self.scope_settings.current_avg = 0
+                self.acquisition_revision["scope"] += 1
                 self.scope_settings.running_state = "stopped"
             elif action == "save_curve":
                 self.scope_settings.last_action = action
@@ -721,10 +770,7 @@ class WebSession:
             raise KeyError(module_name)
         state_name = _normalize_state_name(state_name)
         with self._lock:
-            state = {
-                attribute: self._module_setting_value(module_name, attribute)
-                for attribute in _setup_attributes(module_name)
-            }
+            state = self._module_setup_dict(module_name)
             self._module_states[module_name][state_name] = dict(state)
             self._persist_saved_states()
             return {"name": state_name, "state": state}
@@ -734,9 +780,9 @@ class WebSession:
             raise KeyError(module_name)
         state_name = _normalize_state_name(state_name)
         with self._lock:
+            self._ensure_manual_control_allowed(module_name)
             state = self._module_states[module_name][state_name]
-            for attribute, value in state.items():
-                self._set_module_attribute_no_lock(module_name, attribute, value)
+            self._apply_module_setup_no_lock(module_name, state)
             if self.config is not None:
                 self.config.set_module_setup(module_name, self._module_setup_dict(module_name))
             return self.module_state(module_name)
@@ -774,12 +820,10 @@ class WebSession:
         with self._lock:
             if self.config is None or self.config.path is None:
                 raise ValueError("PyRPL YAML configuration is disabled for this session")
+            self._ensure_manual_control_allowed(module_name)
             branch = self.config.set_branch_yaml(module_name, text)
             if module_name in _empty_saved_states():
-                for attribute, value in branch.items():
-                    if attribute not in _setup_attributes(module_name):
-                        continue
-                    self._set_module_attribute_no_lock(module_name, attribute, value)
+                self._apply_module_setup_no_lock(module_name, branch)
             modules = self.config.branch_names(list(_empty_saved_states()))
             if module_name not in modules:
                 modules.append(module_name)
@@ -905,7 +949,7 @@ class WebSession:
             self._stop_network_analyzer_no_lock()
             for attribute, value in measurement_state.items():
                 if attribute in NETWORK_ANALYZER_SETUP_ATTRIBUTES:
-                    set_network_analyzer_attribute(self.network_analyzer_settings, attribute, value)
+                    set_network_analyzer_attribute(self.network_analyzer_settings, attribute, value, inputs=self._signal_options_no_lock())
             self._call_network_analyzer_action_no_lock("single")
             selected_iq = self.network_analyzer_settings.iq_module
             if selected_iq is None:
@@ -949,20 +993,21 @@ class WebSession:
             setattr(self.ams_settings, name, value)
         return self.ams_settings.as_dict()
 
-    def acquire_spectrum_scope_frame(self, sequence: int, sample_count: int = 4096) -> ScopeFrame | None:
+    def acquire_spectrum_scope_frame(self, sequence: int, sample_count: int = 4096, *, wait: bool = False) -> ScopeFrame | None:
         with self._lock:
             sample_count = max(256, min(SCOPE_DATA_LENGTH, int(sample_count)))
             settings = self.spectrum_settings
             if settings.running_state in {"stopped", "paused_single", "paused_continuous"}:
                 return None
-            self._configure_spectrum_no_lock()
+            if self._hardware_trace_started is None:
+                self._configure_spectrum_no_lock()
             if isinstance(self.client, DummyClient):
                 frame = self._fake_scope_frame(sequence, self._fake_scope_clock, sample_count)
                 self._fake_scope_clock += sample_count
             else:
                 previous_state = self.scope_settings.running_state
                 self.scope_settings.running_state = "running_continuous"
-                acquisition = self._acquire_hardware_scope_frame(sequence, sample_count)
+                acquisition = self._acquire_hardware_scope_frame(sequence, sample_count, wait=wait)
                 self.scope_settings.running_state = previous_state
                 frame = acquisition.frame
             if frame is None:
@@ -972,7 +1017,7 @@ class WebSession:
                 self._stop_spectrum_no_lock(reset_average=False)
             return frame
 
-    def acquire_scope_frame(self, sequence: int, sample_count: int) -> ScopeAcquisition:
+    def acquire_scope_frame(self, sequence: int, sample_count: int, *, wait: bool = False) -> ScopeAcquisition:
         """Acquire one display frame according to current run/trigger state."""
 
         while True:
@@ -989,7 +1034,7 @@ class WebSession:
                 return calibration
             sample_count = max(1, min(SCOPE_DATA_LENGTH, int(sample_count)))
             if not isinstance(self.client, DummyClient):
-                return self._acquire_hardware_scope_frame(sequence, sample_count)
+                return self._acquire_hardware_scope_frame(sequence, sample_count, wait=wait)
             frame = self._acquire_fake_scope_frame(sequence, sample_count)
             return frame
         finally:
@@ -1196,7 +1241,17 @@ class WebSession:
 
     def _persist_lockbox_class_no_lock(self) -> None:
         if self.config is not None:
-            self.config.set_module_setup("lockbox", {"classname": self.lockbox.classname})
+            self.config.set_module_setup("lockbox", self.lockbox.setup_dict())
+
+    def _restore_lockbox_setup_no_lock(self, state: dict) -> None:
+        classname = state.get("classname", self.lockbox.classname)
+        if classname != self.lockbox.classname:
+            self._release_lockbox_resources_no_lock()
+            self.lockbox_runtime.close()
+            self.lockbox = LockboxState(classname, library=self.lockbox.library)
+            self.lockbox_runtime = TrustedLockboxRuntime(self, self.lockbox)
+        self.lockbox.restore_setup(state)
+        self.lockbox_runtime.refresh_stages()
 
     def _load_saved_states(self) -> dict[str, dict[str, dict]]:
         if self.config is not None:
@@ -1244,6 +1299,13 @@ class WebSession:
         self.config.set_module_setup(module_name, self._module_setup_dict(module_name))
 
     def _module_setup_dict(self, module_name: str) -> dict:
+        if module_name == "lockbox":
+            return self.lockbox.setup_dict()
+        if module_name == "iir":
+            state = self.iir_settings.as_dict()
+            for name in ("zeros", "poles"):
+                state[name] = [str(v) for v in getattr(self.iir_settings, "real_" + name)] + list(getattr(self.iir_settings, "complex_" + name))
+            return {key: value for key, value in state.items() if key in IIR_SETUP_ATTRIBUTES or key in {"zeros", "poles"}}
         return {
             attribute: self._module_setting_value(module_name, attribute)
             for attribute in _setup_attributes(module_name)
@@ -1274,11 +1336,12 @@ class WebSession:
 
     def _set_module_attribute_no_lock(self, module_name: str, attribute: str, value) -> None:
         if module_name == "scope":
-            set_scope_attribute(self.scope_settings, attribute, value)
+            set_scope_attribute(self.scope_settings, attribute, value, inputs=self._signal_options_no_lock())
             if attribute == "run_continuous":
                 self.scope_settings.running_state = "running_continuous" if self.scope_settings.run_continuous else "stopped"
             sync_scope_setting(self.client, self.scope_settings, attribute)
             self._hardware_rolling_started = False
+            self._hardware_trace_started = None
         elif module_name in self.asg_settings:
             settings = self.asg_settings[module_name]
             set_asg_attribute(settings, attribute, value)
@@ -1288,32 +1351,34 @@ class WebSession:
             sync_hk_setting(self.client, self.hk_settings, attribute)
         elif module_name in self.pid_settings:
             settings = self.pid_settings[module_name]
-            set_pid_attribute(settings, attribute, value)
+            set_pid_attribute(settings, attribute, value, inputs=self._signal_options_no_lock())
             sync_pid_setting(self.client, module_name, settings, attribute)
         elif module_name in self.iq_settings:
             settings = self.iq_settings[module_name]
-            set_iq_attribute(settings, attribute, value)
+            set_iq_attribute(settings, attribute, value, inputs=self._signal_options_no_lock())
             sync_iq_setting(self.client, module_name, settings, attribute)
         elif module_name == "iir":
-            set_iir_attribute(self.iir_settings, attribute, value)
+            set_iir_attribute(self.iir_settings, attribute, value, inputs=self._signal_options_no_lock())
             if attribute == "data_curve":
                 self._select_iir_data_curve_no_lock(self.iir_settings.data_curve)
             sync_iir_setting(self.client, self.iir_settings, attribute)
         elif module_name == "trig":
-            set_trig_attribute(self.trig_settings, attribute, value)
+            set_trig_attribute(self.trig_settings, attribute, value, inputs=self._signal_options_no_lock())
             sync_trig_setting(self.client, self.trig_settings, attribute)
         elif module_name in self.pwm_settings:
             settings = self.pwm_settings[module_name]
-            set_pwm_attribute(settings, attribute, value)
+            set_pwm_attribute(settings, attribute, value, inputs=self._signal_options_no_lock())
             sync_pwm_setting(self.client, module_name, settings, attribute)
         elif module_name == "spectrumanalyzer":
-            set_spectrum_attribute(self.spectrum_settings, attribute, value)
+            set_spectrum_attribute(self.spectrum_settings, attribute, value, inputs=self._signal_options_no_lock())
             if self.spectrum_settings.run_continuous:
                 self._call_spectrum_action_no_lock("continuous")
             else:
                 self._stop_spectrum_no_lock(reset_average=False)
         elif module_name == "networkanalyzer":
-            set_network_analyzer_attribute(self.network_analyzer_settings, attribute, value)
+            set_network_analyzer_attribute(self.network_analyzer_settings, attribute, value, inputs=self._signal_options_no_lock())
+            if attribute not in {"trace_average", "curve_name"}:
+                self._call_network_analyzer_action_no_lock("continuous" if self.network_analyzer_settings.run_continuous else "stop")
         else:
             raise KeyError(module_name)
 
@@ -1349,8 +1414,10 @@ class WebSession:
             # the live Scope stream while the controls are locked.
             self.scope_settings.run_continuous = False
             self.scope_settings.current_avg = 0
+            self.acquisition_revision["scope"] += 1
             self.scope_settings.running_state = "stopped"
             self._hardware_rolling_started = False
+            self._hardware_trace_started = None
         if new_owner is None:
             self._restore_module_setup_no_lock(module_name)
 
@@ -1359,13 +1426,62 @@ class WebSession:
 
         if self.config is None:
             return
-        for attribute, value in self.config.module_setup(module_name).items():
-            if attribute not in _setup_attributes(module_name):
+        self._apply_module_setup_no_lock(module_name, self.config.module_setup(module_name))
+
+    def _apply_module_setup_no_lock(self, module_name: str, state: dict) -> None:
+        if not state:
+            return
+        if module_name == "lockbox":
+            self._restore_lockbox_setup_no_lock(state)
+            return
+        settings, setter, sync = self._setup_handlers(module_name)
+        for attribute, value in state.items():
+            if attribute not in _setup_attributes(module_name) and not (module_name == "iir" and attribute in {"zeros", "poles"}):
                 continue
-            try:
-                self._set_module_attribute_no_lock(module_name, attribute, value)
-            except (KeyError, TypeError, ValueError):
-                continue
+            if setter is set_asg_attribute or setter is set_hk_attribute:
+                setter(settings, attribute, value)
+            else:
+                setter(settings, attribute, value, inputs=self._signal_options_no_lock())
+        if module_name == "iir":
+            # Original master lists are authoritative when both formats exist.
+            for name in ("zeros", "poles"):
+                if name in state:
+                    setter(settings, name, state[name])
+        sync()
+
+    def _setup_handlers(self, name: str):
+        if name in self.asg_settings:
+            s = self.asg_settings[name]
+            return s, set_asg_attribute, lambda: sync_asg_settings(self.client, _asg_channel(name), s)
+        for group, setter, sync in (
+            (self.pid_settings, set_pid_attribute, sync_pid_settings),
+            (self.iq_settings, set_iq_attribute, sync_iq_settings),
+            (self.pwm_settings, set_pwm_attribute, sync_pwm_settings),
+        ):
+            if name in group:
+                s = group[name]
+                return s, setter, lambda: sync(self.client, name, s)
+        if name == "iir":
+            return self.iir_settings, set_iir_attribute, lambda: sync_iir_settings(self.client, self.iir_settings)
+        if name == "trig":
+            return self.trig_settings, set_trig_attribute, lambda: sync_trig_settings(self.client, self.trig_settings)
+        if name == "hk":
+            return self.hk_settings, set_hk_attribute, lambda: sync_hk_settings(self.client, self.hk_settings)
+        if name == "scope":
+            def setup_scope():
+                sync_scope_settings(self.client, self.scope_settings)
+                self._hardware_trace_started = None
+                self._hardware_rolling_started = False
+                self.scope_settings.current_avg = 0
+                self.acquisition_revision["scope"] += 1
+                self.scope_settings.running_state = "running_continuous" if self.scope_settings.run_continuous else "stopped"
+            return self.scope_settings, set_scope_attribute, setup_scope
+        if name in {"spectrumanalyzer", "networkanalyzer"}:
+            s = self.spectrum_settings if name == "spectrumanalyzer" else self.network_analyzer_settings
+            setter = set_spectrum_attribute if name == "spectrumanalyzer" else set_network_analyzer_attribute
+            action = self._call_spectrum_action_no_lock if name == "spectrumanalyzer" else self._call_network_analyzer_action_no_lock
+            return s, setter, lambda: action("continuous" if s.run_continuous else "stop")
+        raise KeyError(name)
 
     def _with_owner(self, module_name: str, state: dict) -> dict:
         state["owner"] = self.module_owners.get(module_name)
@@ -1598,8 +1714,6 @@ class WebSession:
         pid = self.pid_settings[output.pid]
         pid.p = 0.0
         pid.i = 0.0
-        if reset_offset:
-            pid.ival = 0.0
         sync_pid_settings(self.client, output.pid, pid)
         output.current_state = "unlock"
 
@@ -1615,6 +1729,16 @@ class WebSession:
         input_model = self.lockbox.inputs[input_name]
         self._configure_pid_output_no_lock(output_name, reset_offset=False)
         external_gain = output.dc_gain * self._lockbox_expected_slope_no_lock(input_name, setpoint)
+        external_gain *= (self.lockbox_runtime.root or self.lockbox)._unit_in_setpoint_unit(output.unit.split("/")[0])
+        signal = self._lockbox_input_signal_no_lock(input_model)
+        if output.extra_module == "iir":
+            self._reserve_module_no_lock("iir", "lockbox")
+            self.iir_settings.input = signal
+            self.iir_settings.output_direct = "off"
+            sync_iir_setting(self.client, self.iir_settings, "input")
+            sync_iir_setting(self.client, self.iir_settings, "output_direct")
+            signal = "iir"
+            external_gain *= self.iir_settings.gain
         if abs(external_gain) < 1e-15:
             p_gain = 0.0
             i_gain = 0.0
@@ -1624,10 +1748,10 @@ class WebSession:
         pid = self.pid_settings[output.pid]
         pid.p = 0.0
         pid.i = 0.0
-        pid.input = self._lockbox_input_signal_no_lock(input_model)
+        pid.input = signal
         pid.setpoint = self._lockbox_expected_signal_no_lock(input_name, setpoint) + input_model.calibration.analog_offset
         if offset is not None:
-            pid.ival = offset
+            self._set_lockbox_output_offset_no_lock(output_name, offset)
         sync_pid_settings(self.client, output.pid, pid)
         pid.p = p_gain
         pid.i = i_gain
@@ -1642,7 +1766,10 @@ class WebSession:
         pid.min_voltage = output.min_voltage
         pid.output_direct = output.output_channel if output.output_channel in {"out1", "out2"} else "off"
         if reset_offset:
-            pid.ival = 0.0
+            self._set_lockbox_output_offset_no_lock(output_name, 0.0)
+        set_pid_attribute(pid, "inputfilter", output.additional_filter)
+        sync_pid_setting(self.client, output.pid, pid, "inputfilter")
+        output.additional_filter = list(pid.inputfilter)
         sync_pid_setting(self.client, output.pid, pid, "max_voltage")
         sync_pid_setting(self.client, output.pid, pid, "min_voltage")
         sync_pid_setting(self.client, output.pid, pid, "output_direct")
@@ -1701,14 +1828,25 @@ class WebSession:
         sync_iq_setting(self.client, iq_module, iq, "on")
         return iq_module
 
+    def _signal_options_no_lock(self) -> list[str]:
+        return [*DSP_INPUT_VALUES, *[f"lockbox.inputs.{name}" for name in self.lockbox.inputs],
+                *[f"lockbox.outputs.{name}" for name in self.lockbox.outputs]]
+
     def _resolve_lockbox_dsp_signal_no_lock(self, signal: str) -> str:
-        if signal.startswith("lockbox.outputs."):
-            output_name = signal.split(".")[-1]
-            output = self.lockbox.outputs.get(output_name)
-            if output is not None:
-                return output.pid
-            return "off"
-        return signal if signal in DSP_INPUT_VALUES else "off"
+        for _ in range(5):
+            if signal in DSP_INPUT_VALUES:
+                return signal
+            name = signal.split(".")[-1]
+            if signal.startswith("lockbox.outputs.") and name in self.lockbox.outputs:
+                return self.lockbox.outputs[name].pid
+            if signal.startswith("lockbox.inputs.") and name in self.lockbox.inputs:
+                model = self.lockbox.inputs[name]
+                if model.is_iq:
+                    return self._configure_lockbox_iq_input_no_lock(model)
+                signal = model.input_signal
+            else:
+                break
+        return "off"
 
     def _lockbox_input_signal_no_lock(self, input_model) -> str:
         if getattr(input_model, "is_iq", False):
@@ -1745,6 +1883,7 @@ class WebSession:
             if not isinstance(self.client, DummyClient):
                 sync_scope_settings(self.client, self.scope_settings)
             self._hardware_rolling_started = False
+            self._hardware_trace_started = None
             self._end_scope_calibration()
             self._release_module_no_lock("scope", "lockbox")
 
@@ -1759,6 +1898,7 @@ class WebSession:
             if not isinstance(self.client, DummyClient):
                 sync_scope_settings(self.client, self.scope_settings)
             self._hardware_rolling_started = False
+            self._hardware_trace_started = None
             self._end_scope_calibration()
             self._release_module_no_lock("scope", "lockbox")
 
@@ -1781,6 +1921,7 @@ class WebSession:
         self.scope_settings.run_continuous = False
         self.scope_settings.rolling_mode = False
         self.scope_settings.current_avg = 0
+        self.acquisition_revision["scope"] += 1
         self.scope_settings.running_state = "running_single"
 
         if isinstance(self.client, DummyClient):
@@ -1788,10 +1929,10 @@ class WebSession:
             self._fake_scope_clock += SCOPE_DATA_LENGTH
         else:
             sync_scope_settings(self.client, self.scope_settings)
-            acquisition = self._acquire_hardware_scope_frame(0, SCOPE_DATA_LENGTH)
-            if acquisition.frame is None:
-                return np.asarray([], dtype=np.float64)
-            frame = acquisition.frame
+            start_scope_trace_acquisition(self.client, self.scope_settings)
+            if not wait_scope_curve_ready(self.client, self.scope_settings):
+                raise TimeoutError("Lockbox calibration sweep did not trigger")
+            frame = read_trigger_aligned_scope_frame(self.client, 0, scope_trigger_roll_offset(self.client), SCOPE_DATA_LENGTH)
         self._publish_scope_calibration_frame(frame)
         return (
             frame.samples()[:, 0].astype(np.float64, copy=False)
@@ -1857,6 +1998,7 @@ class WebSession:
             self.scope_settings = saved_scope
             sync_scope_settings(self.client, self.scope_settings)
             self._hardware_rolling_started = False
+            self._hardware_trace_started = None
             self._release_module_no_lock("scope", "lockbox")
 
     def _update_lockbox_calibration_from_samples(self, input_model, samples: np.ndarray) -> None:
@@ -1884,7 +2026,7 @@ class WebSession:
         self.scope_settings.average = True
         self.scope_settings.running_state = "running_single"
         sync_scope_settings(self.client, self.scope_settings)
-        acquisition = self._acquire_hardware_scope_frame(0, sample_count)
+        acquisition = self._acquire_hardware_scope_frame(0, sample_count, wait=True)
         if acquisition.frame is None:
             return np.asarray([], dtype=np.float64)
         return acquisition.frame.samples()[:, 0].astype(np.float64, copy=False)
@@ -1933,6 +2075,7 @@ class WebSession:
         settings.run_continuous = False
         if reset_average:
             settings.current_avg = 0
+            self.acquisition_revision["spectrumanalyzer"] += 1
         self._release_module_no_lock(settings.iq_module, "spectrumanalyzer")
         self._release_module_no_lock("scope", "spectrumanalyzer")
 
@@ -1944,7 +2087,7 @@ class WebSession:
             settings.iq_module = iq_module
             settings.run_continuous = action == "continuous"
             settings.running_state = "running_continuous" if settings.run_continuous else "running_single"
-            self.network_analyzer_run.prepare(settings)
+            self.network_analyzer_run.prepare(settings, self.client.frequency_correction)
             configure_iq(
                 self.client,
                 iq_module,
@@ -1952,6 +2095,19 @@ class WebSession:
                 settings,
                 self.network_analyzer_run,
             )
+        elif action == "pause":
+            if settings.running_state.startswith("running_"):
+                settings.running_state = settings.running_state.replace("running_", "paused_")
+                settings.run_continuous = False
+                stop_iq(self.client, settings.iq_module, self.iq_settings[settings.iq_module])
+        elif action in {"resume", "resume_single", "resume_continuous"}:
+            if settings.running_state.startswith("paused_"):
+                mode = settings.running_state[len("paused_"):] if action == "resume" else action[len("resume_"):]
+                settings.running_state = "running_" + mode
+                settings.run_continuous = mode == "continuous"
+                iq = self.iq_settings[settings.iq_module]
+                iq.amplitude = float(self.network_analyzer_run.amplitudes[self.network_analyzer_run.current_point])
+                sync_iq_setting(self.client, settings.iq_module, iq, "amplitude")
         elif action == "stop":
             self._stop_network_analyzer_no_lock()
         else:
@@ -1966,7 +2122,7 @@ class WebSession:
     def _acquire_network_analyzer_point_no_lock(self) -> dict | None:
         settings = self.network_analyzer_settings
         run = self.network_analyzer_run
-        if settings.running_state == "stopped" or settings.iq_module is None:
+        if not settings.running_state.startswith("running_") or settings.iq_module is None:
             return None
         index = run.current_point
         frequency, value, amplitude = acquire_point(
@@ -2030,7 +2186,7 @@ class WebSession:
         else:
             previous_state = self.scope_settings.running_state
             self.scope_settings.running_state = "running_continuous"
-            acquisition = self._acquire_hardware_scope_frame(sequence, sample_count)
+            acquisition = self._acquire_hardware_scope_frame(sequence, sample_count, wait=True)
             self.scope_settings.running_state = previous_state
             if acquisition.frame is None:
                 return self._empty_spectrum_arrays(sequence)
@@ -2042,6 +2198,7 @@ class WebSession:
         self._reserve_module_no_lock("scope", "spectrumanalyzer")
         self.scope_settings.running_state = "stopped"
         self._hardware_rolling_started = False
+        self._hardware_trace_started = None
         if settings.baseband:
             self._release_module_no_lock(settings.iq_module, "spectrumanalyzer")
             self.scope_settings.input1 = settings.input1_baseband
@@ -2061,14 +2218,17 @@ class WebSession:
             iq_settings.quadrature_factor = 1.0
             iq_settings.on = True
             sync_iq_settings(self.client, settings.iq_module, iq_settings)
+            settings.iq_bandwidth = list(iq_settings.bandwidth)
             sync_iq_setting(self.client, settings.iq_module, iq_settings, "on")
             self.scope_settings.input1 = settings.iq_module
             self.scope_settings.input2 = "iq2_2"
         self.scope_settings.trigger_source = "immediately"
         self.scope_settings.average = True
+        self.scope_settings.rolling_mode = False
         self.scope_settings.duration = max(8e-9 * (2**14), SCOPE_DATA_LENGTH / settings.span)
         sync_scope_settings(self.client, self.scope_settings)
         self._hardware_rolling_started = False
+        self._hardware_trace_started = None
 
     def _spectrum_arrays_from_scope_no_lock(self, sequence: int, frame: ScopeFrame) -> dict:
         settings = self.spectrum_settings
@@ -2118,7 +2278,7 @@ class WebSession:
             "running_state": self.spectrum_settings.running_state,
         }
 
-    def _acquire_hardware_scope_frame(self, sequence: int, sample_count: int) -> ScopeAcquisition:
+    def _acquire_hardware_scope_frame(self, sequence: int, sample_count: int, *, wait: bool = False) -> ScopeAcquisition:
         state = self.scope_settings.running_state
         if state in {"stopped", "paused_single", "paused_continuous"}:
             return ScopeAcquisition(None)
@@ -2126,10 +2286,18 @@ class WebSession:
             return self._acquire_hardware_rolling_scope_frame(sequence, sample_count)
         if self.scope_settings.trigger_source == "off":
             return ScopeAcquisition(None)
-        if not start_scope_trace_acquisition(self.client, self.scope_settings):
+        if self._hardware_trace_started is None:
+            if not start_scope_trace_acquisition(self.client, self.scope_settings):
+                return ScopeAcquisition(None)
+            self._hardware_trace_started = time.monotonic()
+        if wait:
+            if not wait_scope_curve_ready(self.client, self.scope_settings):
+                return ScopeAcquisition(None)
+        elif time.monotonic() - self._hardware_trace_started < self.scope_settings.duration:
             return ScopeAcquisition(None)
-        if not wait_scope_curve_ready(self.client, self.scope_settings):
+        if not scope_curve_ready(self.client):
             return ScopeAcquisition(None)
+        self._hardware_trace_started = None
         roll_offset = scope_trigger_roll_offset(self.client)
         frame = read_trigger_aligned_scope_frame(self.client, sequence, roll_offset, sample_count)
         return ScopeAcquisition(frame, state_changed=self._record_scope_average_no_lock(state))
@@ -2160,7 +2328,7 @@ class WebSession:
             self._fake_scope_clock += max(1, sample_count)
             return ScopeAcquisition(None)
 
-        rolling = state == "running_continuous" and self.scope_settings.rolling_mode
+        rolling = self._hardware_rolling_mode_active(state)
         if source == "immediately" or rolling:
             frame = self._fake_scope_frame(sequence, self._fake_scope_clock, sample_count)
             self._fake_scope_clock += max(1, sample_count)
@@ -2235,7 +2403,7 @@ class WebSession:
         )
 
     def _fake_signal_data(self, name: str, start: int, count: int) -> np.ndarray:
-        signal = DSP_INPUT_VALUES[name]
+        signal = DSP_INPUT_VALUES[self._resolve_lockbox_dsp_signal_no_lock(name)]
         values = [
             self.client.fake_signal_value(signal, start + index) / np.float32(2**13)
             for index in range(count)
@@ -2252,7 +2420,7 @@ def _normalize_state_name(state_name: str) -> str:
 
 def _empty_saved_states() -> dict[str, dict[str, dict]]:
     module_names = (
-        ["scope", "asg0", "asg1", "hk", "trig", "spectrumanalyzer", "networkanalyzer"]
+        ["scope", "asg0", "asg1", "hk", "trig", "spectrumanalyzer", "networkanalyzer", "lockbox"]
         + [f"pid{index}" for index in range(3)]
         + [f"iq{index}" for index in range(3)]
         + ["iir"]

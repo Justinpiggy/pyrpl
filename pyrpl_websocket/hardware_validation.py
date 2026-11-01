@@ -103,7 +103,7 @@ def _capture_scope(session: WebSession, sequence: int) -> ScopeFrame:
     session.set_module_attribute("scope", "trigger_source", "immediately")
     session.set_module_attribute("scope", "trace_average", 1)
     session.call_module_action("scope", "single")
-    acquisition = session.acquire_scope_frame(sequence, 2**14)
+    acquisition = session.acquire_scope_frame(sequence, 2**14, wait=True)
     if acquisition.frame is None:
         raise HardwareValidationError("Scope acquisition produced no frame")
     return acquisition.frame
@@ -143,13 +143,13 @@ def validate_scope_behavior(session: WebSession) -> dict[str, Any]:
     session.set_module_attribute("scope", "trigger_delay", 0.0)
     session.set_module_attribute("scope", "trace_average", 1)
     session.call_module_action("scope", "single")
-    edge_frame = _require_frame(session.acquire_scope_frame(0, SCOPE_DATA_LENGTH), "edge-triggered Scope acquisition")
+    edge_frame = _require_frame(session.acquire_scope_frame(0, SCOPE_DATA_LENGTH, wait=True), "edge-triggered Scope acquisition")
     if session.scope_settings.running_state != "paused_single":
         raise HardwareValidationError("single Scope capture did not enter paused_single")
-    if session.acquire_scope_frame(1, SCOPE_DATA_LENGTH).frame is not None:
+    if session.acquire_scope_frame(1, SCOPE_DATA_LENGTH, wait=True).frame is not None:
         raise HardwareValidationError("paused single Scope capture accepted another frame before rearm")
     session.call_module_action("scope", "resume_single")
-    rearmed_frame = _require_frame(session.acquire_scope_frame(2, SCOPE_DATA_LENGTH), "rearmed single Scope acquisition")
+    rearmed_frame = _require_frame(session.acquire_scope_frame(2, SCOPE_DATA_LENGTH, wait=True), "rearmed single Scope acquisition")
     if session.scope_settings.running_state != "paused_single":
         raise HardwareValidationError("rearmed single Scope capture did not return to paused_single")
     single_rearm_state = session.scope_settings.running_state
@@ -182,9 +182,9 @@ def validate_scope_behavior(session: WebSession) -> dict[str, Any]:
     session.set_module_attribute("scope", "rolling_mode", True)
     session.set_module_attribute("scope", "trigger_source", "immediately")
     session.call_module_action("scope", "continuous")
-    first_rolling = _require_frame(session.acquire_scope_frame(3, SCOPE_DATA_LENGTH), "first rolling Scope acquisition")
+    first_rolling = _require_frame(session.acquire_scope_frame(3, SCOPE_DATA_LENGTH, wait=True), "first rolling Scope acquisition")
     time.sleep(min(0.3, rolling_duration * 1.25))
-    second_rolling = _require_frame(session.acquire_scope_frame(4, SCOPE_DATA_LENGTH), "second rolling Scope acquisition")
+    second_rolling = _require_frame(session.acquire_scope_frame(4, SCOPE_DATA_LENGTH, wait=True), "second rolling Scope acquisition")
     first_samples = first_rolling.samples()[:, 0]
     second_samples = second_rolling.samples()[:, 0]
     finite = np.isfinite(first_samples) & np.isfinite(second_samples)
@@ -227,7 +227,7 @@ def validate_asg_loopback(session: WebSession) -> dict[str, Any]:
     session.set_module_attribute("scope", "rolling_mode", False)
     session.set_module_attribute("scope", "trigger_source", "immediately")
     session.call_module_action("scope", "single")
-    acquisition = session.acquire_scope_frame(0, 2**14)
+    acquisition = session.acquire_scope_frame(0, 2**14, wait=True)
     if acquisition.frame is None:
         raise HardwareValidationError("ASG loopback produced no Scope frame")
     summary = frame_summary(acquisition.frame)
@@ -244,7 +244,7 @@ def validate_spectrum_capture(session: WebSession) -> dict[str, Any]:
     session.set_module_attribute("spectrumanalyzer", "input2_baseband", "asg0")
     session.set_module_attribute("spectrumanalyzer", "trace_average", 1)
     session.call_module_action("spectrumanalyzer", "single")
-    frame = session.acquire_spectrum_scope_frame(0, 2**14)
+    frame = session.acquire_spectrum_scope_frame(0, 2**14, wait=True)
     if frame is None:
         raise HardwareValidationError("Spectrum Analyzer hardware capture produced no Scope frame")
     return frame_summary(frame)

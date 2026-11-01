@@ -34,10 +34,17 @@ def sync_asg_setting(client: MonitorClient | DummyClient, channel: int, settings
     """Write one ASG setting using PyRPL-compatible registers."""
 
     layout = _layout(channel)
+    _ensure_dds_configuration(client, layout)
     if attribute == "waveform":
-        _write_waveform(client, layout["data_offset"], settings.waveform)
+        _write_bool_bit(client, ASG_ADDR_BASE, 12 + layout["bit_offset"], settings.waveform == "noise")
+        _write_waveform(client, layout["data_offset"], settings.waveform, amplitude=settings.amplitude)
+        amplitude = 1.0 if settings.waveform == "noise" else settings.amplitude
+        _write_masked(client, ASG_ADDR_BASE + 0x4 + layout["value_offset"], 0x3FFF, _float_to_register(amplitude, signed=False))
     elif attribute == "amplitude":
-        _write_masked(client, ASG_ADDR_BASE + 0x4 + layout["value_offset"], 0x3FFF, _float_to_register(settings.amplitude, signed=False))
+        if settings.waveform == "noise":
+            _write_waveform(client, layout["data_offset"], "noise", amplitude=settings.amplitude)
+        amplitude = 1.0 if settings.waveform == "noise" else settings.amplitude
+        _write_masked(client, ASG_ADDR_BASE + 0x4 + layout["value_offset"], 0x3FFF, _float_to_register(amplitude, signed=False))
     elif attribute == "offset":
         _write_masked(
             client,
@@ -46,9 +53,11 @@ def sync_asg_setting(client: MonitorClient | DummyClient, channel: int, settings
             _float_to_register(settings.offset, bits=14, norm=2**13, signed=True) << 16,
         )
     elif attribute == "frequency":
-        _write_word(client, ASG_ADDR_BASE + 0x10 + layout["value_offset"], _frequency_to_register(settings.frequency))
+        word = _frequency_to_register(settings.frequency / client.frequency_correction)
+        _write_word(client, ASG_ADDR_BASE + 0x10 + layout["value_offset"], word)
+        settings.frequency = word * ASG_CLOCK_FREQUENCY * client.frequency_correction / 2**30
     elif attribute == "trigger_source":
-        _write_trigger_source(client, layout["bit_offset"], settings.trigger_source)
+        setup_asg(client, channel, settings)
     elif attribute == "output_direct":
         _write_word(client, DSP_ADDR_BASE + DSP_INPUT_VALUES[f"asg{channel}"] * 0x10000 + 0x4, ASG_OUTPUT_DIRECT_VALUES[settings.output_direct])
     elif attribute == "start_phase":
@@ -85,14 +94,17 @@ def setup_asg(
     """Apply PyRPL's ASG setup sequence for one channel."""
 
     layout = _layout(channel)
+    _ensure_dds_configuration(client, layout)
     _write_bool_bit(client, ASG_ADDR_BASE + 0x0, 7 + layout["bit_offset"], False, invert=True)
     _write_bool_bit(client, ASG_ADDR_BASE + 0x0, 6 + layout["bit_offset"], True)
     _write_word(client, ASG_ADDR_BASE + 0x8 + layout["value_offset"], ASG_DEFAULT_COUNTER_WRAP)
     _write_bool_bit(client, ASG_ADDR_BASE + 0x0, 4 + layout["bit_offset"], True)
+    _write_bool_bit(client, ASG_ADDR_BASE, 12 + layout["bit_offset"], settings.waveform == "noise")
     _write_waveform(
         client,
         layout["data_offset"],
         settings.waveform,
+        amplitude=settings.amplitude,
         chunk_words=waveform_chunk_words,
         after_chunk=after_waveform_chunk,
     )
@@ -100,17 +112,22 @@ def setup_asg(
         sync_asg_setting(client, channel, settings, attribute)
     _write_bool_bit(client, ASG_ADDR_BASE + 0x0, 6 + layout["bit_offset"], False)
     _write_bool_bit(client, ASG_ADDR_BASE + 0x0, 7 + layout["bit_offset"], True, invert=True)
-    sync_asg_setting(client, channel, settings, "trigger_source")
+    _write_trigger_source(client, layout["bit_offset"], settings.trigger_source)
 
 
 def trigger_asg(client: MonitorClient | DummyClient, channel: int) -> None:
-    _write_word(client, ASG_ADDR_BASE + 0xC + _layout(channel)["value_offset"], 0)
-    _write_trigger_source(client, _layout(channel)["bit_offset"], "immediately")
-    _write_trigger_source(client, _layout(channel)["bit_offset"], "off")
+    layout = _layout(channel)
+    _ensure_dds_configuration(client, layout)
+    _write_bool_bit(client, ASG_ADDR_BASE, 7 + layout["bit_offset"], True, invert=True)
+    _write_bool_bit(client, ASG_ADDR_BASE, 6 + layout["bit_offset"], False)
+    _write_word(client, ASG_ADDR_BASE + 0xC + layout["value_offset"], 0)
+    _write_trigger_source(client, layout["bit_offset"], "immediately")
+    _write_trigger_source(client, layout["bit_offset"], "off")
 
 
 def disable_asg(client: MonitorClient | DummyClient, channel: int) -> None:
     layout = _layout(channel)
+    _ensure_dds_configuration(client, layout)
     _write_bool_bit(client, ASG_ADDR_BASE + 0x0, 7 + layout["bit_offset"], False, invert=True)
     _write_trigger_source(client, layout["bit_offset"], "off")
 
@@ -125,11 +142,31 @@ def _layout(channel: int) -> dict[str, int]:
     }
 
 
+def _ensure_dds_configuration(client: MonitorClient | DummyClient, layout: dict[str, int]) -> None:
+    """Preserve fractional phase at table boundaries, including after FPGA reset.
+
+    Individual UI edits and config restoration bypass setup_asg(). The RTL
+    defaults to restarting at the phase offset on every cycle; that distorts
+    frequencies with a noninteger number of samples per period (e.g. 2 MHz).
+    Establish the full-table modulus and enable remainder-preserving wrapping.
+    Only repair incorrect registers: rewriting the shared control register can
+    issue software triggers, so normal frequency tuning must leave it alone.
+    """
+    size_addr = ASG_ADDR_BASE + 0x8 + layout["value_offset"]
+    if int(client.reads(size_addr, 1)[0]) != ASG_DEFAULT_COUNTER_WRAP:
+        _write_word(client, size_addr, ASG_DEFAULT_COUNTER_WRAP)
+    wrap_mask = 1 << (4 + layout["bit_offset"])
+    control = int(client.reads(ASG_ADDR_BASE, 1)[0])
+    if not control & wrap_mask:
+        _write_word(client, ASG_ADDR_BASE, control | wrap_mask)
+
+
 def _write_waveform(
     client: MonitorClient | DummyClient,
     data_addr: int,
     waveform: str,
     *,
+    amplitude: float = 1.0,
     chunk_words: int | None = None,
     after_chunk: Callable[[], bool] | None = None,
 ) -> None:
@@ -148,8 +185,11 @@ def _write_waveform(
         data[ASG_DATA_LENGTH // 2 :] = -1.0
     elif waveform == "dc":
         data = np.zeros(ASG_DATA_LENGTH)
+    elif waveform == "noise":
+        data = np.random.normal(0.0, amplitude, ASG_DATA_LENGTH)
     else:
         raise ValueError(f"Unsupported ASG waveform {waveform}")
+    data = np.clip(data, -1.0, 1.0)
     words = np.array(np.round((2**13 - 1) * data), dtype=np.int32)
     words[words >= 2**13] = 2**13 - 1
     words[words < 0] += 2**14

@@ -104,7 +104,10 @@ export class SpectrumPlot {
       this.resetAveraging();
     }
     this.settings = nextSettings;
-    if (windowChanged && this.latestScopeBuffer) this.showScopeBuffer(this.latestScopeBuffer.slice(0));
+    if (windowChanged && this.wantsConnection) {
+      this.close();
+      this.connect();
+    }
     if ((displayUnitChanged || visibilityChanged) && this.averagedFrame) {
       this.pendingFrame = displaySpectrumFrame(this.averagedFrame, this.settings);
       this.scheduleRender();
@@ -140,7 +143,7 @@ export class SpectrumPlot {
     if (!this.wantsConnection || (this.socket && this.socket.readyState <= WebSocket.OPEN)) return;
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const host = window.location.host || "127.0.0.1:8000";
-    const socket = new WebSocket(`${protocol}://${host}/ws/spectrumanalyzer?samples=${this.sampleCount}`);
+    const socket = new WebSocket(`${protocol}://${host}/ws/spectrumanalyzer?samples=${this.sampleCount}&window=${encodeURIComponent(this.settings.window)}`);
     this.socket = socket;
     socket.binaryType = "arraybuffer";
     socket.onopen = () => {
@@ -207,7 +210,11 @@ export class SpectrumPlot {
       return;
     }
     const frame = response.frame;
-    const averaged = this.averageFrame(frame);
+    const averaged = frame.currentAverage !== undefined ? frame : this.averageFrame(frame);
+    if (frame.currentAverage !== undefined) {
+      this.currentAverage = frame.currentAverage;
+      this.averagedFrame = frame;
+    }
     this.setCurrentAverage(this.currentAverage);
     this.latestCurveFrame = averaged;
     this.pendingFrame = displaySpectrumFrame(averaged, this.settings);
@@ -360,8 +367,8 @@ export class SpectrumPlot {
 
   private options(unit: string, labels: string[]): uPlot.Options {
     return {
-      width: 900,
-      height: 420,
+      width: this.host.clientWidth || 900,
+      height: this.host.clientHeight || 420,
       padding: [8, 10, 0, 0],
       legend: { show: true, live: true },
       cursor: {
@@ -415,6 +422,7 @@ export class SpectrumPlot {
       this.unit = frame.unit;
       this.plot.destroy();
       this.plot = new uPlot(this.options(frame.unit, this.labels), this.frameData(frame), this.host);
+      this.plotSize = { width: 0, height: 0 };
       this.bindInteractions();
       this.scheduleResize();
     } else {

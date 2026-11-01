@@ -116,7 +116,7 @@ SCOPE_ACTIONS = [
     },
 ]
 
-ASG_WAVEFORMS = ["sin", "cos", "ramp", "halframp", "square", "dc"]
+ASG_WAVEFORMS = ["sin", "cos", "ramp", "halframp", "square", "dc", "noise"]
 ASG_TRIGGER_SOURCES = ["off", "immediately", "ext_positive_edge", "ext_negative_edge", "ext_raw", "high"]
 ASG_OUTPUT_DIRECTS = ["off", "out1", "out2", "both"]
 ASG_SETUP_ATTRIBUTES = [
@@ -295,6 +295,8 @@ NETWORK_ANALYZER_SETUP_ATTRIBUTES = [
     "run_continuous",
 ]
 NETWORK_ANALYZER_ACTIONS = [
+    {"name": "pause", "label": "Pause", "description": "Pause the sweep and mute the drive."},
+    {"name": "resume", "label": "Resume", "description": "Resume the existing sweep and averages."},
     {"name": "single", "label": "Single", "description": "Acquire trace_average complete sweeps."},
     {"name": "continuous", "label": "Continuous", "description": "Continuously acquire network analyzer sweeps."},
     {"name": "stop", "label": "Stop", "description": "Stop acquisition and release the assigned IQ."},
@@ -918,11 +920,11 @@ def network_analyzer_actions() -> list[dict[str, Any]]:
     return [dict(action) for action in NETWORK_ANALYZER_ACTIONS]
 
 
-def set_scope_attribute(settings: ScopeSettings, name: str, value: Any) -> Any:
+def set_scope_attribute(settings: ScopeSettings, name: str, value: Any, *, inputs: list[str] = SCOPE_INPUTS) -> Any:
     """Validate and update a scope setting."""
 
     if name in {"input1", "input2"}:
-        normalized = _require_option(name, str(value), SCOPE_INPUTS)
+        normalized = _require_option(name, str(value), inputs)
     elif name == "trigger_source":
         normalized = _require_option(name, str(value), SCOPE_TRIGGER_SOURCES)
     elif name == "run_mode":
@@ -997,9 +999,9 @@ def set_hk_attribute(settings: HkSettings, name: str, value: Any) -> Any:
     return normalized
 
 
-def set_pid_attribute(settings: PidSettings, name: str, value: Any) -> Any:
+def set_pid_attribute(settings: PidSettings, name: str, value: Any, *, inputs: list[str] = SCOPE_INPUTS) -> Any:
     if name == "input":
-        normalized = _require_option(name, str(value), SCOPE_INPUTS)
+        normalized = _require_option(name, str(value), inputs)
     elif name == "output_direct":
         normalized = _require_option(name, str(value), DSP_OUTPUT_DIRECTS)
     elif name == "pause_gains":
@@ -1024,9 +1026,9 @@ def set_pid_attribute(settings: PidSettings, name: str, value: Any) -> Any:
     return normalized
 
 
-def set_iq_attribute(settings: IqSettings, name: str, value: Any) -> Any:
+def set_iq_attribute(settings: IqSettings, name: str, value: Any, *, inputs: list[str] = SCOPE_INPUTS) -> Any:
     if name == "input":
-        normalized = _require_option(name, str(value), SCOPE_INPUTS)
+        normalized = _require_option(name, str(value), inputs)
     elif name == "output_direct":
         normalized = _require_option(name, str(value), DSP_OUTPUT_DIRECTS)
     elif name == "output_signal":
@@ -1055,9 +1057,14 @@ def set_iq_attribute(settings: IqSettings, name: str, value: Any) -> Any:
     return normalized
 
 
-def set_iir_attribute(settings: IirSettings, name: str, value: Any) -> Any:
+def set_iir_attribute(settings: IirSettings, name: str, value: Any, *, inputs: list[str] = SCOPE_INPUTS) -> Any:
+    if name in {"zeros", "poles"}:
+        values = [complex(str(v).replace("i", "j")) for v in value]
+        setattr(settings, "real_" + name, [v.real for v in values if v.imag == 0])
+        setattr(settings, "complex_" + name, [str(v) for v in values if v.imag != 0])
+        return [str(v) for v in values]
     if name == "input":
-        normalized = _require_option(name, str(value), SCOPE_INPUTS)
+        normalized = _require_option(name, str(value), inputs)
     elif name == "output_direct":
         normalized = _require_option(name, str(value), DSP_OUTPUT_DIRECTS)
     elif name in {"on", "bypass", "plot_data", "plot_data_times_filter", "plot_measurement"}:
@@ -1082,9 +1089,9 @@ def set_iir_attribute(settings: IirSettings, name: str, value: Any) -> Any:
     return normalized
 
 
-def set_trig_attribute(settings: TrigSettings, name: str, value: Any) -> Any:
+def set_trig_attribute(settings: TrigSettings, name: str, value: Any, *, inputs: list[str] = SCOPE_INPUTS) -> Any:
     if name == "input":
-        normalized = _require_option(name, str(value), SCOPE_INPUTS)
+        normalized = _require_option(name, str(value), inputs)
     elif name == "output_direct":
         normalized = _require_option(name, str(value), DSP_OUTPUT_DIRECTS)
     elif name == "output_signal":
@@ -1103,18 +1110,18 @@ def set_trig_attribute(settings: TrigSettings, name: str, value: Any) -> Any:
     return normalized
 
 
-def set_pwm_attribute(settings: PwmSettings, name: str, value: Any) -> Any:
+def set_pwm_attribute(settings: PwmSettings, name: str, value: Any, *, inputs: list[str] = SCOPE_INPUTS) -> Any:
     if name == "input":
-        normalized = _require_option(name, str(value), SCOPE_INPUTS)
+        normalized = _require_option(name, str(value), inputs)
     else:
         raise KeyError(name)
     setattr(settings, name, normalized)
     return normalized
 
 
-def set_network_analyzer_attribute(settings: NetworkAnalyzerSettings, name: str, value: Any) -> Any:
+def set_network_analyzer_attribute(settings: NetworkAnalyzerSettings, name: str, value: Any, *, inputs: list[str] = SCOPE_INPUTS) -> Any:
     if name == "input":
-        normalized = _require_option(name, str(value), ["networkanalyzer", *SCOPE_INPUTS])
+        normalized = _require_option(name, str(value), ["networkanalyzer", *inputs])
     elif name == "output_direct":
         normalized = _require_option(name, str(value), DSP_OUTPUT_DIRECTS)
     elif name in {"logscale", "auto_bandwidth", "auto_amplitude", "run_continuous"}:
@@ -1140,9 +1147,9 @@ def set_network_analyzer_attribute(settings: NetworkAnalyzerSettings, name: str,
     return normalized
 
 
-def set_spectrum_attribute(settings: SpectrumAnalyzerSettings, name: str, value: Any) -> Any:
+def set_spectrum_attribute(settings: SpectrumAnalyzerSettings, name: str, value: Any, *, inputs: list[str] = SCOPE_INPUTS) -> Any:
     if name in {"input", "input1_baseband", "input2_baseband"}:
-        normalized = _require_option(name, str(value), SCOPE_INPUTS)
+        normalized = _require_option(name, str(value), inputs)
     elif name == "window":
         normalized = _require_option(name, str(value), SPECTRUM_WINDOWS)
     elif name == "display_unit":
