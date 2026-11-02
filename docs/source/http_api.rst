@@ -558,6 +558,17 @@ layout, and saved browser display options. Transient zoom/pan positions and
 waveform buffers are not part of a profile. Saved curves, connection settings,
 authentication, and board clock calibration are kept separately.
 
+**Profiles → Color theme** selects ``graphite`` (default dark), ``ocean`` (blue),
+``forest`` (green), ``plum`` (purple), or ``paper`` (light). Colors apply to controls,
+dialogs and plots without resetting zoom/pan or restarting acquisition. The theme
+is stored in ``workspace.theme`` within ``settings.pyrpl_websocket`` in an exported
+profile. Save current/Save as new captures the chosen theme; loading restores it
+on connected pages, including when loading an uploaded file. Old profiles with
+no theme (or unknown themes) display Graphite. A controller's choice also autosaves
+in the working workspace. An observer can preview colors locally but must claim
+control to save a profile. Theme changes do not overwrite a named snapshot until
+it is explicitly saved.
+
 Loading stops Scope/Spectrum/Network Analyzer acquisition and unlocks Lockbox;
 it does not execute a saved locking sequence. Other instrument output settings
 (including ASG/PID routing and gains) are applied. Connected pages reload after

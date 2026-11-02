@@ -1,4 +1,5 @@
 import { reportError } from "./status-bar";
+import { THEMES, normalizeTheme, type ThemeName } from "./workspace";
 
 export interface ProfileState {
   active: { id: string | null; name: string };
@@ -20,6 +21,7 @@ export class ProfileManager {
   private readonly active: HTMLElement;
   private readonly status: HTMLOutputElement;
   private readonly file: HTMLInputElement;
+  private readonly theme: HTMLSelectElement;
   private upload: Record<string, unknown> | null = null;
 
   constructor(private readonly options: {
@@ -29,6 +31,8 @@ export class ProfileManager {
     snapshot: () => { workspace: unknown; plot_views: unknown };
     flush: () => Promise<unknown>;
     loaded: (state: ProfileState) => void;
+    theme: () => ThemeName;
+    setTheme: (theme: ThemeName) => void;
   }) {
     this.dialog = document.createElement("dialog");
     this.dialog.id = "profiles-dialog";
@@ -38,6 +42,7 @@ export class ProfileManager {
       <p class="profile-active-line">Active: <strong id="profiles-active"></strong></p>
       <label>Saved profile<select id="profiles-select" aria-label="Saved profile"></select></label>
       <label>Profile name<input id="profiles-name" maxlength="80" autocomplete="off" aria-label="Profile name"></label>
+      <label>Color theme<select id="profiles-theme" aria-label="Color theme" data-control-scope="view"></select></label>
       <div class="profile-actions"><button type="button" data-action="save">Save current</button><button type="button" data-action="create">Save as new</button></div>
       <div class="profile-actions"><button type="button" data-action="load">Load selected</button><button type="button" data-action="rename">Rename selected</button></div>
       <label>Profile file (.json)<input id="profiles-file" type="file" accept=".json,application/json"></label>
@@ -51,10 +56,15 @@ export class ProfileManager {
     this.active = this.dialog.querySelector("#profiles-active")!;
     this.status = this.dialog.querySelector<HTMLOutputElement>("output")!;
     this.file = this.dialog.querySelector<HTMLInputElement>("#profiles-file")!;
+    this.theme = this.dialog.querySelector<HTMLSelectElement>("#profiles-theme")!;
+    for (const [name, label] of Object.entries(THEMES)) this.theme.add(new Option(label, name));
+    this.theme.value = options.theme();
+    this.theme.addEventListener("change", () => options.setTheme(normalizeTheme(this.theme.value)));
     this.file.addEventListener("change", () => {
       void this.readUpload().catch(error => reportError(this.status, String(error.message ?? error)));
     });
     options.button.addEventListener("click", () => {
+      this.theme.value = options.theme();
       this.dialog.showModal();
       this.refresh().catch(error => reportError(this.status, String(error.message ?? error)));
     });
@@ -116,6 +126,7 @@ export class ProfileManager {
     this.select.disabled = this.busy;
     this.name.disabled = this.busy || this.readOnly;
     this.file.disabled = this.busy || this.readOnly;
+    this.theme.disabled = this.busy;
   }
 
   private async readUpload(): Promise<void> {

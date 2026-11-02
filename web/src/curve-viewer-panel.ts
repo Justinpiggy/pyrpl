@@ -2,10 +2,10 @@ import { fitPlotToFrame } from "./plot-theme";
 import { accessibleSplit } from "./split-layout";
 import { reportError } from "./status-bar";
 import Split from "split.js";
-import uPlot from "uplot";
+import type uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-import { PLOT_COLORS, plotAxis } from "./plot-theme";
+import { PLOT_COLORS, plotAxis, createThemedPlot } from "./plot-theme";
 
 interface CurveSummary {
   pk: number;
@@ -191,7 +191,7 @@ export class CurveViewerPanel {
   }
 
   private createPlot(host: HTMLElement, title: string, unit: string): uPlot {
-    return new uPlot({
+    return createThemedPlot({
       width: 700,
       height: 260,
       title,

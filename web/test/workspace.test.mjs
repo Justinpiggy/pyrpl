@@ -169,3 +169,14 @@ test("workspace preserves valid controls-heavy split proportions", () => {
   assert.deepEqual(Array.from(normalizeSplitSizes([8, 2])), [80, 20]);
   assert.deepEqual(Array.from(normalizeSplitSizes([1, 99])), [28, 72]);
 });
+
+test("workspace round-trips profile themes and defaults old or invalid values", () => {
+  const { THEMES, defaultWorkspaceState, normalizeWorkspaceState, saveWorkspaceState, loadWorkspaceState } = loadWorkspaceModule();
+  for (const theme of Object.keys(THEMES)) {
+    saveWorkspaceState({ ...defaultWorkspaceState(), theme });
+    assert.equal(loadWorkspaceState().theme, theme);
+  }
+  for (const theme of [undefined, null, "unknown", "__proto__", {}, 7]) {
+    assert.equal(normalizeWorkspaceState({ theme }).theme, "graphite");
+  }
+});

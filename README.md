@@ -150,6 +150,11 @@ still autosave, while named snapshots are overwritten only by **Save current**.
 Use **Download selected** to export a saved profile as JSON. Choose a file and
 click **Upload file** to save an independent copy; change **Profile name** if a
 duplicate already exists. Uploading does not apply settings until **Load selected**.
+Choose **Profiles → Color theme** for Graphite, Ocean, Forest, Plum, or Paper
+(light). Theme changes update controls and plots without resetting zoom or pan.
+The working configuration remembers the theme; **Save current** or **Save as new**
+includes it in a profile, and loading/importing/exporting profiles carries it
+with the workspace settings. Older profiles default to Graphite.
 
 Web layouts are defined in `web/src/app.css`. Instrument panels use container
 queries so controls reflow within split panes as well as narrow browser windows.

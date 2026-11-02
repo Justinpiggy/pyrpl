@@ -1,0 +1,114 @@
+/* Semantic colors shared by controls, dialogs, status messages and canvas plots. */
+:root {
+  --control-border: #53616b;
+  --strong-border: #71828e;
+  --field-bg: #090d10;
+  --tab-bg: #0f1519;
+  --selected: #344550;
+  --accent: #4fd17f;
+  --focus: #71bfff;
+  --success: #63d98d;
+  --warning: #f0c15a;
+  --error: #ff9f93;
+  --plot-green: #4fd17f;
+  --plot-red: #ef6461;
+  --plot-orange: #ff9f43;
+  --plot-blue: #62a8ff;
+  --highlight-subtle: rgb(242 201 76 / 0.08);
+  --highlight: rgb(242 201 76 / 0.14);
+}
+
+:root[data-theme="ocean"] {
+  --bg: #091421;
+  --panel: #112236;
+  --panel-border: #2c4763;
+  --text: #edf6ff;
+  --muted: #a5bbd0;
+  --button: #1b354e;
+  --button-hover: #284968;
+  --field-bg: #0c1a2a;
+  --tab-bg: #0d1d30;
+  --control-border: #5a7895;
+  --strong-border: #819eb9;
+  --selected: #345a79;
+  --accent: #67c8ef;
+  --focus: #83d8ff;
+  --plot-bg: #07121e;
+  --plot-axis: #b0c5da;
+  --plot-grid: #243a50;
+}
+
+:root[data-theme="forest"] {
+  --bg: #0c1712;
+  --panel: #14251b;
+  --panel-border: #34513d;
+  --text: #eef8ef;
+  --muted: #aec4b2;
+  --button: #253c2c;
+  --button-hover: #34533c;
+  --field-bg: #0e1c14;
+  --tab-bg: #102017;
+  --control-border: #68806d;
+  --strong-border: #90aa96;
+  --selected: #3b5f47;
+  --accent: #8bdba0;
+  --focus: #a9e9bb;
+  --plot-bg: #08130d;
+  --plot-axis: #b6caba;
+  --plot-grid: #293e30;
+}
+
+:root[data-theme="plum"] {
+  --bg: #190f1c;
+  --panel: #291a2d;
+  --panel-border: #513459;
+  --text: #f8effb;
+  --muted: #c7afce;
+  --button: #402947;
+  --button-hover: #55375f;
+  --field-bg: #1d1221;
+  --tab-bg: #211525;
+  --control-border: #86668f;
+  --strong-border: #af8fba;
+  --selected: #62416d;
+  --accent: #dba5f0;
+  --focus: #e7bfff;
+  --plot-bg: #140b18;
+  --plot-axis: #cbb4d3;
+  --plot-grid: #422b49;
+}
+
+:root[data-theme="paper"] {
+  color-scheme: light;
+  --bg: #e9eef3;
+  --panel: #ffffff;
+  --panel-border: #bdc9d4;
+  --text: #172b3b;
+  --muted: #4c6273;
+  --button: #e8eff5;
+  --button-hover: #d4e2ed;
+  --field-bg: #f7f9fc;
+  --tab-bg: #e2eaf1;
+  --control-border: #718697;
+  --strong-border: #526d82;
+  --selected: #c5dcec;
+  --accent: #1468a0;
+  --focus: #005eaa;
+  --success: #146b38;
+  --warning: #805800;
+  --error: #a51e24;
+  --plot-bg: #ffffff;
+  --plot-text: #172b3b;
+  --plot-axis: #455f73;
+  --plot-grid: #dae3eb;
+  --plot-green: #087a40;
+  --plot-red: #c52d32;
+  --plot-orange: #a74b00;
+  --plot-blue: #185ec1;
+  --plot-yellow: #896000;
+  --plot-magenta: #aa278c;
+  --highlight-subtle: rgb(137 96 0 / 0.08);
+  --highlight: rgb(137 96 0 / 0.14);
+}
+
+.uplot .u-select { background: var(--highlight); }

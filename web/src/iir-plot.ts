@@ -1,10 +1,10 @@
 import { fitPlotToFrame } from "./plot-theme";
 import { frequencyTick } from "./plot-format";
 import { reportError } from "./status-bar";
-import uPlot from "uplot";
+import type uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-import { PLOT_COLORS, plotAxis } from "./plot-theme";
+import { PLOT_COLORS, plotAxis, createThemedPlot } from "./plot-theme";
 
 export interface IirMarker {
   list: "real_poles" | "real_zeros" | "complex_poles" | "complex_zeros";
@@ -113,8 +113,8 @@ export class IirPlot {
     }
     this.magnitudeHost = magnitudeHost;
     this.phaseHost = phaseHost;
-    this.magnitudePlot = new uPlot(this.options("Magnitude (dB)", "dB"), EMPTY_DATA, magnitudeHost);
-    this.phasePlot = new uPlot(this.options("Phase (deg)", "deg"), EMPTY_DATA, phaseHost);
+    this.magnitudePlot = createThemedPlot(this.options("Magnitude (dB)", "dB"), EMPTY_DATA, magnitudeHost);
+    this.phasePlot = createThemedPlot(this.options("Phase (deg)", "deg"), EMPTY_DATA, phaseHost);
     this.installPlotEvents(this.magnitudePlot);
     this.installPlotEvents(this.phasePlot);
     this.host.querySelector<HTMLButtonElement>("#iir-zoom-reset")?.addEventListener("click", () => this.resetZoom());

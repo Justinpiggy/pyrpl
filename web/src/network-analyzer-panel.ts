@@ -1,11 +1,11 @@
 import { fitPlotToFrame } from "./plot-theme";
 import { accessibleSplit } from "./split-layout";
 import { reportError } from "./status-bar";
-import uPlot from "uplot";
+import type uPlot from "uplot";
 import Split from "split.js";
 import "uplot/dist/uPlot.min.css";
 
-import { PLOT_COLORS, plotAxis } from "./plot-theme";
+import { PLOT_COLORS, plotAxis, createThemedPlot } from "./plot-theme";
 import { ReconnectScheduler } from "./websocket-reconnect";
 
 interface AttributeSchema {
@@ -346,7 +346,7 @@ export class NetworkAnalyzerPanel {
   }
 
   private createPlot(host: HTMLElement, title: string, unit: string, showXAxis: boolean): uPlot {
-    return new uPlot({
+    return createThemedPlot({
       width: 800,
       height: 260,
       title,

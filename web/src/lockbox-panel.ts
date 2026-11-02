@@ -1,9 +1,9 @@
 import { fitPlotToFrame } from "./plot-theme";
 import { reportError } from "./status-bar";
-import uPlot from "uplot";
+import type uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-import { PLOT_COLORS, plotAxis } from "./plot-theme";
+import { PLOT_COLORS, plotAxis, createThemedPlot } from "./plot-theme";
 
 // Field IDs only need page-local uniqueness. randomUUID requires a secure
 // context and is unavailable when opening the board's LAN address over HTTP.
@@ -570,7 +570,7 @@ export class LockboxPanel {
     this.inputPlot?.destroy();
     host.textContent = "";
     const size = this.plotSize(host);
-    const plot = new uPlot(
+    const plot = createThemedPlot(
       {
         title,
         width: size.width,
@@ -614,7 +614,7 @@ export class LockboxPanel {
     host.append(magnitudeFrame, phaseFrame);
     this.resizeObserver.observe(magnitudeFrame);
     this.resizeObserver.observe(phaseFrame);
-    this.outputMagnitudePlot = new uPlot(
+    this.outputMagnitudePlot = createThemedPlot(
       {
         title: "Open-loop magnitude",
         ...this.outputPlotOptions(this.plotSize(magnitudeFrame), true),
@@ -623,7 +623,7 @@ export class LockboxPanel {
       [payload.x, magnitude.map((value) => Math.max(1e-30, value))],
       magnitudeFrame,
     );
-    this.outputPhasePlot = new uPlot(
+    this.outputPhasePlot = createThemedPlot(
       {
         title: "Open-loop phase",
         ...this.outputPlotOptions(this.plotSize(phaseFrame), false),

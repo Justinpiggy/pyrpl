@@ -89,6 +89,7 @@ test("downloaded profiles upload as independent copies without applying settings
   await page.locator("#manage-profiles").click();
   const dialog = page.getByRole("dialog", { name: "Profiles" });
   const name = `Portable ${suffix}`;
+  await dialog.getByLabel("Color theme", { exact: true }).selectOption("plum");
   await dialog.getByLabel("Profile name", { exact: true }).fill(name);
   await dialog.getByRole("button", { name: "Save as new", exact: true }).click();
   await expect(page.locator("#active-profile-name")).toHaveText(name);
@@ -99,6 +100,8 @@ test("downloaded profiles upload as independent copies without applying settings
   const buffer = await readFile((await download.path())!);
   const profile = JSON.parse(buffer.toString("utf8"));
   expect(profile.settings.scope.threshold).toBe(0.125);
+  expect(profile.settings.pyrpl_websocket.workspace.theme).toBe("plum");
+  await dialog.getByLabel("Color theme", { exact: true }).selectOption("paper");
   await page.request.post("/api/modules/scope/attributes/threshold", { data: { value: 0.5 } });
   await dialog.getByLabel("Profile file (.json)", { exact: true }).setInputFiles({ name: "profile.json", mimeType: "application/json", buffer });
   await expect(dialog.getByRole("button", { name: "Upload file", exact: true })).toBeEnabled();
@@ -110,9 +113,11 @@ test("downloaded profiles upload as independent copies without applying settings
   await expect(dialog.locator("#profiles-select option:checked")).toHaveText(`${name} copy`);
   await expect(page.locator("#active-profile-name")).toHaveText(name);
   expect((await (await page.request.get("/api/modules/scope")).json()).state.threshold).toBe(0.5);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "paper");
   await dialog.getByRole("button", { name: "Load selected", exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.locator("#active-profile-name")).toHaveText(`${name} copy`);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "plum");
   await expect.poll(async () => (await (await page.request.get("/api/modules/scope")).json()).state.threshold).toBe(0.125);
   await page.locator("#manage-profiles").click();
   await dialog.getByLabel("Profile file (.json)", { exact: true }).setInputFiles({ name: "invalid.json", mimeType: "application/json", buffer: Buffer.from("not JSON") });

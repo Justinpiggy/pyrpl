@@ -30,7 +30,7 @@ class ProfileTest(unittest.TestCase):
         s.set_lockbox_stage_attribute(0, "setpoint", 0.3)
         s.save_module_state("scope", "capture")
         s.call_module_action("scope", "continuous")
-        workspace = {"activePanelId": "asg", "layoutMode": "tabs"}
+        workspace = {"activePanelId": "asg", "layoutMode": "tabs", "theme": "ocean"}
         views = {"scope": {"ch1_active": False}}
         a = s.profiles.save("Experiment A", workspace=workspace, plot_views=views)["active"]["id"]
         self.assertEqual(s.scope_settings.running_state, "running_continuous")

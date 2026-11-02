@@ -1,6 +1,11 @@
 import { PANEL_DEFINITIONS, type PanelId, panelDefinition } from "./panel-registry";
 
 const WORKSPACE_STORAGE_KEY = "pyrpl-websocket.workspace.v1";
+export const THEMES = { graphite: "Graphite (dark)", ocean: "Ocean (blue)", forest: "Forest (green)", plum: "Plum (purple)", paper: "Paper (light)" } as const;
+export type ThemeName = keyof typeof THEMES;
+export function normalizeTheme(value: unknown): ThemeName {
+  return typeof value === "string" && Object.hasOwn(THEMES, value) ? value as ThemeName : "graphite";
+}
 export type WorkspaceLayoutMode = "tabs" | "split-horizontal" | "split-vertical";
 
 const DEFAULT_LAYOUT_MODE: WorkspaceLayoutMode = "tabs";
@@ -13,6 +18,7 @@ export interface PanelWorkspaceState {
 }
 
 export interface WorkspaceState {
+  theme: ThemeName;
   activePanelId: PanelId | null;
   layoutMode: WorkspaceLayoutMode;
   splitPanelIds: PanelId[];
@@ -31,6 +37,7 @@ export function defaultWorkspaceState(): WorkspaceState {
     ]),
   ) as Record<PanelId, PanelWorkspaceState>;
   return {
+    theme: "graphite",
     activePanelId: firstEnabledPanel(panels),
     layoutMode: DEFAULT_LAYOUT_MODE,
     splitPanelIds: firstEnabledPanel(panels) ? [firstEnabledPanel(panels)!] : [],
@@ -80,6 +87,7 @@ export function normalizeWorkspaceState(saved: unknown): WorkspaceState {
   );
 
   return {
+    theme: normalizeTheme(payload.theme),
     activePanelId,
     layoutMode: normalizeLayoutMode(payload.layoutMode),
     splitPanelIds,
@@ -89,7 +97,7 @@ export function normalizeWorkspaceState(saved: unknown): WorkspaceState {
 }
 
 export function saveWorkspaceState(state: WorkspaceState): void {
-  window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(state));
+  try { window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(state)); } catch { /* Server persistence still works when browser storage is unavailable. */ }
 }
 
 export function firstEnabledPanel(panels: Record<PanelId, PanelWorkspaceState>): PanelId | null {

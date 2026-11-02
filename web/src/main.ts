@@ -1,6 +1,8 @@
 import { accessibleSplit } from "./split-layout";
 import { ScopeStream } from "./scope-stream";
 import "./app.css";
+import "./themes.css";
+import { applyTheme } from "./theme";
 import { DIAGNOSTIC_SOURCES, debugEnabled, installStatusBar, reportError } from "./status-bar";
 import { SpectrumPlot } from "./spectrum-plot";
 import { IirPlot } from "./iir-plot";
@@ -32,6 +34,7 @@ import {
 
 const controlClient = new ControlClient();
 const plotViews = new PlotViews();
+applyTheme(loadWorkspaceState().theme);
 let spectrumServerState: ModuleState = {};
 controlClient.installFetchHeaders();
 const DEFAULT_WORKSPACE_SPLIT_PANE_COUNT = 2;
@@ -532,7 +535,7 @@ statusStyle.textContent = `
   #status-bar[hidden], #debug-status[hidden], #application-error[hidden] { display: none; }
   #debug-status { display: flex; flex-wrap: wrap; gap: 4px 16px; }
   #debug-status > span { overflow-wrap: anywhere; }
-  #application-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #ff9f93; }
+  #application-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--error); }
   #application-error > span { min-width: 0; overflow-wrap: anywhere; }
   #application-error > button { flex: none; }
 `;
@@ -903,6 +906,7 @@ function restoreProfileView(state: ProfileState, reload: boolean, force = false)
   try { localStorage.setItem("pyrpl-profile-load-revision", profileLoadRevision); } catch { /* Private storage. */ }
   plotViews.replace(state.plot_views ?? {});
   workspaceState = normalizeWorkspaceState(state.workspace ?? {});
+  applyTheme(workspaceState.theme);
   saveWorkspaceStateLocal(workspaceState);
   if (reload) {
     profileReloading = true;
@@ -917,17 +921,23 @@ const profileManager = new ProfileManager({
   snapshot: () => ({ workspace: workspaceState, plot_views: plotViews.snapshot() }),
   flush: () => workspaceSavePromise,
   loaded: state => restoreProfileView(state, true, true),
+  theme: () => workspaceState.theme,
+  setTheme: theme => {
+    workspaceState = { ...workspaceState, theme };
+    applyTheme(theme);
+    saveWorkspaceState(workspaceState);
+  },
 });
 
 async function loadWorkspaceStateFromConfig(): Promise<void> {
-  if (controlRole === "observer") return;
   const response = await fetch("/api/workspace");
   if (!response.ok) {
     return;
   }
   const payload = await response.json();
   if (payload.workspace && typeof payload.workspace === "object") {
-    workspaceState = normalizeWorkspaceState(payload.workspace);
+    const saved = normalizeWorkspaceState(payload.workspace);
+    workspaceState = controlRole === "observer" ? { ...workspaceState, theme: saved.theme } : saved;
     saveWorkspaceStateLocal(workspaceState);
   } else {
     saveWorkspaceState(workspaceState);
@@ -995,6 +1005,7 @@ function createAsgControls(moduleName: AsgModuleId): AsgControls {
 }
 
 function applyWorkspaceState(): void {
+  applyTheme(workspaceState.theme);
   workspace.classList.toggle("is-split-workspace", workspaceState.layoutMode !== "tabs");
   renderPanelMenu();
   renderWorkspaceTabs();

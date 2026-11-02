@@ -1,7 +1,7 @@
-import uPlot from "uplot";
+import type uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-import { PLOT_COLORS, plotAxis } from "./plot-theme";
+import { PLOT_COLORS, plotAxis, createThemedPlot } from "./plot-theme";
 import type { SpectrumFrame, SpectrumSeries, SpectrumSettings } from "./spectrum-fft";
 import { ReconnectScheduler } from "./websocket-reconnect";
 
@@ -66,7 +66,7 @@ export class SpectrumPlot {
     private sampleCount = 16_384,
   ) {
     this.reconnectScheduler = new ReconnectScheduler(() => this.openSocket());
-    this.plot = new uPlot(this.options("", this.labels), EMPTY_DATA, this.host);
+    this.plot = createThemedPlot(this.options("", this.labels), EMPTY_DATA, this.host);
     this.fftWorker.onmessage = (event: MessageEvent<SpectrumWorkerResponse>) => this.handleWorkerResponse(event.data);
     this.fftWorker.onerror = () => this.setStatus("Spectrum FFT worker error", true);
     this.resizeObserver = new ResizeObserver(() => this.scheduleResize());
@@ -421,7 +421,7 @@ export class SpectrumPlot {
       this.labels = labels.length ? labels : ["Spectrum"];
       this.unit = frame.unit;
       this.plot.destroy();
-      this.plot = new uPlot(this.options(frame.unit, this.labels), this.frameData(frame), this.host);
+      this.plot = createThemedPlot(this.options(frame.unit, this.labels), this.frameData(frame), this.host);
       this.plotSize = { width: 0, height: 0 };
       this.bindInteractions();
       this.scheduleResize();

@@ -1,8 +1,8 @@
 import { trimFixed } from "./plot-format";
-import uPlot from "uplot";
+import type uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-import { PLOT_COLORS, plotAxis } from "./plot-theme";
+import { PLOT_COLORS, plotAxis, createThemedPlot } from "./plot-theme";
 import { evaluateScopeMath } from "./scope-math";
 import { ReconnectScheduler } from "./websocket-reconnect";
 import {
@@ -57,7 +57,7 @@ export class ScopeStream {
     private sampleCount = DEFAULT_SAMPLES,
   ) {
     this.reconnectScheduler = new ReconnectScheduler(() => this.openSocket());
-    this.plot = new uPlot(this.options(), this.emptyData(), this.plotHost);
+    this.plot = createThemedPlot(this.options(), this.emptyData(), this.plotHost);
     this.resizeObserver = new ResizeObserver(() => this.scheduleResize());
     this.resizeObserver.observe(this.plotHost);
     window.addEventListener("resize", this.resizeListener);
