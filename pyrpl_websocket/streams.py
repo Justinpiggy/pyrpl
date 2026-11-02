@@ -59,6 +59,13 @@ class StreamFanout:
         self._suspended = False
         self._ensure_running()
 
+    def clear(self) -> None:
+        """Forget cached data after a complete settings/profile replacement."""
+        self._latest = None
+        for queue in self._subscribers:
+            while not queue.empty():
+                queue.get_nowait()
+
     async def close(self) -> None:
         self._subscribers.clear()
         self._keep_alive = False

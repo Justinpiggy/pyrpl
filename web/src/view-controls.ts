@@ -53,6 +53,21 @@ export class PlotViews {
     return { ...this.values[module] };
   }
 
+  snapshot(): Record<string, Record<string, string | number | boolean>> {
+    return JSON.parse(JSON.stringify(this.values));
+  }
+
+  replace(values: Record<string, Record<string, string | number | boolean>>): void {
+    this.values = {};
+    try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* Memory-only view. */ }
+    for (const [module, attributes] of Object.entries(VIEW_ATTRIBUTES)) {
+      for (const attribute of attributes) {
+        const value = values?.[module]?.[attribute];
+        if (["string", "number", "boolean"].includes(typeof value)) this.set(module, attribute, value);
+      }
+    }
+  }
+
   merge<T extends Record<string, unknown>>(module: string, state: T): T {
     return { ...state, ...this.values[module] };
   }

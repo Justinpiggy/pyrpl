@@ -16,6 +16,7 @@ import numpy as np
 
 from .asg_registers import AsgSetupCancelled, disable_asg, sync_asg_setting, sync_asg_settings, trigger_asg
 from .config import WebConfig
+from .profiles import ProfileManager
 from .curve_store import configured_curve_store
 from .dsp_registers import (
     dsp_addr_base,
@@ -198,6 +199,7 @@ class WebSession:
             daemon=True,
         )
         self._lockbox_monitor_thread.start()
+        self.profiles = ProfileManager(self)
 
     def info(self) -> dict:
         return {
@@ -1227,6 +1229,10 @@ class WebSession:
             return
         for module_name in _empty_saved_states():
             self._restore_module_setup_no_lock(module_name)
+        for attribute, value in self.config.module_setup("ams").items():
+            if attribute in {"dac2", "dac3"}:
+                normalized = set_ams_attribute(self.ams_settings, attribute, value)
+                write_ams_dac(self.client, attribute, normalized)
 
     def _restore_lockbox_class_from_config(self) -> None:
         """Restore PyRPL's persisted Lockbox classname before UI use."""

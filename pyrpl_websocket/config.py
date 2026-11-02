@@ -171,6 +171,17 @@ class WebConfig:
         except OSError:
             self.path = None
 
+    def replace_data(self, data: dict) -> None:
+        """Commit a complete profile/config change, reporting persistence failures."""
+        if self.path is None:
+            raise OSError("Configuration is not writable")
+        replacement = _jsonable(deepcopy(data))
+        text = yaml.safe_dump(replacement, sort_keys=False, default_flow_style=False)
+        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(self.path)
+        self.data = replacement
+
 
 def _candidate_config_path(config: str) -> Path:
     path = Path(config).expanduser()

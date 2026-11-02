@@ -130,6 +130,23 @@ page; removing it (or using `?debug=0`) restores the normal view. Operation
 errors remain visible in the bottom bar in either mode. Reload the page after
 deploying frontend changes so an already-open tab loads the new code.
 
+PC scripts can read status and Scope traces or control instruments through the
+existing HTTP API. See [the full HTTP API and Python client guide](docs/source/http_api.rst)
+and [the generated instrument catalog](docs/source/http_api_catalog.rst).
+The dependency-free client is `pyrpl_websocket.http_client.RedPitayaClient`;
+[a read-only example](examples/http_client_status.py) retrieves lock status and
+optionally saves Scope channels to CSV. No browser or desktop Qt runtime is needed.
+
+The web header's **Profiles** button saves named snapshots, loads them, and renames
+them. The active profile appears in the top-left heading and browser tab title.
+Profiles include instrument and Lockbox settings, saved module setups, layout,
+and local display options. Loading stops acquisition and unlocks Lockbox; saved
+curves and board connection/calibration settings remain separate. Working settings
+still autosave, while named snapshots are overwritten only by **Save current**.
+Use **Download selected** to export a saved profile as JSON. Choose a file and
+click **Upload file** to save an independent copy; change **Profile name** if a
+duplicate already exists. Uploading does not apply settings until **Load selected**.
+
 Web layouts are defined in `web/src/app.css`. Instrument panels use container
 queries so controls reflow within split panes as well as narrow browser windows.
 Related actions stay grouped; constrained forms scroll and card rows size to their

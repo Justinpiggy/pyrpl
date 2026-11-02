@@ -10,6 +10,7 @@ import { CurveViewerPanel } from "./curve-viewer-panel";
 import { encodeCurveUpload } from "./curve-upload";
 import { isLocalControl, isViewAttribute, PlotViews } from "./view-controls";
 import { ConfigPanel } from "./config-panel";
+import { ProfileManager, type ProfileState } from "./profile-manager";
 import { ControlClient, type ControlStatus } from "./control-client";
 import { ReconnectScheduler } from "./websocket-reconnect";
 import Split from "split.js";
@@ -48,8 +49,8 @@ const app = requireElement<HTMLDivElement>("#app");
 app.innerHTML = `
   <section class="shell">
     <header class="topbar">
-      <div>
-        <h1>PyRPL WebSocket</h1>
+      <div class="app-brand">
+        <span class="brand-product">PyRPL</span><h1 id="active-profile-name">pyrpl-websocket</h1>
         <p id="session-line">TypeScript oscilloscope frontend</p>
       </div>
       <nav class="menubar" aria-label="Workspace menu">
@@ -61,6 +62,7 @@ app.innerHTML = `
           <summary>Panels</summary>
           <div class="menu-content" id="panel-menu"></div>
         </details>
+        <button id="manage-profiles" type="button">Profiles</button>
       </nav>
 	    </header>
 
@@ -870,6 +872,10 @@ let controlRole: ControlStatus["role"] = "observer";
 let spectrumRunningState = "stopped";
 let spectrumLastAction = "stop";
 let workspaceState = loadWorkspaceState();
+let workspaceSavePromise: Promise<unknown> = Promise.resolve();
+let profileReloading = false;
+let profileLoadRevision: string | null = null;
+try { profileLoadRevision = localStorage.getItem("pyrpl-profile-load-revision"); } catch { /* Private storage. */ }
 let currentSession: { fake: boolean } | null = null;
 let scopeSplit: Split.Instance | null = null;
 let spectrumSplit: Split.Instance | null = null;
@@ -880,14 +886,38 @@ let workspaceSplitPanelSignature = "";
 function saveWorkspaceState(state: WorkspaceState): void {
   saveWorkspaceStateLocal(state);
   if (controlRole === "observer") return;
-  void fetch("/api/workspace", {
+  if (profileReloading) return;
+  const body = JSON.stringify({ workspace: state });
+  workspaceSavePromise = workspaceSavePromise.then(() => fetch("/api/workspace", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ workspace: state }),
-  }).catch(() => {
+    body,
+  })).catch(() => {
     /* Local storage remains the fallback if the server is unavailable. */
   });
 }
+
+function restoreProfileView(state: ProfileState, reload: boolean, force = false): void {
+  if (profileReloading || !state.load_revision || (!force && profileLoadRevision === state.load_revision)) return;
+  profileLoadRevision = state.load_revision;
+  try { localStorage.setItem("pyrpl-profile-load-revision", profileLoadRevision); } catch { /* Private storage. */ }
+  plotViews.replace(state.plot_views ?? {});
+  workspaceState = normalizeWorkspaceState(state.workspace ?? {});
+  saveWorkspaceStateLocal(workspaceState);
+  if (reload) {
+    profileReloading = true;
+    window.location.reload();
+  }
+}
+
+const profileManager = new ProfileManager({
+  button: requireElement<HTMLButtonElement>("#manage-profiles"),
+  heading: requireElement<HTMLElement>("#active-profile-name"),
+  shell: requireElement<HTMLElement>(".shell"),
+  snapshot: () => ({ workspace: workspaceState, plot_views: plotViews.snapshot() }),
+  flush: () => workspaceSavePromise,
+  loaded: state => restoreProfileView(state, true, true),
+});
 
 async function loadWorkspaceStateFromConfig(): Promise<void> {
   if (controlRole === "observer") return;
@@ -1475,7 +1505,7 @@ async function activateScopePanel(): Promise<void> {
   }
   syncScopeStream();
   if (runningState !== "stopped") return;
-  if (currentSession?.fake && controlRole !== "observer") {
+  if (currentSession?.fake && controlRole !== "observer" && !profileLoadRevision) {
     await fetchSingleFrame();
     if (!workspaceState.panels.scope.enabled || !isPanelVisible("scope")) return;
     await callScopeAction("continuous");
@@ -2556,9 +2586,15 @@ function connectEvents(): void {
       void refreshModuleSnapshot(module, socket).catch((error: Error) => { reportError(moduleStatus, error.message); });
     }
     void refreshControlStatus();
+    void profileManager.refresh().then(state => { if (state) restoreProfileView(state, true); }).catch((error: Error) => reportError(moduleStatus, error.message));
   });
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
+    if (message.type === "profiles.changed") {
+      profileManager.apply(message as ProfileState);
+      if (message.reason === "loaded") restoreProfileView(message as ProfileState, true, true);
+      return;
+    }
     if (typeof message.module === "string" && ["module.attribute.changed", "module.state.changed"].includes(message.type)) {
       moduleStateRevisions.set(message.module, (moduleStateRevisions.get(message.module) ?? 0) + 1);
     }
@@ -2680,6 +2716,7 @@ function updateObserverControls(): void {
 }
 
 function applyControlStatus(control: ControlStatus): void {
+  profileManager.setReadOnly(control.role === "observer");
   controlRole = control.role;
   updateScopeAcquisitionButtons(runningState);
   updateObserverControls();
@@ -3276,6 +3313,8 @@ async function startup(): Promise<void> {
     await refreshControlStatus();
   }
   currentSession = await refreshSession();
+  const profileState = await profileManager.refresh().catch(() => null);
+  if (profileState) restoreProfileView(profileState, false);
   buildHkExpansionGrid();
   await loadScopeControls();
   await loadScopeStates();

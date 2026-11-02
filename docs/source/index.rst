@@ -68,12 +68,14 @@ Manual
    installation
    gui
    api
+   http_api
    basics
    developer_guide/index
 
 * :doc:`installation`
 * :doc:`gui`
 * :doc:`api`
+* :doc:`http_api`
 * :doc:`basics`
 * :doc:`developer_guide/index`
 

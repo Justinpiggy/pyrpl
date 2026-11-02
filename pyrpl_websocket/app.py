@@ -33,6 +33,7 @@ from .lockbox_runtime import TrustedModelError
 from .scope import SCOPE_DATA_LENGTH, clamp_sample_count
 from .session import WebSession
 from .settings import ServerSettings
+from .profiles import ProfileConflict
 from .streams import StreamFailure, StreamFanout
 from .measurements import ScopeAverage, SpectrumAverage, resize_scope_frame, spectrum_average_bytes, spectrum_snapshot_arrays
 from .modules import SPECTRUM_WINDOWS
@@ -154,6 +155,16 @@ class ConfigBranchWriteRequest(BaseModel):
 class ControlClaimRequest(BaseModel):
     label: str | None = None
     force: bool = False
+
+
+class ProfileSaveRequest(BaseModel):
+    name: str | None = None
+    workspace: dict[str, Any] | None = None
+    plot_views: dict[str, Any] | None = None
+
+
+class ProfileRenameRequest(BaseModel):
+    name: str
 
 
 _CONTROL_WRITE_MESSAGES = {
@@ -771,6 +782,81 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             return app.state.session.config_editor(module)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    async def profile_operation(operation, *args, reason=None, **kwargs):
+        try:
+            result = await asyncio.to_thread(operation, *args, **kwargs)
+        except ProfileConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Unknown profile or setting") from exc
+        except (ValueError, TypeError, TrustedModelError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="Profile storage is unavailable") from exc
+        if reason:
+            await app.state.events.publish({"type": "profiles.changed", "reason": reason, **result})
+        return result
+
+    @app.get("/api/profiles")
+    async def profiles():
+        return await profile_operation(app.state.session.profiles.list)
+
+    @app.post("/api/profiles")
+    async def create_profile(request: ProfileSaveRequest):
+        if request.name is None:
+            raise HTTPException(status_code=400, detail="A profile name is required")
+        return await profile_operation(app.state.session.profiles.save, name=request.name,
+                                       workspace=request.workspace, plot_views=request.plot_views, reason="saved")
+
+    @app.put("/api/profiles/{profile_id}")
+    async def save_profile(profile_id: str, request: ProfileSaveRequest):
+        return await profile_operation(app.state.session.profiles.save, profile_id=profile_id,
+                                       workspace=request.workspace, plot_views=request.plot_views, reason="saved")
+
+    @app.get("/api/profiles/{profile_id}/download")
+    async def download_profile(profile_id: str):
+        record = await profile_operation(app.state.session.profiles.export, profile_id)
+        return JSONResponse(record, headers={"Content-Disposition": f'attachment; filename="pyrpl-profile-{profile_id}.json"'})
+
+    @app.post("/api/profiles/import")
+    async def import_profile(request: Request):
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 8 * 1024 * 1024:
+                raise HTTPException(status_code=413, detail="Profile upload exceeds 8 MiB")
+        try:
+            payload = json.loads(body)
+            if not isinstance(payload, dict) or not isinstance(payload.get("profile"), dict):
+                raise ValueError("Expected an object containing profile and optional name")
+            if payload.get("name") is not None and not isinstance(payload["name"], str):
+                raise ValueError("Profile name must be a string")
+        except (ValueError, UnicodeError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return await profile_operation(app.state.session.profiles.import_profile, payload["profile"],
+                                       name=payload.get("name"), reason="imported")
+
+    @app.patch("/api/profiles/{profile_id}")
+    async def rename_profile(profile_id: str, request: ProfileRenameRequest):
+        return await profile_operation(app.state.session.profiles.rename, profile_id, request.name, reason="renamed")
+
+    @app.post("/api/profiles/{profile_id}/load")
+    async def load_profile(profile_id: str):
+        streams = [*app.state.scope_streams.values(), *app.state.spectrum_streams.values(), app.state.network_analyzer_stream]
+        for stream in streams:
+            stream.suspend()
+        try:
+            result = await profile_operation(app.state.session.profiles.load, profile_id)
+            for stream in streams:
+                stream.clear()
+            app.state.network_points = {}
+            app.state.network_run_id = -1
+            await app.state.events.publish({"type": "profiles.changed", "reason": "loaded", **result})
+            return result
+        finally:
+            for stream in streams:
+                stream.resume()
 
     @app.post("/api/config/branches/{module_name}")
     async def save_config_branch(module_name: str, request: ConfigBranchWriteRequest):
