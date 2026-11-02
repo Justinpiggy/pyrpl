@@ -109,6 +109,10 @@ Lockbox example::
 
 These control examples intentionally change hardware when run against a real
 board. The supplied ``examples/http_client_status.py`` only reads by default.
+For an interactive walkthrough, open ``examples/http_control_demo.ipynb`` in
+Jupyter. It includes Anaconda setup, single-shot Scope and Spectrum acquisition,
+plots and CSV export, parameter discovery, and an opt-in Lockbox configuration
+and locking example that finishes by unlocking.
 
 HTTP conventions and errors
 ----------------------------

@@ -136,6 +136,10 @@ and [the generated instrument catalog](docs/source/http_api_catalog.rst).
 The dependency-free client is `pyrpl_websocket.http_client.RedPitayaClient`;
 [a read-only example](examples/http_client_status.py) retrieves lock status and
 optionally saves Scope channels to CSV. No browser or desktop Qt runtime is needed.
+The [Jupyter demo](examples/http_control_demo.ipynb) shows how to arm and capture
+Scope and Spectrum traces, plot/export data, inspect Lockbox status, and set
+parameters/start/stop a lock. It includes Anaconda setup instructions; the
+Lockbox control example is opt-in.
 
 The web header's **Profiles** button saves named snapshots, loads them, and renames
 them. The active profile appears in the top-left heading and browser tab title.
