@@ -3,6 +3,8 @@ import { ScopeStream } from "./scope-stream";
 import "./app.css";
 import "./themes.css";
 import { applyTheme } from "./theme";
+import { optionLabel, setSelectValue } from "./select-controls";
+import { spectrumResolutionBandwidth } from "./spectrum-fft";
 import { DIAGNOSTIC_SOURCES, debugEnabled, installStatusBar, reportError } from "./status-bar";
 import { SpectrumPlot } from "./spectrum-plot";
 import { IirPlot } from "./iir-plot";
@@ -856,9 +858,6 @@ let stream = new ScopeStream(
 let spectrumPlot = new SpectrumPlot(spectrumPlotHost, (message, error) => {
   if (error) { reportError(spectrumStatus, message); return; }
   spectrumStatus.textContent = message;
-  const rbw = spectrumPlot.getRbw();
-  const field = genericModuleControls.get("spectrumanalyzer")?.inputs.get("rbw");
-  if (field && rbw !== undefined) field.value = String(rbw);
 }, (currentAverage) => {
   const traceAverage = genericModuleControls.get("spectrumanalyzer")?.inputs.get("trace_average");
   spectrumCurrentAverage.textContent = `${currentAverage} / ${traceAverage?.value || "1"}`;
@@ -1669,19 +1668,6 @@ async function refreshSession(): Promise<{ fake: boolean } | null> {
   }
 }
 
-function optionLabel(value: string | number): string {
-  if (typeof value === "number") {
-    if (value < 1e-3) {
-      return `${(value * 1e6).toPrecision(4)} us`;
-    }
-    if (value < 1) {
-      return `${(value * 1e3).toPrecision(4)} ms`;
-    }
-    return `${value.toPrecision(4)} s`;
-  }
-  return value;
-}
-
 function attributeValueLabel(attribute: string, value: ModulePrimitive): string {
   if (Array.isArray(value)) {
     return value.join(", ");
@@ -1690,7 +1676,7 @@ function attributeValueLabel(attribute: string, value: ModulePrimitive): string 
     return String(value);
   }
   if (typeof value === "number" && (attribute === "duration" || attribute === "trigger_delay")) {
-    return optionLabel(value);
+    return optionLabel(attribute, value);
   }
   if (typeof value === "number") {
     return Number.isInteger(value) ? String(value) : String(Number(value.toPrecision(6)));
@@ -1703,10 +1689,10 @@ function populateSelect(select: HTMLSelectElement, attribute: ModuleAttribute): 
   for (const option of attribute.options ?? []) {
     const element = document.createElement("option");
     element.value = String(option);
-    element.textContent = attribute.option_labels?.[String(option)] ?? optionLabel(option);
+    element.textContent = attribute.option_labels?.[String(option)] ?? optionLabel(attribute.name, option);
     select.appendChild(element);
   }
-  select.value = String(attribute.value);
+  setSelectValue(select, attribute.value, attribute.name);
 }
 
 function applyScopeControlValue(attribute: string, value: string | number | boolean): void {
@@ -1720,7 +1706,7 @@ function applyScopeControlValue(attribute: string, value: string | number | bool
     scopeTrigger.value = String(value);
     updatePlotTimeSettings();
   } else if (attribute === "duration") {
-    scopeDuration.value = String(value);
+    setSelectValue(scopeDuration, value, "duration");
     updatePlotTimeSettings();
     updateRollingControls();
   } else if (attribute === "average") {
@@ -2416,6 +2402,14 @@ async function setGenericModuleAttribute(
   value: ModulePrimitive,
   statusOutput: HTMLOutputElement,
 ): Promise<void> {
+  if (moduleName === "spectrumanalyzer" && attribute === "rbw") {
+    // RBW depends on the browser-local window. Send the corresponding hardware
+    // span, not an RBW the server would interpret using a different window.
+    const select = genericModuleControls.get(moduleName)?.inputs.get("rbw") as HTMLSelectElement;
+    const span = Number(select.selectedOptions[0]?.dataset.span);
+    if (!Number.isFinite(span)) throw new Error("No span available for the selected RBW");
+    return setGenericModuleAttribute(moduleName, "span", span, statusOutput);
+  }
   if (isViewAttribute(moduleName, attribute) && isScalarModulePrimitive(value)) {
     plotViews.set(moduleName, attribute, value);
     applyGenericModuleValue(moduleName, attribute, value);
@@ -2426,6 +2420,7 @@ async function setGenericModuleAttribute(
   }
   const result = await setModuleAttributeValue(moduleName, attribute, value);
   applyGenericModuleValue(moduleName, attribute, result.value);
+  if (moduleName === "spectrumanalyzer" && attribute === "span") applyGenericModuleState(moduleName, { span: result.value });
   statusOutput.textContent = `${attribute} = ${attributeValueLabel(attribute, result.value)}`;
   if (moduleName === "iir" && iirPlot) {
     await iirPlot.refresh();
@@ -2477,6 +2472,26 @@ function applyGenericModuleState(moduleName: string, state: ModuleState): void {
       applyGenericModuleValue(moduleName, attribute, value);
     }
   }
+  if (moduleName === "spectrumanalyzer") updateSpectrumBandwidthControls(plotViews.merge(moduleName, spectrumServerState));
+}
+
+function updateSpectrumBandwidthControls(state: ModuleState): void {
+  const controls = genericModuleControls.get("spectrumanalyzer");
+  const span = controls?.inputs.get("span"), rbw = controls?.inputs.get("rbw");
+  if (!(span instanceof HTMLSelectElement) || !(rbw instanceof HTMLSelectElement)) return;
+  const windowName = String(state.window ?? "blackman");
+  const key = JSON.stringify([windowName, [...span.options].map(option => option.value)]);
+  if (rbw.dataset.optionsKey !== key) {
+    rbw.replaceChildren();
+    for (const option of span.options) {
+      const bandwidth = spectrumResolutionBandwidth(Number(option.value), windowName);
+      const choice = new Option(optionLabel("rbw", bandwidth), String(bandwidth));
+      choice.dataset.span = option.value;
+      rbw.add(choice);
+    }
+    rbw.dataset.optionsKey = key;
+  }
+  setSelectValue(rbw, spectrumResolutionBandwidth(Number(state.span ?? span.value), windowName), "rbw");
 }
 
 function applySpectrumFieldVisibility(state: ModuleState): void {
@@ -2499,6 +2514,9 @@ function applySpectrumFieldVisibility(state: ModuleState): void {
 }
 
 function applyGenericModuleValue(moduleName: string, attribute: string, value: ModulePrimitive): void {
+  // The browser's window determines its displayed RBW; server RBW may use a
+  // different window. Update it once from the merged settings below instead.
+  if (moduleName === "spectrumanalyzer" && attribute === "rbw") return;
   value = plotViews.get(moduleName)[attribute] ?? value;
   const input = genericModuleControls.get(moduleName)?.inputs.get(attribute);
   if (!input) {
@@ -2506,6 +2524,8 @@ function applyGenericModuleValue(moduleName: string, attribute: string, value: M
   }
   if (input instanceof HTMLInputElement && input.type === "checkbox") {
     input.checked = Boolean(value);
+  } else if (input instanceof HTMLSelectElement) {
+    setSelectValue(input, value, attribute);
   } else {
     input.value = formatModuleValue(value);
   }

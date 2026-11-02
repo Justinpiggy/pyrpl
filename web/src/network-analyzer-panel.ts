@@ -2,6 +2,7 @@ import { fitPlotToFrame } from "./plot-theme";
 import { accessibleSplit } from "./split-layout";
 import { reportError } from "./status-bar";
 import type uPlot from "uplot";
+import { optionLabel, setSelectValue } from "./select-controls";
 import Split from "split.js";
 import "uplot/dist/uPlot.min.css";
 
@@ -105,6 +106,7 @@ export class NetworkAnalyzerPanel {
       const input = this.controlsHost.querySelector<HTMLInputElement | HTMLSelectElement>(`#networkanalyzer-${name.replaceAll("_", "-")}`);
       if (!input || document.activeElement === input) continue;
       if (input instanceof HTMLInputElement && input.type === "checkbox") input.checked = Boolean(value);
+      else if (input instanceof HTMLSelectElement) setSelectValue(input, value, name);
       else input.value = String(value);
     }
     const running = String(this.state.running_state ?? "stopped").startsWith("running_");
@@ -308,10 +310,10 @@ export class NetworkAnalyzerPanel {
       for (const value of attribute.options ?? []) {
         const option = document.createElement("option");
         option.value = String(value);
-        option.textContent = String(value);
+        option.textContent = optionLabel(attribute.name, value);
         select.appendChild(option);
       }
-      select.value = String(attribute.value);
+      setSelectValue(select, attribute.value, attribute.name);
       input = select;
     } else {
       const field = document.createElement("input");

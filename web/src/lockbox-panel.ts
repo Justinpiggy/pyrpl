@@ -1,6 +1,7 @@
 import { fitPlotToFrame } from "./plot-theme";
 import { reportError } from "./status-bar";
 import type uPlot from "uplot";
+import { optionLabel, setSelectValue } from "./select-controls";
 import "uplot/dist/uPlot.min.css";
 
 import { PLOT_COLORS, plotAxis, createThemedPlot } from "./plot-theme";
@@ -150,6 +151,7 @@ export class LockboxPanel {
         const attribute = attributes[index];
         if (!attribute || input === document.activeElement) return;
         if (input instanceof HTMLInputElement && input.type === "checkbox") input.checked = Boolean(attribute.value);
+        else if (input instanceof HTMLSelectElement) setSelectValue(input, attribute.value, attribute.name);
         else input.value = Array.isArray(attribute.value) ? attribute.value.join(", ") : String(attribute.value ?? "");
       });
       for (const output of schema.outputs) {
@@ -432,10 +434,10 @@ export class LockboxPanel {
       for (const option of attribute.options ?? []) {
         const element = document.createElement("option");
         element.value = String(option);
-        element.textContent = String(option);
+        element.textContent = optionLabel(attribute.name, option);
         select.appendChild(element);
       }
-      select.value = String(attribute.value);
+      setSelectValue(select, attribute.value, attribute.name);
       select.addEventListener("change", () => {
         const value = this.selectValue(select.value, attribute.options ?? []);
         onChange(value).catch((error: Error) => reportError(this.elements.status, error.message));

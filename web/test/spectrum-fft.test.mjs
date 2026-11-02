@@ -43,6 +43,16 @@ const spectrumFft = loadModule(new URL("../src/spectrum-fft.ts", import.meta.url
   "./scope-frame": scopeFrame,
 });
 
+test("configured RBW matches FFT window bandwidth before a frame exists", () => {
+  assert.equal(spectrumFft.spectrumResolutionBandwidth(1e6, "boxcar"), 1e6 / 16384);
+  for (const window of ["blackman", "flattop", "hamming", "gaussian", "boxcar"]) {
+    const settings = { baseband: true, span: 1e6, center: 0, window, displayUnit: "Vpk^2", traceAverage: 1, iqBandwidth: [] };
+    const frame = spectrumFft.spectrumFromScopeBuffer(makeScopeFrame(), settings);
+    const expected = spectrumFft.spectrumResolutionBandwidth(settings.span, window, 64);
+    assert.ok(Math.abs(expected - frame.rbw) < 1e-9);
+  }
+});
+
 function makeScopeFrame(count = 64, frequencyBin = 8) {
   const buffer = new ArrayBuffer(24 + count * 2 * Float32Array.BYTES_PER_ELEMENT);
   const view = new DataView(buffer);

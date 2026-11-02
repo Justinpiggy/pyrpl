@@ -384,6 +384,11 @@ Spectrum JSON has this shape (arrays shortened)::
 
 ``x`` is Hz; baseband mode returns Input 1/Input 2/Cross, IQ mode returns IQ.
 Values here are linear power in Vpk^2, regardless of the browser's display unit.
+The GUI derives RBW from its local FFT window and the hardware span, so its RBW
+can differ from the module state's RBW when the browser and server windows differ.
+Selecting an RBW in the GUI writes the corresponding span. GUI amplitude spectral
+density is ``sqrt(power_Vpk2 / (2 * rbw_Hz))``; power spectral density is
+``power_Vpk2 / (2 * rbw_Hz)``. These display conversions do not change HTTP samples.
 The Network Analyzer exposes status via its module endpoint and live data through
 ``/ws/networkanalyzer``; it has no HTTP live-sweep frame endpoint. Saved sweeps
 can be retrieved through ``/api/curves``. The Python library is an HTTP client,

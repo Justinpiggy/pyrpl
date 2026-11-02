@@ -1,6 +1,19 @@
 import { parseScopeFrame } from "./scope-frame";
 
 export const SPECTRUM_PADDING_FACTOR = 16;
+const enbwCache = new Map<string, number>();
+
+export function spectrumResolutionBandwidth(span: number, window: string, count = 16384): number {
+  const key = `${window}:${count}`;
+  let enbw = enbwCache.get(key);
+  if (enbw === undefined) {
+    const weights = spectrumWindow(window, count);
+    const sum = weights.reduce((total, value) => total + value, 0);
+    enbw = sum === 0 ? 0 : weights.reduce((total, value) => total + value * value, 0) / (sum * sum);
+    enbwCache.set(key, enbw);
+  }
+  return span * enbw;
+}
 const ADC_SAMPLE_RATE = 125e6;
 
 export interface SpectrumSeries {

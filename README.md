@@ -156,6 +156,12 @@ The working configuration remembers the theme; **Save current** or **Save as new
 includes it in a profile, and loading/importing/exporting profiles carries it
 with the workspace settings. Older profiles default to Graphite.
 
+Numeric selectors format their own physical quantity: Spectrum Span/RBW use
+Hz/kHz/MHz, Scope duration uses time units, and IDs/counts remain unitless.
+Spectrum RBW follows the selected span and local FFT window even before capture;
+choosing an RBW changes the corresponding hardware span. Amplitude spectral
+density (`Vrms/sqrt(Hz)`) uses the square root of the power spectral density.
+
 Web layouts are defined in `web/src/app.css`. Instrument panels use container
 queries so controls reflow within split panes as well as narrow browser windows.
 Related actions stay grouped; constrained forms scroll and card rows size to their
