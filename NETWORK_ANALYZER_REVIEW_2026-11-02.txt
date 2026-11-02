@@ -1,0 +1,52 @@
+Network Analyzer web panel review - 2026-11-02
+
+Fixed
+1. Streaming redraws discarded zoom even though a user-scaled flag existed.
+   Magnitude and phase now retain manual ranges across sweeps; their X axes
+   follow each other. Reset Zoom restores automatic fitting. Switching between
+   time/frequency or linear/log axes resets X because the domain changes.
+2. Zero-span measurements were labeled as frequency. Both plots now show elapsed
+   seconds. Descending sweeps are sorted for plotting while exports retain the
+   acquisition order. Range calculations no longer spread large arrays as
+   function arguments.
+3. Stop failures were silently ignored and the data socket was closed regardless
+   of the result. Failed actions/settings writes now show errors, and the visible
+   subscription stays connected. Server acquisition failures appear in the
+   footer. Pending actions cannot be submitted repeatedly.
+4. Numeric fields inherited the HTML integer step when no schema step existed.
+   Fractional inputs are now valid, invalid numbers are rejected, and successful
+   writes show the value accepted by the server, including focused fields.
+   Frequency and amplitude fields explicitly identify Hz and Vpk.
+5. Permission changes did not consistently update acquisition button states.
+   Observer acquisition buttons are now disabled; CSV download remains available.
+6. Saving used the current form rather than the captured measurement settings.
+   The first streamed point now carries a setup snapshot; saved curves use it.
+   CSV and server saves capture the same data before awaiting the save request.
+   CSV headings identify Hz/seconds and include real/imaginary components.
+7. Replayed snapshots could retain obsolete cached points. Replays now replace
+   the cache, including empty snapshots. Empty data disables Save. Scheduled
+   redraws/resizes are cancelled during destruction.
+8. Fast sweeps could complete before their action HTTP response arrived. That
+   stale response changed the buttons back to Pause/running after acquisition
+   had stopped. Actions now read current status after completion of the request;
+   state updates also retain trace progress instead of erasing it.
+
+Validation
+- TypeScript production build and 38 frontend unit tests pass.
+- All 90 backend web application tests pass, including capture settings metadata.
+- Five new browser regressions cover streaming zoom, replay, server failure,
+  descending/zero-span sweeps, capture metadata, CSV, normalized field values,
+  failed Stop/settings requests, late action responses, and observer permissions.
+- Network Analyzer passes all 11 responsive viewport/layout combinations (desktop,
+  narrow/mobile, short windows, minimum panes, horizontal and vertical splits).
+  The five new regressions, 16 targeted/shared responsive tests, and three
+  existing analyzer/observer integrations pass (24 distinct browser tests).
+- Acquisition tests use the simulated instrument. These checks do not establish
+  physical magnitude/phase calibration or external-loop hardware accuracy.
+
+Separate finding
+The unrestricted all-panel layout run fails at an IIR marker overlap: the hit
+target for an 'x' marker is covered by 'iir-marker is-zero is-real' with the
+persisted test configuration. No IIR rendering or CSS was changed in this work.
+The responsive suite accepts PYRPL_TEST_PANEL=networkanalyzer to run its complete
+viewport matrix against this panel without stopping first at that IIR finding.

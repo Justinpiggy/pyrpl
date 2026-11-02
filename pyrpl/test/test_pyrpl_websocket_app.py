@@ -1613,6 +1613,9 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(session.client.fpgamemory[dsp_addr_base("iq2") + 0xC] & sync_bit, sync_bit)
 
             points = [session.acquire_network_analyzer_point() for _ in range(8)]
+            self.assertEqual(points[0]["settings"]["points"], 8)
+            self.assertAlmostEqual(points[0]["settings"]["rbw"], state["rbw"])
+            self.assertNotIn("settings", points[1])
             self.assertEqual([point["index"] for point in points], list(range(8)))
             self.assertTrue(all(np.isfinite(point["real"]) for point in points))
             self.assertEqual(points[-1]["running_state"], "stopped")

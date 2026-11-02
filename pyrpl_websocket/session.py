@@ -2174,6 +2174,7 @@ class WebSession:
             "scan_complete": scan_complete,
             "logscale": settings.logscale and settings.start_freq != settings.stop_freq,
             "zero_span": settings.start_freq == settings.stop_freq,
+            **({"settings": self._module_setup_dict("networkanalyzer")} if index == 0 else {}),
             "running_state": settings.running_state,
             "time_per_point": settings.measured_time_per_point,
         }

@@ -59,7 +59,7 @@ for (const [width, height, mode] of [
 ] as const) {
   test(`all panels remain reachable at ${width}x${height} ${mode}`, async ({ browser }) => {
     test.setTimeout(120_000);
-    for (const id of ids) {
+    for (const id of ids.filter(id => !process.env.PYRPL_TEST_PANEL || id === process.env.PYRPL_TEST_PANEL)) {
       const context = await browser.newContext({ viewport: { width, height } });
       const page = await context.newPage();
       try {

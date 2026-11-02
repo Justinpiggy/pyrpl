@@ -162,6 +162,13 @@ Spectrum RBW follows the selected span and local FFT window even before capture;
 choosing an RBW changes the corresponding hardware span. Amplitude spectral
 density (`Vrms/sqrt(Hz)`) uses the square root of the power spectral density.
 
+Network Analyzer plots retain manual zoom as points and new sweeps arrive, with
+linked X axes for magnitude and phase. **Reset Zoom** resumes automatic fitting.
+Descending sweeps are supported; zero-span sweeps use elapsed seconds on both
+axes and in CSV exports. Saved curves retain the capture settings even if the
+controls change afterwards. CSV files include magnitude, phase, real and imaginary
+values. Observers can download CSV without controlling acquisition.
+
 Web layouts are defined in `web/src/app.css`. Instrument panels use container
 queries so controls reflow within split panes as well as narrow browser windows.
 Related actions stay grouped; constrained forms scroll and card rows size to their

@@ -974,6 +974,7 @@ function exposeDebugState(): void {
     getSpectrumYRange: () => spectrumPlot.getYRange(),
     getSpectrumCurveData: () => spectrumPlot.getCurveData(),
     getNetworkAnalyzerCurveData: () => networkAnalyzerPanel.getCurveData(),
+    getNetworkAnalyzerView: () => networkAnalyzerPanel.getViewState(),
     getIirXRange: () => iirPlot?.getXRange() ?? null,
     getIirMagnitudeYRange: () => iirPlot?.getMagnitudeYRange() ?? null,
     getIirPhaseYRange: () => iirPlot?.getPhaseYRange() ?? null,

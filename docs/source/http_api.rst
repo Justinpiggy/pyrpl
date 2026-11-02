@@ -394,6 +394,13 @@ The Network Analyzer exposes status via its module endpoint and live data throug
 can be retrieved through ``/api/curves``. The Python library is an HTTP client,
 not a WebSocket streaming client.
 
+Network Analyzer point messages use ``x`` in Hz, or elapsed seconds when
+``zero_span`` is true. The point at ``index: 0`` includes a ``settings`` object
+with the module setup used for that sweep. Completed sweeps and reconnects send
+``{"snapshot": [...]}``; clients should replace their cached points with that
+snapshot. GUI-saved curves carry the captured settings plus ``zero_span`` and
+``x_unit`` (``Hz`` or ``s``) in ``params``.
+
 Lockbox endpoints
 -----------------
 

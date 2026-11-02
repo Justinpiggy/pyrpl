@@ -1886,6 +1886,8 @@ test("network analyzer streams a complete sweep and releases its IQ", async ({ p
   await page.locator("#network-stop").click();
   await page.locator("#network-single").click();
   await expect(page.locator("#network-status")).toContainText("32/32", { timeout: 10000 });
+  await expect(page.locator("#network-stop")).toBeDisabled();
+  await expect(page.locator("#network-run")).toHaveText("Continuous");
   await expect.poll(async () => {
     const response = await page.request.get("/api/modules/iq2");
     const payload = await response.json();

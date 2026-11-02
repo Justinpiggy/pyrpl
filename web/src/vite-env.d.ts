@@ -86,6 +86,12 @@ interface Window {
       real: number[];
       imaginary: number[];
     } | null;
+    getNetworkAnalyzerView: () => {
+      magnitude: { x: { min?: number; max?: number }; y: { min?: number; max?: number } };
+      phase: { x: { min?: number; max?: number }; y: { min?: number; max?: number } };
+      zeroSpan: boolean;
+      logscale: boolean;
+    };
     getIirXRange: () => { min: number; max: number } | null;
     getIirMagnitudeYRange: () => { min: number; max: number } | null;
     getIirPhaseYRange: () => { min: number; max: number } | null;
