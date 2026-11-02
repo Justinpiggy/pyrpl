@@ -1,3 +1,4 @@
+import { reportError } from "./status-bar";
 import uPlot from "uplot";
 import Split from "split.js";
 import "uplot/dist/uPlot.min.css";
@@ -166,7 +167,7 @@ export class NetworkAnalyzerPanel {
           this.downloadCsv();
           this.status.textContent = "Curve saved";
         })
-        .catch((error: Error) => { this.status.textContent = error.message; });
+        .catch((error: Error) => { reportError(this.status, error.message); });
     });
     this.resetButton.addEventListener("click", () => this.resetZoom());
   }
@@ -186,7 +187,7 @@ export class NetworkAnalyzerPanel {
   private async start(action: "single" | "continuous" | "pause" | "resume"): Promise<void> {
     const response = await fetch(`/api/modules/networkanalyzer/actions/${action}`, { method: "POST" });
     if (!response.ok) {
-      this.status.textContent = `Network analyzer ${action} failed: ${response.status}`;
+      reportError(this.status, `Network analyzer ${action} failed: ${response.status}`);
       return;
     }
     const payload = await response.json();
@@ -336,7 +337,7 @@ export class NetworkAnalyzerPanel {
       body: JSON.stringify({ value }),
     });
     if (!response.ok) {
-      this.status.textContent = `${attribute.label} update failed: ${response.status}`;
+      reportError(this.status, `${attribute.label} update failed: ${response.status}`);
       return;
     }
     this.status.textContent = `${attribute.label} updated`;

@@ -1,3 +1,4 @@
+import { reportError } from "./status-bar";
 export interface RegisterPanelElements {
   readAddr: HTMLInputElement;
   readLength: HTMLInputElement;
@@ -90,13 +91,13 @@ export function createRegisterPanel(elements: RegisterPanelElements): RegisterPa
 
   elements.readButton.addEventListener("click", () => {
     read().catch((error: Error) => {
-      elements.status.textContent = error.message;
+      reportError(elements.status, error.message);
     });
   });
 
   elements.writeButton.addEventListener("click", () => {
     write().catch((error: Error) => {
-      elements.status.textContent = error.message;
+      reportError(elements.status, error.message);
     });
   });
 

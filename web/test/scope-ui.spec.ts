@@ -443,6 +443,188 @@ test("observers adjust local plots without hardware writes and keep hardware sta
   }
 });
 
+test("diagnostics are opt-in and appear only in the bottom status bar", async ({ page }) => {
+  await resetServerConfig(page);
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getFrameSequence())).not.toBeNull();
+  await expect(page.locator("#status-bar")).toBeHidden();
+  const diagnosticSources = "#session-line, output[id$='-status'], #status, .iir-plot-status, #scope-current-average, #spectrum-current-average, #plot-hint, #spectrum-plot-hint, .panel-header p";
+  const visibleSources = () => page.locator(diagnosticSources).evaluateAll(elements =>
+    elements.filter(element => getComputedStyle(element).display !== "none").map(element => element.id || element.className));
+  expect(await visibleSources()).toEqual([]);
+  expect((await page.locator("#scope-plot").boundingBox())!.height).toBeGreaterThan(200);
+  await page.screenshot({ path: ".cache/ui-default.png" });
+
+  await page.goto("/?debug=1");
+  await expect(page.locator("#debug-status [data-source='status']")).toContainText(/Frame [1-9]/);
+  await expect(page.locator("#debug-status")).toContainText("reads");
+  await expect(page.locator("#debug-status")).toContainText("Drag pans");
+  expect(await visibleSources()).toEqual([]);
+  const bounds = await page.evaluate(() => ({
+    footer: document.querySelector("#status-bar")!.getBoundingClientRect().toJSON(),
+    workspace: document.querySelector("#workspace")!.getBoundingClientRect().toJSON(), height: innerHeight,
+  }));
+  expect(bounds.footer.bottom).toBeLessThanOrEqual(bounds.height);
+  expect(bounds.footer.bottom).toBeGreaterThan(bounds.height - 12);
+  expect(bounds.workspace.bottom).toBeLessThanOrEqual(bounds.footer.top);
+  expect((await page.locator("#scope-plot").boundingBox())!.height).toBeGreaterThan(200);
+  await page.screenshot({ path: ".cache/ui-debug.png" });
+
+  await page.locator(".menu-dropdown summary").click();
+  await page.locator("#panel-iir-enabled").check();
+  await page.getByRole("button", { name: "IIR", exact: true }).click();
+  await expect(page.locator("#debug-status [data-source='iir-plot-status']")).toContainText("marker");
+  await expect(page.locator("#debug-status [data-source='status']")).toHaveCount(0);
+  expect(await visibleSources()).toEqual([]);
+
+  await page.goto("/?debug=0");
+  await expect(page.locator("#iir-panel")).toBeVisible();
+  await expect(page.locator("#status-bar")).toBeHidden();
+});
+
+test("operation errors remain visible at the bottom with debugging off", async ({ page }) => {
+  await resetServerConfig(page);
+  await setModuleAttribute(page, "scope", "rolling_mode", false);
+  await page.goto("/");
+  await expect(page.locator("#scope-threshold")).toBeEnabled();
+  await page.route("**/api/modules/scope/attributes/threshold", route =>
+    route.fulfill({ status: 500, json: { detail: "Test hardware failure" } }));
+  await page.locator("#scope-threshold").fill("0.1");
+  await page.locator("#scope-threshold").blur();
+  await expect(page.locator("#application-error")).toBeVisible();
+  await expect(page.locator("#application-error")).toContainText("Failed to set scope.threshold");
+  await expect(page.locator("#debug-status")).toBeHidden();
+  await expect(page.locator("#module-status")).toBeHidden();
+  await page.locator("#application-error button").click();
+  await expect(page.locator("#status-bar")).toBeHidden();
+});
+
+test("hardware Scope display and saved curves use the corrected trigger time origin", async ({ page }) => {
+  await resetServerConfig(page);
+  for (const [name, value] of Object.entries({
+    rolling_mode: false, duration: 0.000131072, trigger_source: "ch2_positive_edge", input2: "asg0",
+  })) await setModuleAttribute(page, "scope", name, value);
+  await page.request.post("/api/modules/scope/actions/continuous");
+  await page.route("**/api/session", async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), fake: false } });
+  });
+  const count = 16384;
+  const crossing = 8189;
+  const buffer = Buffer.alloc(24 + count * 8);
+  buffer.write("PWS1");
+  buffer.writeUInt16LE(1, 4);
+  buffer.writeUInt16LE(2, 6);
+  buffer.writeUInt32LE(count, 8);
+  buffer.writeUInt32LE(1, 20);
+  for (let i = 0; i < count; i++) {
+    buffer.writeFloatLE(Math.max(-1, Math.min(1, (i - crossing - 7 + 0.75) / 16)), 24 + i * 8);
+    buffer.writeFloatLE(Math.max(-1, Math.min(1, (i - crossing + 0.75) / 16)), 28 + i * 8);
+  }
+  await page.routeWebSocket("**/ws/scope?*", socket => socket.send(buffer));
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getDisplayedDataFingerprint())).not.toBeNull();
+  const redPixels = () => page.locator("#scope-plot canvas").first().evaluate(canvas => {
+    const image = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+    let count = 0;
+    for (let i = 0; i < image.length; i += 4) {
+      if (image[i] > 100 && image[i] > image[i + 1] * 1.5 && image[i] > image[i + 2] * 1.5) count++;
+    }
+    return count;
+  });
+  // Grid pixels alone do not prove a waveform was drawn: a null Y scale
+  // previously passed the exported-data check while leaving a blank plot.
+  await expect.poll(redPixels).toBeGreaterThan(100);
+  await page.locator("#zoom-in").click();
+  await page.locator("#zoom-y-in").click();
+  await page.locator("#pan-up").click();
+  const ranges = () => page.evaluate(() => ({
+    x: window.pyrplScope!.getXRange(), y: window.pyrplScope!.getYRange(),
+  }));
+  const beforeVisibility = await ranges();
+  await page.locator("#show-ch1").uncheck();
+  await page.locator("#show-ch2").uncheck();
+  await page.locator("#show-ch2").check();
+  await page.locator("#show-ch1").check();
+  await expect.poll(ranges).toEqual(beforeVisibility);
+  await expect.poll(redPixels).toBeGreaterThan(100);
+  await page.locator("#save-curve").click();
+  await expect(page.locator("#module-status")).toHaveText("saved 2 curves");
+  const listed = await (await page.request.get("/api/curves")).json();
+  const curves = await Promise.all(listed.curves.map(async (curve: { pk: number }) =>
+    (await (await page.request.get(`/api/curves/${curve.pk}`)).json()).curve));
+  const trigger = curves.find(curve => curve.params.ch === 1);
+  const delayed = curves.find(curve => curve.params.ch === 0);
+  const crossingTime = (curve: { x: number[]; y: number[] }, index: number) => {
+    const f = -curve.y[index - 1] / (curve.y[index] - curve.y[index - 1]);
+    return curve.x[index - 1] + f * (curve.x[index] - curve.x[index - 1]);
+  };
+  expect(Math.abs(crossingTime(trigger, crossing))).toBeLessThan(1e-15);
+  expect(crossingTime(delayed, crossing + 7)).toBeCloseTo(56e-9, 14);
+  expect(trigger.y[crossing]).toBe(buffer.readFloatLE(28 + crossing * 8));
+  expect(delayed.y[crossing]).toBe(buffer.readFloatLE(24 + crossing * 8));
+});
+
+test("Scope settings preserve zoom and pan unless the capture bounds require clamping", async ({ page }) => {
+  await resetServerConfig(page);
+  await setModuleAttribute(page, "scope", "rolling_mode", false);
+  await setModuleAttribute(page, "scope", "duration", 0.001048576);
+  await setModuleAttribute(page, "scope", "input1", "asg0");
+  await setModuleAttribute(page, "scope", "trigger_source", "ch1_positive_edge");
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getFrameSequence())).not.toBeNull();
+  await page.locator("#zoom-in").click();
+  await page.locator("#pan-right").click();
+  await page.locator("#zoom-y-in").click();
+  await page.locator("#pan-up").click();
+  const ranges = () => page.evaluate(() => ({
+    x: window.pyrplScope!.getXRange(), y: window.pyrplScope!.getYRange(),
+  }));
+  const selected = await ranges();
+  const editNumber = async (selector: string, attribute: string, value: string) => {
+    const response = page.waitForResponse(r => r.url().endsWith(`/scope/attributes/${attribute}`) && r.request().method() === "POST");
+    await page.locator(selector).fill(value);
+    await page.locator(selector).blur();
+    expect((await response).ok()).toBe(true);
+  };
+  await editNumber("#scope-threshold", "threshold", "0.1");
+  await editNumber("#scope-hysteresis", "hysteresis", "0.02");
+  await page.locator("#scope-trigger").selectOption("ch1_negative_edge");
+  await expect(page.locator("#module-status")).toContainText("trigger_source =");
+  await expect.poll(ranges).toEqual(selected);
+
+  // A larger time span still contains the selected physical time range.
+  await page.locator("#scope-duration").selectOption("0.002097152");
+  await expect(page.locator("#module-status")).toContainText("duration =");
+  await expect.poll(ranges).toEqual(selected);
+  const sequence = await page.evaluate(() => window.pyrplScope!.getFrameSequence()!);
+  await expect.poll(() => page.evaluate(() => window.pyrplScope!.getFrameSequence()!)).toBeGreaterThan(sequence + 1);
+  expect(await ranges()).toEqual(selected);
+
+  // A shorter capture constrains X only; it must never reset the voltage view.
+  await page.locator("#scope-duration").selectOption("0.000131072");
+  await expect.poll(async () => (await ranges()).x).toEqual({ min: -0.000065536, max: 0.000065536 });
+  expect((await ranges()).y).toEqual(selected.y);
+  await page.locator("#zoom-in").click();
+  const beforeDelay = await ranges();
+  await page.locator("#connect-scope").click();
+  await expect.poll(() => page.evaluate(() => window.pyrplScope?.getRunningState())).toBe("paused_continuous");
+  await editNumber("#scope-trigger-delay", "trigger_delay", "0.001");
+  await expect.poll(async () => (await ranges()).x.min).toBeGreaterThanOrEqual(0.001 - 0.000065536);
+  const afterDelay = await ranges();
+  expect(afterDelay.x.max - afterDelay.x.min).toBeCloseTo(beforeDelay.x.max - beforeDelay.x.min, 12);
+  expect(afterDelay.y).toEqual(selected.y);
+
+  // XY uses voltage coordinates on both axes, independent of the timebase.
+  await page.locator("#scope-xy-mode").check();
+  await page.locator("#zoom-y-in").click();
+  await page.locator("#pan-down").click();
+  const xy = await ranges();
+  await page.locator("#scope-duration").selectOption("0.001048576");
+  await expect(page.locator("#module-status")).toContainText("duration =");
+  expect(await ranges()).toEqual(xy);
+});
+
 test("scope plot auto-renders a frame and zoom stays bounded", async ({ page }) => {
   const browserMessages: string[] = [];
   page.on("pageerror", (error) => browserMessages.push(error.message));

@@ -1,0 +1,558 @@
+PyRPL web GUI review — 2026-11-01
+
+The reported problems are reproducible and systemic. Layouts frequently assume
+that the browser width is also the panel width, that controls fit a fixed vertical
+allocation, and that hiding overflow is an acceptable fallback. Those assumptions
+fail in split panes, short windows, and narrow viewports. Increasing individual
+selector widths alone would move the failures elsewhere.
+
+This is an investigation and recommendation document. No GUI fixes were made and
+nothing was deployed. Existing worktree changes were preserved. SHA-256 checks
+confirmed that all 35 files in the pre-audit web source/test/config baseline were
+unchanged. Only review artifacts and isolated audit scratch files were created.
+
+Scope and evidence
+
+Reviewed the current working tree, based on commit
+37f8bf836537635eaf1339139e4c93a7b176381c, including its existing uncommitted changes.
+The browser audit exercised the packaged frontend index-wZo6CKCz.js using Chromium
+and the Anaconda pyrpl-env backend in fake-hardware mode at 127.0.0.1:8876.
+No connection was made to the Red Pitaya for this review. Audit configuration,
+workspace presets, and sample curves were isolated from the user's configuration.
+
+All 15 panels were exercised in each of these 10 scenarios: 150 combinations.
+
+  1600×1000, 1280×720, 900×600, 1280×420, 390×844,
+  681×768, 680×768, 800×500, and 1280×800 with either three equal
+  horizontal panes or three equal vertical panes.
+
+The 800×500 case also approximates the CSS space available when a 1600×1000
+viewport is magnified 200%; actual browser zoom was not exercised. The two cases
+around 680px deliberately straddle the main mobile breakpoint. Split cases put
+the reviewed panel first, with two other panels alongside/below it.
+
+Ten additional browser cases checked scrolling, all-panel navigation, mobile
+collapse, debug-footer space, and Spectrum splitter behavior. The matrix completed
+without recorded page JavaScript errors. This does not imply correct rendering:
+the defects below were present despite the absence of exceptions.
+
+The review combined screenshots, computed dimensions/overflow, control overlap
+and text-fit heuristics, selected wheel/drag interactions, and source inspection.
+Raw clipping counts include repeated ancestors and are not counts of distinct bugs.
+Estimated select text widths are heuristics; screenshots corroborate the examples
+below. A screenshot being initially cut off was not automatically treated as a
+defect when the content could be reached by a functioning scroll region.
+
+Evidence directory: artifacts/gui-review-2026-11-01/
+  results.json: all 150 matrix measurements, with panel/scenario identifiers.
+  details.json: supplementary before/after interaction measurements.
+  axis-format.json: direct reproduction of the Scope formatter issue.
+  source-verification.json: unchanged source/test/config verification.
+  PNG files named below: selected screenshots; other matrix images remain in
+  .cache/gui-audit/screenshots/. Scratch runners are in .cache/gui-audit/.
+
+Limits: this is a broad layout/usability review, not an exhaustive functional or
+accessibility certification. It does not cover every hardware state, Lockbox model,
+populated pole/zero list, saved configuration, dialog, locale, operating-system
+scaling factor, browser engine, real touch device, or screen reader. Layout-only
+findings are reproducible without real hardware; hardware behavior was not tested.
+Blank inactive plots alone were not classified as rendering bugs.
+
+Priority convention: P1 means misleading measurement display, hidden/overlapping
+controls, or a substantial loss of access. P2 means impaired readability,
+navigation, consistency, or workspace use. Recommendations are not implemented.
+
+1. P1 — Scope time-axis labels can show the wrong numeric value.
+
+The tick formatter removes trailing zeros even when they are part of an integer.
+With zero decimal places: 50 becomes "5", 100 becomes "1", -50 becomes "-5", and
+0 becomes an empty string. The resulting axis can read "-5 us, -25 us, us,
+25 us, 5 us". This is a label-formatting defect; this review does not establish
+incorrect samples or trigger positions.
+
+Reproduction: the three-column Scope screenshot shows this pattern. Independently
+evaluating the exact trimFixed function from the source confirms the substitutions.
+The decimals calculation legitimately reaches zero for sufficiently large tick
+steps; therefore the faulty formatter is used in normal plotting.
+Source: web/src/scope-stream.ts:723 and :787.
+Evidence: three-columns-scope.png; axis-format.json.
+Direction: trim fractional padding only, preserve integer zeros and the zero label,
+and test engineering-unit labels across positive, negative, and zero ticks.
+
+2. P1 — ASG's fixed seven-column row makes selectors unusable and hides fields.
+
+At 900×600, the two ASG cards remain side by side. Trigger/output selectors shrink
+to roughly 34–35px, and fields at the right edge are clipped. Inside a roughly
+416px split pane, the same row extends beyond its card. On a 390px viewport the
+document grows to about 525px wide while horizontal overflow is hidden.
+
+The outer grid allows 360px cards, but the inner row requires four columns of at
+least 92px plus three additional columns, gaps, and padding. These constraints
+are incompatible. The mobile rules do not replace the ASG row structure.
+Source: web/src/main.ts:1169, :1192, :1861.
+Evidence: medium-asg.png; phone-asg.png; three-columns-registers.png.
+Direction: group ASG fields into meaningful rows that reflow to the card width;
+enforce readable control widths before choosing how many columns fit.
+
+3. P1 — Scope's signal row collides with neighboring controls or disappears sideways.
+
+At 900×600, trigger text is truncated, the trigger-mode segmented control runs
+into the duration area, and the formula editor is only wide enough for a fragment.
+At approximately 416px panel width, much of the signal row is outside the panel.
+The browser is still 1280px wide, so its mobile breakpoint does not activate.
+
+The desktop signal grid has large fixed minimum columns; one slot permits a
+150px minimum while the segmented control has a 230px minimum. Shrinking only
+the select does not solve this row-level conflict.
+Source: web/src/main.ts:778, :1752 and the mobile signal-row override near :2038.
+Evidence: medium-scope.png; detail-tabs-medium.png; three-columns-scope.png.
+Direction: make channel/trigger/timebase groups adapt to panel width, including
+the actual intrinsic width of the segmented control.
+
+4. P1 — Scope's wrapped control rows are clipped vertically.
+
+At 900×600, Save occupies one row while Load/Delete move to the next row and
+are cut off at the controls/plot divider. In three vertically stacked panes,
+even the first row of inputs is partially hidden. Controls have no usable
+ordinary vertical scroll fallback in the affected pane.
+
+Scope's inner split uses fixed minimums of 132px and 260px. Those numbers do not
+track wrapped controls, header height, or the height allocated by the outer split.
+Source: web/src/main.ts:1095, :1104, :2719.
+Evidence: medium-scope.png; three-rows-networkanalyzer.png.
+Direction: size or scroll the controls based on actual content and available
+height; define a fallback when controls and plot cannot both meet their minimums.
+
+5. P1 — Network Analyzer's intended scrolling is disabled by the CSS cascade.
+
+At 900×600, lower groups such as Auto Bandwidth and Auto Amplitude are cut off.
+Measured controls-pane height is about 141px for 268px of scroll content.
+Computed overflow is hidden, and a wheel attempt leaves scrollTop at zero.
+
+.network-controls-pane declares overflow:auto, but the later .module-panel rule
+has the same specificity and overrides it with overflow:hidden.
+Source: web/src/main.ts:975 and :1735; inner split in
+web/src/network-analyzer-panel.ts:175.
+Evidence: medium-networkanalyzer.png; details.json / network-scroll.
+Direction: give the panel an explicit scroll owner and remove the cascade conflict.
+
+6. P1 — Housekeeping loses lower GPIO controls for the same reason.
+
+At 1280×420, the Housekeeping content is approximately 495px tall inside a 258px
+pane. Lower pin controls are clipped and wheel scrolling does not move the pane.
+Narrow splits also cannot accommodate the fixed pin-bank layout.
+
+.housekeeping-panel's overflow:auto is overridden by .module-panel's later rule.
+Source: web/src/main.ts:1380, :1715 and :1735.
+Evidence: detail-housekeeping-scroll.png; details.json / housekeeping-scroll.
+Direction: preserve scrolling, then make the banks and pin rows adapt to panel width.
+
+7. P1 — PID and IQ cards overlap one another in short two-column layouts.
+
+At 800×500, the instrument grid allocates approximately 166px to each row while
+the cards are about 275px tall. PID2/IQ2 begins at y=319 while the preceding card
+extends to about y=422. It covers the previous card's bottom fields/actions.
+Wheel scrolling works, but the cards remain overlapped; this is not merely content
+below the fold. ASG also produces overlap candidates in this constrained case.
+
+The measured row/card mismatch is confirmed. The precise grid-sizing interaction
+should be isolated during implementation rather than assuming overflow:auto is
+sufficient: auto-sized tracks, min-height:0 cards, and constrained parent height
+currently disagree about the space each card occupies.
+Source: web/src/main.ts:1169, :1175 and :1735.
+Evidence: zoom-proxy-pid.png; zoom-proxy-iq.png;
+detail-pid-overlap-after-wheel.png; details.json / pid-overlap and iq-overlap.
+Direction: content-sized grid rows with an explicit scrollable grid viewport;
+assert that every subsequent row starts after the preceding cards end.
+
+8. P1 — Lockbox's desktop column layout has no adequate small-pane fallback.
+
+The three columns each require at least 280px, excluding gaps. At narrow desktop
+widths and in three-column workspaces, controls extend outside the panel. At short
+heights, Inputs/Outputs content is clipped. Only the sequence-stage list has an
+explicit vertical scrolling policy, so the three columns behave inconsistently.
+The header's class selector plus nonwrapping action row adds another width demand.
+
+Source: web/src/main.ts:1436, :1489, :1510, :1521 and :1589.
+Evidence: short-lockbox.png; matrix lockbox cases.
+Direction: stack or tab subpanels according to Lockbox's available width, with
+consistent scrolling for each long form/plot region.
+
+9. P1 — On mobile, Lockbox's entire main grid collapses to zero height.
+
+At 390×844, only the overview is visible. The main grid measures 360px wide and
+0px high, with 912px of scroll content and overflow:hidden. Its computed rows are
+0px 0px 0px. Wheel scrolling does not recover Inputs, Outputs, or Sequence.
+The same family of failure occurs at the 680px breakpoint.
+
+The mobile rule changes column count but leaves the grid's flex sizing and hidden
+overflow in force while surrounding containers switch to automatic height.
+Source: web/src/main.ts:1521 and :2028.
+Evidence: phone-lockbox.png; details.json / lockbox-mobile.
+Direction: use content-driven block sizing in the stacked/mobile mode and verify
+all nested regions contribute to the document's scroll height.
+
+10. P1 — IIR pole/zero editors remain wider than a phone or narrow pane.
+
+The four list-editor columns each require at least 170px. At 390px viewport width
+the document is approximately 728px wide. Vertical scrolling reaches the editors,
+but the right-hand lists and parts of plot labels remain outside the visible width.
+The body hides horizontal overflow; there is no appropriate local fallback.
+
+Source: web/src/main.ts:1265 and :1861.
+Evidence: detail-iir-mobile-after-wheel.png; matrix phone/at-breakpoint IIR cases.
+Direction: let the four editor groups stack or wrap by their containing panel's width.
+
+11. P1 — Short Network Analyzer plots can become title-only strips.
+
+In a three-row workspace, the magnitude and phase frames collapse to short strips.
+The screenshot shows titles without usable chart areas, while controls above are
+also clipped. The outer workspace accepts sizes much smaller than the nested
+controls-plus-plots requirements.
+
+The resize routine skips frames below 100px in either dimension, leaving an
+existing plot size in a smaller clipped host. This is an additional code-level
+reason resizing below the supported size cannot be assumed to recover cleanly.
+Source: web/src/main.ts:1009, :2782;
+web/src/network-analyzer-panel.ts:175 and :386.
+Evidence: three-rows-networkanalyzer.png.
+Direction: define a deliberate compact/scroll/expand state below useful chart
+dimensions; never silently allocate a chart only enough space for its title.
+
+12. P1 — Telemetry's lower controls disappear in short or narrow panes.
+
+At 1280×420, the sampler Duration/statistics controls fall below the visible area.
+In a narrow split, reading grids and the Sampler/AMS columns consume more space
+than the clipped panel permits. The 760px breakpoint looks at the browser width,
+so it does not help a 416px pane inside a wide browser.
+Source: web/src/main.ts, .telemetry-layout / .sampler-stats-controls,
+the media query at :1430, and .module-panel at :1735.
+Evidence: short-telemetry.png; matrix three-columns/three-rows telemetry cases.
+Direction: panel-relative column changes and one reliable vertical scroll region.
+
+13. P1 — Register Debug fields and actions are cut off in narrow splits.
+
+The row has fixed minimum columns for read/write addresses, length, and value.
+At roughly 416px width, the read button is squeezed and the value/write side
+extends beyond the right boundary. A large empty result area remains below.
+Its 260px minimum-height output also conflicts with very short panes.
+Source: web/src/main.ts:1165 and :1722.
+Evidence: three-columns-registers.png; matrix three-rows registers case.
+Direction: separate Read and Write action groups, wrap whole groups, and let the
+result viewport use the remaining space without forcing the panel to overflow.
+
+14. P1 — The Panels menu extends below short desktop windows without scrolling.
+
+At 1280×420 the menu begins at y=50 and is 533px tall. Its Layout control starts
+around y=515, completely below the window. Wheel scrolling does not move the menu.
+The height limit and scrolling exist only inside the <=680px width media query.
+This can obstruct the workspace controls needed to recover an awkward layout.
+Source: web/src/main.ts:655 and :1910.
+Evidence: detail-menu-short.png; details.json / menu-short.
+Direction: constrain popovers to available viewport height at every width and
+provide scrolling plus keyboard access to every item.
+
+15. P2 — Action groups wrap at arbitrary individual-button boundaries.
+
+Scope Save/Load/Delete are independent grid items, so Save can separate from
+Load/Delete. Scope and Spectrum navigation/save buttons split over several rows;
+Reset or Save Curve can occupy a row alone. Header growth then reduces already
+scarce space for the controls and plot. Wrapping itself is valid, but related
+actions should remain recognizable groups.
+
+IIR has a more severe text-fit variant even at 1600×1000: Measure Transfer Function
+wraps to multiple text lines inside a 24px-high button, spilling toward Reset.
+Source: web/src/main.ts:695, :709, :1225 and :1756.
+Evidence: medium-scope.png; three-columns-spectrumanalyzer.png; wide-iir.png.
+Direction: represent action groups explicitly; wrap groups at intentional boundaries.
+Buttons must either retain a readable single line or grow to fit multiline text.
+
+16. P2 — Selector and editor widths are not based on the content users must read.
+
+Besides the extreme ASG case, Scope's selected ch2_positive_edge text and saved
+state placeholder are truncated. Network Analyzer's selected networkanalyzer
+input is too long for its approximately 92–118px field in tested desktop layouts.
+Long curve names and Lockbox stage choices also outgrow their slots.
+
+Global width:100% only fills the allocated cell; it does not make that cell useful.
+Input padding and the native dropdown arrow further reduce the visible text area.
+Source: web/src/main.ts:733, :745, :987 and :1752.
+Evidence: medium-scope.png; medium-networkanalyzer.png; results.json / textFit.
+Direction: field-type-specific readable minimums, content-aware grouping, and a
+way to inspect full long values. Tooltips can supplement, but should not replace,
+readable selected values and accessible names.
+
+17. P2 — Curve Viewer allows its three subpanes to become impractically narrow.
+
+In a three-column workspace, its curve list is only about 70px wide and its
+parameters pane about 80px. Names are reduced to fragments and parameters wrap
+heavily. The list label and list box are separated by excessive vertical space.
+The split configuration's nominal minimums [140,300,200] do not prevent this
+initial small-container layout. Having a Split.js minSize is not a layout guarantee.
+Source: web/src/main.ts:1027 and :1064;
+web/src/curve-viewer-panel.ts:179.
+Evidence: three-columns-curveviewer.png.
+Direction: switch to stacked panes or selectable list/plot/parameters views below
+the combined useful width, and size label rows to content.
+
+18. P2 — Configuration editor minimum height exceeds short panels.
+
+The editor and its grid track both require at least 360px. In three vertically
+stacked panes, much of the editor is clipped by the surrounding panel. The
+textarea's internal text scrolling is not equivalent to making the entire editor
+viewport and its lower edge visible.
+Source: web/src/main.ts:1443 and :1473.
+Evidence: three-rows-pyrplconfig.png; matrix zoom-proxy pyrplconfig case.
+Direction: let the editor fit the allocated area or scroll the containing form;
+preserve caret/selection visibility while resizing.
+
+19. P2 — Mobile layouts distribute unused height into the header and tab area.
+
+At 390×844, Lockbox's topbar is roughly 262px tall and its tab area roughly 141px.
+Trigger and PWM also show very large empty bands before otherwise small forms.
+This is visible independently of Lockbox's collapsed-grid bug. The first useful
+control can be hundreds of pixels below the top of the screen.
+
+The mobile shell/workspace use automatic grid rows with min-height:100dvh and
+default stretching; spare space is assigned to regions that should fit content.
+Source: web/src/main.ts:1861, :1875 and :1917.
+Evidence: phone-lockbox.png; phone-trig.png; phone-pwm.png; phone-asg.png.
+Direction: keep chrome content-sized and assign surplus space only to the intended
+workspace region. Do not stretch a header merely to fill the viewport.
+
+20. P2 — All-panel tabs squeeze or wrap labels inside a fixed-height strip.
+
+With all 15 panels enabled at 900px width, Spectrum Analyzer, Network Analyzer,
+Sampler & AMS, and Register Debug labels wrap into a 24px button; some text sits
+at or beyond its button boundary. Shorter titles are crowded too. Horizontal tab
+scrolling and nonshrinking tabs are enabled only below the mobile breakpoint.
+Source: web/src/main.ts:862, :883 and :1922.
+Evidence: detail-tabs-medium.png.
+Direction: a consistent single-line scrollable strip or an explicit overflow menu
+at any width where the labels do not fit; keep the active tab discoverable.
+
+21. P2 — IIR frequency tick labels collide even in a wide layout.
+
+At 1600×1000 the frequency axis is a nearly continuous run of long numbers and
+units. Values such as fractional powers of ten are rendered with up to eight
+significant digits, without a matching label-density budget. Narrower layouts
+make this worse. The two plots also reserve at least 360px each, forcing a long
+scroll before the pole/zero editors even when a more compact view could be useful.
+Source: web/src/iir-plot.ts:188 and :884;
+web/src/main.ts:1250.
+Evidence: wide-iir.png; detail-iir-mobile-after-wheel.png.
+Direction: chart-width-aware tick density, concise engineering notation, and
+responsive plot-height rules. Do not reduce numerical precision in underlying data.
+
+22. P2 — Splitters are mouse-only in the inspected implementation.
+
+Rendered gutters are 8px divs with tabIndex=-1, no separator role/name/value,
+and no application keyboard-resizing behavior. Users who cannot drag precisely
+have no direct keyboard equivalent for adjusting these regions.
+Source: web/src/main.ts:1109, :2719, :2754, :2782;
+web/src/network-analyzer-panel.ts:175;
+web/src/curve-viewer-panel.ts:179.
+Evidence: details.json / gutter entries; source inspection.
+Direction: focusable, named separators with orientation/current size and keyboard
+resizing, plus an easy expand/reset action. A wider transparent pointer hit area
+can preserve the visual gutter thickness.
+
+23. P2 — Some form controls lack programmatic labels.
+
+IIR's four list-count inputs and four raw list editors have nearby visual text
+but no label association or aria-label. The Register Debug output textarea is
+also unnamed in the inspected markup. This makes navigation and identification
+harder with assistive technology even when the controls are visible.
+Source: web/src/iir-plot.ts:380; web/src/main.ts / #register-output.
+Evidence: results.json / unnamed; direct DOM construction inspection.
+Direction: connect visible group labels to each control and distinguish count,
+raw list, and result roles. The simple naming audit is not a full accessibility scan.
+
+24. P2 — Spectrum does not retain its adjusted controls/plot split like Scope.
+
+In the controlled browser case, dragging changed controls height from about 161px
+to 241px; reload restored about 161px. The implementation hardcodes [32,68] and
+only refreshes the plot on drag end. It does not save or restore Spectrum's split
+the way Scope does, despite Spectrum split sizes existing in workspace state.
+The browser case used a fixed workspace response; the missing persistence path
+is independently established by source inspection.
+Source: web/src/main.ts:2719 versus :2754.
+Evidence: details.json / spectrum-split.
+Direction: use consistent per-panel persistence and clamp restored sizes to the
+current usable layout. Resizing/reflow should preserve plot zoom/pan where possible.
+
+25. P2 — Spectrum reserves space for fields that are not currently shown.
+
+Its hidden labels deliberately retain display:grid with visibility:hidden, leaving
+empty grid cells. In a narrow pane, those empty slots consume scarce space and
+push visible controls farther down the scroll area. The "Show" checkboxes also
+separate from their related input fields when the grid reflows.
+This may have been intended to stabilize the desktop arrangement, but it scales
+poorly to narrow panels. Spectrum's control region does provide scrolling, so this
+is not classified as the same unreachable-content defect as Network Analyzer.
+Source: web/src/main.ts:1208 and :1777.
+Evidence: three-columns-spectrumanalyzer.png.
+Direction: explicit channel groups and deliberate stable/compact layouts instead
+of invisible placeholders in a generic auto-fit grid.
+
+Additional risks and checks to carry into implementation
+
+- Many control labels are 10–11px and buttons are generally 24px high. This is
+  dense for touch or magnified use. An 18px IIR marker and an 8px gutter warrant
+  hit-area review. A 13px checkbox alone does not prove a target-size failure:
+  its associated clickable label and spacing must be considered.
+- --border is referenced by Configuration/IIR editor borders, but the main theme
+  defines --panel-border. An unresolved custom property can invalidate the border
+  declaration. Confirm the intended appearance when consolidating theme tokens.
+- The debug footer properly stays at the bottom in the tested desktop case and
+  is absent by default. At 1280×420 it consumes about 45px when enabled, further
+  stressing the existing height constraints. Its 88px cap and scrolling are good
+  safeguards, but long errors/mobile footer behavior still need dedicated tests.
+- Network Analyzer and Curve Viewer skip resizing below small host dimensions.
+  Test shrink-and-grow transitions, not only initial sizes, to ensure canvases,
+  hit-testing, and saved scales recover together.
+- Native dropdown popup behavior, focus-ring visibility, contrast, touch gesture
+  conflicts, and actual 200%/400% browser zoom need manual cross-browser coverage.
+
+Per-panel coverage outcome
+
+Scope              Narrow/short controls clip; groups separate; wrong integer ticks.
+ASG                Unreadable selectors; fixed row overflow; mobile width overflow.
+PID                Cards overlap in the short two-column case; scroll does not fix it.
+IQ                 Same confirmed card-overlap failure as PID.
+IIR                Wide list editors, long button text, colliding ticks, unlabeled inputs.
+Trigger            No form clipping found in tested cases; shared mobile blank space.
+PWM                No form clipping found in tested cases; shared mobile blank space.
+Spectrum Analyzer  Fragmented groups, placeholder gaps, inconsistent split persistence.
+Network Analyzer   Disabled scrolling, clipped controls, title-only short plots.
+Curve Viewer       Unusable narrow subpanes and excessive list-label spacing.
+Configuration      Editor's fixed minimum height is clipped in short panels.
+Lockbox            Fixed-width columns, short-form clipping, zero-height mobile grid.
+Housekeeping       Lower GPIO rows clipped; intended scrolling overridden.
+Sampler & AMS      Lower controls clipped; breakpoint misses narrow split panes.
+Register Debug     Read/write row overflow; short result pane; unnamed output.
+
+"No form clipping found" is limited to these cases, not a claim that the panel
+has no possible GUI defects. Global menu, header, tabs, and splitter issues also
+affect otherwise better-behaved panels.
+
+Systematic prevention
+
+These problems can be addressed with a small set of shared layout contracts and
+tests. A new UI framework is not required, and a framework alone would not enforce
+these contracts. The following is a proposed approach, not a patch plan already run.
+
+A. Make panels responsive to their own width.
+
+Establish inline-size containment on appropriate panel wrappers and use container
+queries for their internal layouts. A 416px panel must choose the same readable
+control arrangement whether it sits in a phone-sized window or a wide split
+workspace. Use browser media queries for global chrome only where appropriate.
+Do not indiscriminately apply size containment: block-size containment can interfere
+with content-driven height. Use explicit height/scroll policies or ResizeObserver
+where layout decisions truly depend on available height.
+Reference: [MDN container queries](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Containment/Container_queries).
+
+B. Define reusable field and action-group components.
+
+Each field type should have a readable minimum based on expected values, padding,
+units, and native affordances. Grid column count should follow those minimums.
+Allow outer containers to shrink with min-width:0, but do not let every inner
+control shrink to nothing. Keep channel+visibility, read+address+length, write+
+address+value, save/load/delete, and axis-navigation actions as explicit groups.
+Wrap groups deliberately; make multiline buttons grow vertically if allowed.
+Reference: [MDN min-width](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/min-width).
+
+C. Give each constrained region an explicit overflow policy.
+
+For every panel, specify which header stays visible, which form region scrolls,
+which plot takes remaining space, and what happens below the useful minimum size.
+Keep hidden overflow for intentional canvas/decoration clipping, not as the default
+for forms. Avoid multiple accidental nested scroll regions. A scrollable child
+cannot rescue controls clipped by a different ancestor or covered by another card.
+Note that overflow:hidden may still scroll programmatically or on focus; that is
+not an adequate substitute for discoverable pointer/keyboard access.
+Reference: [MDN overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow).
+
+D. Make the workspace honor panel requirements and provide a recovery path.
+
+Current outer minimums of 220px horizontally and 140px vertically are unrelated to
+each panel's inner requirements. Account for header, footer, gutters, control
+height, and minimum useful plot area together. Clamp persisted proportions after
+container changes. If all minimums cannot fit, offer a defined compact layout,
+scrolling, sub-tabs, or expand-panel action rather than clipping. Reflow must not
+unnecessarily reset the user's zoom, pan, cursor, focus, or edited field value.
+
+E. Consolidate CSS ownership and design tokens.
+
+The Network Analyzer/Housekeeping cascade conflict shows why a general late rule
+must not silently redefine a panel's scrolling. Separate chrome, panel shell,
+form/card, and plot responsibilities. Use scoped component selectors or deliberate
+cascade layers, typed field variants, and shared sizing/spacing tokens. Document
+intentional exceptions. Add static checks for undefined custom properties and
+review broad selectors that change display, overflow, min-height, or grid tracks.
+
+F. Treat plot labels and resizing as first-class GUI behavior.
+
+Share tested numerical formatting, preserve zero/significant integer digits, and
+budget tick density against the rendered label width. Test labels independently
+from sample values. Provide usable chart minimums and explicit small-chart states.
+Exercise repeated shrink/grow cycles while asserting zoom/pan and coordinate
+mapping remain consistent. A canvas with painted pixels is not proof that its axes,
+data, or controls are readable.
+
+G. Add a reproducible responsive regression matrix.
+
+Reuse the existing Playwright setup with deterministic fake data and isolated
+workspace/configuration. Cover all 15 panels, tabs plus two/three-pane layouts,
+widths on both sides of breakpoints, short heights, and actual browser zoom.
+Include long selector values, names and paths; populated lists; errors/debug;
+all tabs enabled; model/mode changes; reload; and drag-to-minimum transitions.
+
+Assertions should verify:
+  - each enabled control is visible or reachable through its designated scroll area;
+  - control hit points belong to that control, not an overlapping sibling;
+  - rows/cards do not overlap and group boundaries remain intact;
+  - selected values/button labels fit their intended presentation;
+  - no unexplained document-wide horizontal overflow;
+  - menus/tabs/splitters remain usable with pointer and keyboard;
+  - chart frames/axes remain useful and numerical labels are correct;
+  - layout state and user plot view survive supported resize/reload transitions.
+
+Current tests include useful label/control overlap checks at 1440×900 and
+1024×768 and some mobile cases. Those checks do not systematically cover every
+panel at narrow pane widths, ancestor clipping, control-to-control occlusion,
+or selected-text fit. Extend that foundation rather than replacing it.
+
+Use curated visual snapshots alongside geometry/interaction assertions. Stabilize
+fonts/environment and volatile acquisition data; if waveform pixels are masked,
+separately test chart drawing and dimensions. Screenshot-only tests cannot prove
+scroll reachability or numeric correctness.
+Reference: [Playwright visual comparisons](https://playwright.dev/docs/test-snapshots).
+
+H. Include accessibility and manual review in the acceptance criteria.
+
+Use named controls, visible focus, meaningful groups, and keyboard-operable
+splitters. Review effective pointer targets including labels and spacing.
+Automated accessibility checks are useful but do not replace keyboard, zoom,
+screen-reader, and real-device review.
+References: [WAI window splitter pattern](https://www.w3.org/WAI/ARIA/apg/patterns/windowsplitter/),
+[WCAG target size guidance](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html),
+[Playwright accessibility testing](https://playwright.dev/docs/accessibility-testing).
+
+Use reflow testing at 320 CSS pixels as a practical acceptance target for ordinary
+controls. Plots may legitimately need two-dimensional viewing; that does not
+justify losing surrounding form controls. Test real zoom separately from viewport
+emulation because they are not identical environments.
+Reference: [WCAG reflow guidance](https://www.w3.org/WAI/WCAG22/Understanding/reflow.html).
+
+Suggested order for future work
+
+1. Correct the misleading tick formatter and preserve a regression example.
+2. Restore access: scroll/cascade conflicts, PID/IQ overlap, Lockbox mobile collapse,
+   offscreen menu, and panels that currently clip controls.
+3. Introduce shared panel-relative forms/action groups and consistent split fallbacks.
+4. Improve plot axes, mobile chrome, tab navigation, persistence, and accessibility.
+5. Make the responsive matrix and selected visual baselines part of normal checks.
+
+No part of this implementation sequence has been applied by this review.

@@ -1,3 +1,4 @@
+import { reportError } from "./status-bar";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
@@ -73,19 +74,19 @@ export class LockboxPanel {
     this.resizeObserver.observe(elements.outputPlot);
     elements.classSelect.addEventListener("change", () => {
       this.setClass(elements.classSelect.value).catch((error: Error) => {
-        this.setStatus(error.message);
+        reportError(this.elements.status, error.message);
       });
     });
     elements.addStage.addEventListener("click", () => {
       this.requestSchema("/api/lockbox/stages", { method: "POST" }).catch((error: Error) => {
-        this.setStatus(error.message);
+        reportError(this.elements.status, error.message);
       });
     });
     elements.inputPlotSelect.addEventListener("change", () => {
-      this.refreshInputPlot().catch((error: Error) => this.setStatus(error.message));
+      this.refreshInputPlot().catch((error: Error) => reportError(this.elements.status, error.message));
     });
     elements.outputPlotSelect.addEventListener("change", () => {
-      this.refreshOutputPlot().catch((error: Error) => this.setStatus(error.message));
+      this.refreshOutputPlot().catch((error: Error) => reportError(this.elements.status, error.message));
     });
   }
 
@@ -169,7 +170,7 @@ export class LockboxPanel {
       button.textContent = action.label ?? action.name;
       button.addEventListener("click", () => {
         this.requestSchema(`/api/lockbox/actions/${action.name}`, { method: "POST" }).catch((error: Error) => {
-          this.setStatus(error.message);
+          reportError(this.elements.status, error.message);
         });
       });
       this.elements.actions.appendChild(button);
@@ -204,7 +205,7 @@ export class LockboxPanel {
         this.requestSchema(
           `/api/lockbox/inputs/${encodeURIComponent(input.name)}/actions/calibrate`,
           { method: "POST" },
-        ).catch((error: Error) => this.setStatus(error.message));
+        ).catch((error: Error) => reportError(this.elements.status, error.message));
       });
       card.querySelector(".lockbox-card-title")?.appendChild(calibrateButton);
       const row = document.createElement("div");
@@ -272,7 +273,7 @@ export class LockboxPanel {
       deleteButton.textContent = "Delete";
       deleteButton.addEventListener("click", () => {
         this.requestSchema(`/api/lockbox/stages/${index}`, { method: "DELETE" }).catch((error: Error) => {
-          this.setStatus(error.message);
+          reportError(this.elements.status, error.message);
         });
       });
       const executeButton = document.createElement("button");
@@ -280,7 +281,7 @@ export class LockboxPanel {
       executeButton.textContent = "Go to this stage";
       executeButton.addEventListener("click", () => {
         this.requestSchema(`/api/lockbox/stages/${index}/actions/execute`, { method: "POST" }).catch(
-          (error: Error) => this.setStatus(error.message),
+          (error: Error) => reportError(this.elements.status, error.message),
         );
       });
       const titleActions = document.createElement("div");
@@ -371,7 +372,7 @@ export class LockboxPanel {
       select.value = String(attribute.value);
       select.addEventListener("change", () => {
         const value = this.selectValue(select.value, attribute.options ?? []);
-        onChange(value).catch((error: Error) => this.setStatus(error.message));
+        onChange(value).catch((error: Error) => reportError(this.elements.status, error.message));
       });
       input = select;
     } else if (attribute.type === "bool") {
@@ -379,7 +380,7 @@ export class LockboxPanel {
       checkbox.type = "checkbox";
       checkbox.checked = Boolean(attribute.value);
       checkbox.addEventListener("change", () => {
-        onChange(checkbox.checked).catch((error: Error) => this.setStatus(error.message));
+        onChange(checkbox.checked).catch((error: Error) => reportError(this.elements.status, error.message));
       });
       input = checkbox;
     } else if (attribute.type === "number") {
@@ -396,7 +397,7 @@ export class LockboxPanel {
         number.step = String(attribute.step);
       }
       number.addEventListener("change", () => {
-        onChange(Number(number.value)).catch((error: Error) => this.setStatus(error.message));
+        onChange(Number(number.value)).catch((error: Error) => reportError(this.elements.status, error.message));
       });
       input = number;
     } else {
@@ -404,7 +405,7 @@ export class LockboxPanel {
       text.type = "text";
       text.value = Array.isArray(attribute.value) ? attribute.value.join(", ") : String(attribute.value ?? "");
       text.addEventListener("change", () => {
-        onChange(this.textValue(text.value)).catch((error: Error) => this.setStatus(error.message));
+        onChange(this.textValue(text.value)).catch((error: Error) => reportError(this.elements.status, error.message));
       });
       input = text;
     }

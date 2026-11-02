@@ -154,6 +154,31 @@ Read this before changing migrated PyRPL behavior. The full details remain in
   its first ready-register poll, matching original
   `AcquisitionModule._data_ready_async`; polling immediately can accept stale
   idle bits and stream the previous buffer.
+- Web Scope channel-edge traces use the threshold crossing as time zero, as
+  requested by the user, rather than the legacy delayed trigger-pointer origin.
+  `scope-frame.ts` compensates `1 + floor(2 / decimation)` samples of pointer/
+  buffer alignment delay for real CH1/CH2 edge triggers, then interpolates only
+  the identified crossing's adjacent samples when they bracket the effective
+  threshold. Both channels receive the same time shift; voltages and relative
+  delays are unchanged. Display, math, CSV and saved curves share these times.
+  Raw PWS1 samples keep their legacy order. Fake, rolling, immediate, external,
+  ASG and DSP triggers do not receive this channel-comparator correction.
+  Rising/falling edges, FPGA averaging on/off, and decimations 1, 2, 4, 8, 64
+  matched the predicted crossing indices in 20 board captures on 2026-11-01.
+- An open browser retains its loaded frontend across a board redeploy and
+  WebSocket reconnect. Reload the page to activate a new frontend build;
+  live acquisition alone does not prove the tab is using the deployed code.
+- uPlot mode 2 `setSeries({show})` resets both facet scales even with
+  `auto: false`. Scope visibility updates must preserve the X/Y ranges in
+  the same batch. Regression checks must count waveform-colored pixels;
+  grid pixels or correct CSV data can coexist with a blank plot.
+- UI diagnostics and inline hints are off by default. `?debug=1` (or
+  `?debug=true`) enables one bottom status bar for session information and
+  visible-panel diagnostics. Diagnostic source elements remain hidden in
+  panels in both modes, including dynamically created modules. Errors use
+  `reportError` and remain visible in the footer without the debug flag.
+  Hiding plot toolbars requires a single plot grid row to avoid collapsing
+  the canvas host. Keep measured values and editable controls visible.
 - Releasing temporary Scope ownership must restore intrinsic disabled states
   such as rolling-mode restrictions instead of blindly enabling every input.
 - Network analyzer is an IQ accumulator sweep, not a scope capture or CPU FFT.

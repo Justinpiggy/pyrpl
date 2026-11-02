@@ -5,7 +5,7 @@ import { PLOT_COLORS, plotAxis } from "./plot-theme";
 import type { SpectrumFrame, SpectrumSeries, SpectrumSettings } from "./spectrum-fft";
 import { ReconnectScheduler } from "./websocket-reconnect";
 
-type StatusCallback = (message: string) => void;
+type StatusCallback = (message: string, error?: boolean) => void;
 
 export type { SpectrumFrame, SpectrumSeries, SpectrumSettings } from "./spectrum-fft";
 
@@ -68,7 +68,7 @@ export class SpectrumPlot {
     this.reconnectScheduler = new ReconnectScheduler(() => this.openSocket());
     this.plot = new uPlot(this.options("", this.labels), EMPTY_DATA, this.host);
     this.fftWorker.onmessage = (event: MessageEvent<SpectrumWorkerResponse>) => this.handleWorkerResponse(event.data);
-    this.fftWorker.onerror = () => this.setStatus("Spectrum FFT worker error");
+    this.fftWorker.onerror = () => this.setStatus("Spectrum FFT worker error", true);
     this.resizeObserver = new ResizeObserver(() => this.scheduleResize());
     this.resizeObserver.observe(this.host);
     window.addEventListener("resize", this.resizeListener);
@@ -164,7 +164,7 @@ export class SpectrumPlot {
       }
     };
     socket.onerror = () => {
-      if (this.socket === socket) this.setStatus("Spectrum stream error");
+      if (this.socket === socket) this.setStatus("Spectrum stream error", true);
     };
     socket.onmessage = (event) => {
       if (this.socket !== socket) return;
@@ -206,7 +206,7 @@ export class SpectrumPlot {
   private handleWorkerResponse(response: SpectrumWorkerResponse): void {
     if (response.generation !== this.workerGeneration) return;
     if (response.error || !response.frame) {
-      this.setStatus(response.error ?? "Invalid spectrum frame");
+      this.setStatus(response.error ?? "Invalid spectrum frame", true);
       return;
     }
     const frame = response.frame;

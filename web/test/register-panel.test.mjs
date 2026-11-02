@@ -22,6 +22,7 @@ function loadRegisterPanelModule(fetchImpl) {
     exports: module.exports,
     fetch: fetchImpl,
     module,
+    require: () => ({ reportError: (source, message) => { source.textContent = message; } }),
   });
   return module.exports;
 }

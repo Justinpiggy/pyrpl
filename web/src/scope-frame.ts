@@ -19,6 +19,61 @@ export interface ScopeTimeSettings {
   triggerDelay: number;
   triggerSource: string;
   rollingMode: boolean;
+  hardware?: boolean;
+  threshold?: number;
+}
+
+const SCOPE_BUFFER_SAMPLES = 16384;
+const FPGA_CLOCK_SECONDS = 8e-9;
+
+// Match scope_registers._float_to_signed_register, including ties-to-even.
+function triggerThreshold(value: number): number {
+  const scaled = value * 8192;
+  const lower = Math.floor(scaled);
+  let word = scaled - lower === 0.5 ? lower + Math.abs(lower % 2) : Math.round(scaled);
+  if (word === 0 && value !== 0) word = Math.sign(value);
+  return Math.max(-8192, Math.min(8191, word)) / 8192;
+}
+
+function timeOrigin(frame: ScopeFrame, settings: ScopeTimeSettings): number {
+  if (settings.rollingMode) return -settings.duration;
+  if (settings.triggerSource === "immediately") return 0;
+  const legacyOrigin = settings.triggerDelay - settings.duration / 2;
+  const edge = /^ch([12])_(positive|negative)_edge$/.exec(settings.triggerSource);
+  if (!settings.hardware || !edge) return legacyOrigin;
+
+  const dt = settings.duration / SCOPE_BUFFER_SAMPLES;
+  const decimation = Math.max(1, Math.round(dt / FPGA_CLOCK_SECONDS));
+  // red_pitaya_scope.v: comparator -> edge pulse -> selected trigger ->
+  // adc_wp_trig. The pointer is floor(2/decimation) samples past the crossing;
+  // the legacy ring-buffer roll then places zero one sample past that pointer.
+  const latencySamples = 1 + Math.floor(2 / decimation);
+  const requestedDelay = settings.triggerDelay / dt;
+  const lower = Math.floor(requestedDelay);
+  const roundedDelay = requestedDelay - lower === 0.5
+    ? lower + Math.abs(lower % 2) : Math.round(requestedDelay);
+  const delay = Math.max(1, Math.min(2 ** 32 - 1, roundedDelay + SCOPE_BUFFER_SAMPLES / 2));
+  const crossingIndex = SCOPE_BUFFER_SAMPLES - delay - latencySamples;
+  let origin = -crossingIndex * dt;
+
+  // Only interpolate the FPGA-identified crossing, never a nearby unrelated
+  // cycle. Shortened captures or a trigger outside the buffer retain the
+  // deterministic clock correction. Samples and inter-channel delay stay intact.
+  const channel = Number(edge[1]) - 1;
+  if (frame.sampleCount === SCOPE_BUFFER_SAMPLES && channel < frame.channelCount
+    && crossingIndex > 0 && crossingIndex < frame.sampleCount) {
+    const before = frame.samples[(crossingIndex - 1) * frame.channelCount + channel];
+    const after = frame.samples[crossingIndex * frame.channelCount + channel];
+    const threshold = triggerThreshold(settings.threshold ?? 0);
+    const brackets = edge[2] === "positive"
+      ? before < threshold && after >= threshold
+      : before > threshold && after <= threshold;
+    if (Number.isFinite(before) && Number.isFinite(after) && brackets) {
+      const fraction = (threshold - before) / (after - before);
+      origin += (1 - fraction) * dt;
+    }
+  }
+  return origin;
 }
 
 export function parseScopeFrame(buffer: ArrayBuffer): ScopeFrame {
@@ -52,11 +107,7 @@ export function frameToData(frame: ScopeFrame, timeSettings?: ScopeTimeSettings)
   const x = new Float64Array(frame.sampleCount);
   const ch1 = new Float32Array(frame.sampleCount);
   const ch2 = new Float32Array(frame.sampleCount);
-  const xMin = timeSettings?.rollingMode
-    ? -timeSettings.duration
-    : timeSettings && timeSettings.triggerSource !== "immediately"
-      ? timeSettings.triggerDelay - timeSettings.duration / 2
-      : 0;
+  const xMin = timeSettings ? timeOrigin(frame, timeSettings) : 0;
   const xSpan = timeSettings ? timeSettings.duration : Math.max(0, frame.sampleCount - 1);
   const xStep = frame.sampleCount > 0 ? xSpan / frame.sampleCount : 0;
 

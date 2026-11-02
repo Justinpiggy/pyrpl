@@ -1,3 +1,4 @@
+import { reportError } from "./status-bar";
 export interface ConfigEditorSchema {
   configfile: string;
   module: string;
@@ -19,13 +20,13 @@ export class ConfigPanel {
 
   constructor(private elements: ConfigPanelElements) {
     elements.module.addEventListener("change", () => {
-      this.load(elements.module.value).catch((error: Error) => this.setStatus(error.message));
+      this.load(elements.module.value).catch((error: Error) => reportError(this.elements.status, error.message));
     });
     elements.refresh.addEventListener("click", () => {
-      this.load(elements.module.value).catch((error: Error) => this.setStatus(error.message));
+      this.load(elements.module.value).catch((error: Error) => reportError(this.elements.status, error.message));
     });
     elements.save.addEventListener("click", () => {
-      this.save().catch((error: Error) => this.setStatus(error.message));
+      this.save().catch((error: Error) => reportError(this.elements.status, error.message));
     });
   }
 

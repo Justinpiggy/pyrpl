@@ -1,3 +1,4 @@
+import { reportError } from "./status-bar";
 import Split from "split.js";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
@@ -74,12 +75,12 @@ export class CurveViewerPanel {
     this.scheduleResize();
     // A large saved spectrum must not delay Scope or the module menu at startup.
     if (!this.root.hidden && !this.loaded) {
-      void this.load().catch((error: Error) => { this.status.textContent = error.message; });
+      void this.load().catch((error: Error) => { reportError(this.status, error.message); });
     }
   }
 
   private bindActions(): void {
-    const report = (error: Error) => { this.status.textContent = error.message; };
+    const report = (error: Error) => { reportError(this.status, error.message); };
     this.select.addEventListener("change", () => void this.loadSelected().catch(report));
     this.refreshButton.addEventListener("click", () => void this.load().catch(report));
     this.saveParamsButton.addEventListener("click", () => void this.saveParams().catch(report));
@@ -141,7 +142,7 @@ export class CurveViewerPanel {
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
-      this.status.textContent = payload.detail ?? `Save parameters failed: ${response.status}`;
+      reportError(this.status, payload.detail ?? `Save parameters failed: ${response.status}`);
       return;
     }
     const payload = await response.json();
@@ -157,7 +158,7 @@ export class CurveViewerPanel {
     const deletedPk = this.selected.pk;
     const response = await fetch(`/api/curves/${deletedPk}`, { method: "DELETE" });
     if (!response.ok) {
-      this.status.textContent = `Delete curve failed: ${response.status}`;
+      reportError(this.status, `Delete curve failed: ${response.status}`);
       return;
     }
     this.selected = null;

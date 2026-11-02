@@ -1,3 +1,4 @@
+import { reportError } from "./status-bar";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
@@ -248,7 +249,7 @@ export class IirPlot {
         window.clearTimeout(this.clickTimer);
         this.clickTimer = null;
       }
-      this.handlePlotClick(plot, event, true).catch((error: Error) => this.setStatus(error.message));
+      this.handlePlotClick(plot, event, true).catch((error: Error) => reportError(this.plotStatus(), error.message));
     });
     surface.addEventListener("click", (event) => {
       if (this.suppressNextClick) {
@@ -263,7 +264,7 @@ export class IirPlot {
       }
       this.clickTimer = window.setTimeout(() => {
         this.clickTimer = null;
-        this.handlePlotClick(plot, event, false).catch((error: Error) => this.setStatus(error.message));
+        this.handlePlotClick(plot, event, false).catch((error: Error) => reportError(this.plotStatus(), error.message));
       }, 220);
     });
     surface.addEventListener("mousemove", (event) => {
@@ -278,14 +279,14 @@ export class IirPlot {
     }, { capture: true });
     surface.addEventListener("mouseup", (event) => {
       if (this.markerDrag) {
-        this.finishDraggedMarker(event).catch((error: Error) => this.setStatus(error.message));
+        this.finishDraggedMarker(event).catch((error: Error) => reportError(this.plotStatus(), error.message));
       } else {
         this.endMouseInteraction(plot);
       }
     }, { capture: true });
     surface.addEventListener("mouseleave", (event) => {
       if (this.markerDrag) {
-        this.finishDraggedMarker(event).catch((error: Error) => this.setStatus(error.message));
+        this.finishDraggedMarker(event).catch((error: Error) => reportError(this.plotStatus(), error.message));
       } else {
         this.endMouseInteraction(plot);
       }
@@ -393,14 +394,14 @@ export class IirPlot {
       count.value = String(values.length);
       count.id = `iir-${config.name.replaceAll("_", "-")}-count`;
       count.addEventListener("change", () => {
-        this.setListCount(config.name, Number(count.value)).catch((error: Error) => this.setStatus(error.message));
+        this.setListCount(config.name, Number(count.value)).catch((error: Error) => reportError(this.plotStatus(), error.message));
       });
       const add = document.createElement("button");
       add.type = "button";
       add.textContent = "+";
       add.title = `Add ${config.label.slice(0, -1).toLowerCase()}`;
       add.addEventListener("click", () => {
-        this.appendListValue(config.name).catch((error: Error) => this.setStatus(error.message));
+        this.appendListValue(config.name).catch((error: Error) => reportError(this.plotStatus(), error.message));
       });
       const remove = document.createElement("button");
       remove.type = "button";
@@ -408,7 +409,7 @@ export class IirPlot {
       remove.title = `Remove selected ${config.label.slice(0, -1).toLowerCase()}`;
       remove.disabled = values.length === 0;
       remove.addEventListener("click", () => {
-        this.removeListValue(config.name).catch((error: Error) => this.setStatus(error.message));
+        this.removeListValue(config.name).catch((error: Error) => reportError(this.plotStatus(), error.message));
       });
       header.append(title, count, add, remove);
       panel.appendChild(header);
@@ -419,7 +420,7 @@ export class IirPlot {
       raw.value = values.join(", ");
       raw.addEventListener("change", () => {
         const parsed = config.complex ? splitList(raw.value) : splitList(raw.value).map(Number);
-        this.setList(config.name, parsed).catch((error: Error) => this.setStatus(error.message));
+        this.setList(config.name, parsed).catch((error: Error) => reportError(this.plotStatus(), error.message));
       });
       panel.appendChild(raw);
 
@@ -444,7 +445,7 @@ export class IirPlot {
         input.addEventListener("change", () => {
           const next = [...this.latest!.state[config.name]];
           next[index] = config.complex ? input.value : Number(input.value);
-          this.setList(config.name, next).catch((error: Error) => this.setStatus(error.message));
+          this.setList(config.name, next).catch((error: Error) => reportError(this.plotStatus(), error.message));
         });
         row.append(indexLabel, input);
         rows.appendChild(row);

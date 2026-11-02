@@ -1,4 +1,5 @@
 import { ScopeStream } from "./scope-stream";
+import { DIAGNOSTIC_SOURCES, debugEnabled, installStatusBar, reportError } from "./status-bar";
 import { SpectrumPlot } from "./spectrum-plot";
 import { IirPlot } from "./iir-plot";
 import { LockboxPanel, type LockboxSchema } from "./lockbox-panel";
@@ -2047,6 +2048,25 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
+const statusStyle = document.createElement("style");
+statusStyle.textContent = `
+  ${DIAGNOSTIC_SOURCES} { display: none !important; }
+  .plot-toolbar { display: none; }
+  .plot-panel { grid-template-rows: minmax(0, 1fr); }
+  .shell:has(#status-bar:not([hidden])) { grid-template-rows: auto minmax(0, 1fr) auto; }
+  #status-bar {
+    min-width: 0; max-height: 88px; overflow: auto;
+    border-top: 1px solid var(--panel-border); padding: 5px 8px;
+    background: var(--panel); color: var(--muted); font-size: 11px;
+  }
+  #status-bar[hidden], #debug-status[hidden], #application-error[hidden] { display: none; }
+  #debug-status { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  #debug-status > span { overflow-wrap: anywhere; }
+  #application-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #ff9f93; }
+`;
+document.head.appendChild(statusStyle);
+installStatusBar(requireElement<HTMLElement>(".shell"), debugEnabled(window.location.search));
+
 const plotHost = requireElement<HTMLDivElement>("#scope-plot");
 const scopePanelContent = requireElement<HTMLDivElement>("#scope-panel-content");
 const scopeControlsPane = requireElement<HTMLElement>("#scope-controls-pane");
@@ -2350,14 +2370,16 @@ const scopeParameterControls: Array<HTMLInputElement | HTMLSelectElement | HTMLB
 let scopeOwner: string | null = null;
 let stream = new ScopeStream(
   plotHost,
-  (message) => {
+  (message, error) => {
+    if (error) { reportError(status, message); return; }
     status.textContent = scopeOwner ? `Scope stopped: ${scopeOwner === "spectrumanalyzer" ? "Spectrum" : scopeOwner} owns the scope resource` : message;
   },
   (currentAverage) => {
     scopeCurrentAverage.textContent = `${currentAverage} / ${scopeTraceAverage.value || "1"}`;
   },
 );
-let spectrumPlot = new SpectrumPlot(spectrumPlotHost, (message) => {
+let spectrumPlot = new SpectrumPlot(spectrumPlotHost, (message, error) => {
+  if (error) { reportError(spectrumStatus, message); return; }
   spectrumStatus.textContent = message;
   const rbw = spectrumPlot.getRbw();
   const field = genericModuleControls.get("spectrumanalyzer")?.inputs.get("rbw");
@@ -2568,8 +2590,8 @@ function renderPanelMenu(): void {
     input.addEventListener("change", () => {
       input.closest("details")?.removeAttribute("open");
       setPanelEnabled(panel.id, input.checked).catch((error: Error) => {
-        moduleStatus.textContent = error.message;
-        registerStatus.textContent = error.message;
+        reportError(moduleStatus, error.message);
+        reportError(registerStatus, error.message);
       });
     });
     const title = document.createElement("span");
@@ -2598,8 +2620,8 @@ function renderPanelMenu(): void {
   layoutSelect.value = workspaceState.layoutMode;
   layoutSelect.addEventListener("change", () => {
     setWorkspaceLayoutMode(normalizeLayoutMode(layoutSelect.value)).catch((error: Error) => {
-      moduleStatus.textContent = error.message;
-      registerStatus.textContent = error.message;
+      reportError(moduleStatus, error.message);
+      reportError(registerStatus, error.message);
     });
   });
   layoutLabel.append(layoutText, layoutSelect);
@@ -2623,8 +2645,8 @@ function renderPanelMenu(): void {
     paneSelect.value = String(Math.min(Math.max(1, workspaceState.splitPanelIds.length), maximum));
     paneSelect.addEventListener("change", () => {
       setWorkspacePaneCount(Number(paneSelect.value)).catch((error: Error) => {
-        moduleStatus.textContent = error.message;
-        registerStatus.textContent = error.message;
+        reportError(moduleStatus, error.message);
+        reportError(registerStatus, error.message);
       });
     });
     paneLabel.append(paneText, paneSelect);
@@ -2648,7 +2670,7 @@ function renderWorkspaceTabs(): void {
     button.textContent = panel.title;
     button.addEventListener("click", () => {
       setActivePanel(panel.id).catch((error: Error) => {
-        moduleStatus.textContent = error.message;
+        reportError(moduleStatus, error.message);
       });
     });
     workspaceTabs.appendChild(button);
@@ -2685,8 +2707,8 @@ function renderWorkspacePaneSelectors(visiblePanelIds: PanelId[]): void {
     select.value = panelId;
     select.addEventListener("change", () => {
       setWorkspacePanePanel(index, select.value as PanelId).catch((error: Error) => {
-        moduleStatus.textContent = error.message;
-        registerStatus.textContent = error.message;
+        reportError(moduleStatus, error.message);
+        reportError(registerStatus, error.message);
       });
     });
     label.append(text, select);
@@ -2855,7 +2877,7 @@ async function setPanelEnabled(panelId: PanelId, enabled: boolean): Promise<void
     stopStream("Scope panel disabled");
     if (controlRole !== "observer") {
       callScopeAction("stop").catch((error: Error) => {
-        moduleStatus.textContent = error.message;
+        reportError(moduleStatus, error.message);
       });
     }
     return;
@@ -2867,7 +2889,7 @@ async function setPanelEnabled(panelId: PanelId, enabled: boolean): Promise<void
     stopSpectrumStream("Spectrum panel disabled");
     if (controlRole !== "observer") {
       callSpectrumAction("stop").catch((error: Error) => {
-        spectrumStatus.textContent = error.message;
+        reportError(spectrumStatus, error.message);
       });
     }
   }
@@ -3212,6 +3234,7 @@ function applyScopeControlValue(attribute: string, value: string | number | bool
     updatePlotTimeSettings();
   } else if (attribute === "threshold") {
     if (document.activeElement !== scopeThreshold) scopeThreshold.value = String(value);
+    updatePlotTimeSettings();
   } else if (attribute === "hysteresis") {
     if (document.activeElement !== scopeHysteresis) scopeHysteresis.value = String(value);
   } else if (attribute === "curve_name") {
@@ -3247,6 +3270,8 @@ function updatePlotTimeSettings(): void {
     triggerDelay: Number(scopeTriggerDelay.value || 0),
     triggerSource: scopeTrigger.value,
     rollingMode: rollingModeActive(),
+    hardware: currentSession?.fake === false,
+    threshold: Number(scopeControlValues.get("threshold") ?? scopeThreshold.value ?? 0),
   });
 }
 
@@ -3473,7 +3498,7 @@ function buildHkExpansionGrid(): void {
       value.id = `hk-${name.replaceAll("_", "-")}`;
       value.addEventListener("change", () => {
         setHkAttribute(name, value.checked).catch((error: Error) => {
-          hkStatus.textContent = error.message;
+          reportError(hkStatus, error.message);
         });
       });
       valueLabel.append(value, document.createTextNode(" Value"));
@@ -3483,7 +3508,7 @@ function buildHkExpansionGrid(): void {
       directionInput.id = `hk-${direction.replaceAll("_", "-")}`;
       directionInput.addEventListener("change", () => {
         setHkAttribute(direction, directionInput.checked).catch((error: Error) => {
-          hkStatus.textContent = error.message;
+          reportError(hkStatus, error.message);
         });
       });
       directionLabel.append(directionInput, document.createTextNode(" Output"));
@@ -3701,7 +3726,7 @@ async function buildGenericModuleCard(container: HTMLElement, moduleName: string
     button.textContent = action.label ?? action.name;
     button.addEventListener("click", () => {
       callGenericModuleAction(moduleName, action.name, statusOutput).catch((error: Error) => {
-        statusOutput.textContent = error.message;
+        reportError(statusOutput, error.message);
       });
     });
     controls.actions.push(button);
@@ -3725,7 +3750,7 @@ async function buildGenericModuleCard(container: HTMLElement, moduleName: string
       () => plotViews.get("iir"),
     );
     iirPlot.refresh().catch((error: Error) => {
-      statusOutput.textContent = error.message;
+      reportError(statusOutput, error.message);
     });
   }
   container.appendChild(card);
@@ -3755,7 +3780,7 @@ function createGenericAttributeField(
     populateSelect(select, attribute);
     select.addEventListener("change", () => {
       setGenericModuleAttribute(moduleName, attribute.name, select.value, statusOutput).catch((error: Error) => {
-        statusOutput.textContent = error.message;
+        reportError(statusOutput, error.message);
       });
     });
     input = select;
@@ -3765,7 +3790,7 @@ function createGenericAttributeField(
     checkbox.checked = Boolean(attribute.value);
     checkbox.addEventListener("change", () => {
       setGenericModuleAttribute(moduleName, attribute.name, checkbox.checked, statusOutput).catch((error: Error) => {
-        statusOutput.textContent = error.message;
+        reportError(statusOutput, error.message);
       });
     });
     input = checkbox;
@@ -3775,7 +3800,7 @@ function createGenericAttributeField(
     populateNumber(number, attribute);
     number.addEventListener("change", () => {
       setGenericModuleAttribute(moduleName, attribute.name, Number(number.value), statusOutput).catch((error: Error) => {
-        statusOutput.textContent = error.message;
+        reportError(statusOutput, error.message);
       });
     });
     input = number;
@@ -3785,7 +3810,7 @@ function createGenericAttributeField(
     text.value = formatModuleValue(attribute.value);
     text.addEventListener("change", () => {
       setGenericModuleAttribute(moduleName, attribute.name, text.value, statusOutput).catch((error: Error) => {
-        statusOutput.textContent = error.message;
+        reportError(statusOutput, error.message);
       });
     });
     input = text;
@@ -4034,7 +4059,7 @@ function connectEvents(): void {
     // startup or a disconnect. A newer event takes precedence over the snapshot.
     const modules = ["scope", ...asgModules, "hk", "ams", "sampler", ...genericModuleControls.keys(), "networkanalyzer", "lockbox"];
     for (const module of modules) {
-      void refreshModuleSnapshot(module, socket).catch((error: Error) => { moduleStatus.textContent = error.message; });
+      void refreshModuleSnapshot(module, socket).catch((error: Error) => { reportError(moduleStatus, error.message); });
     }
     void refreshControlStatus();
   });
@@ -4071,7 +4096,7 @@ function connectEvents(): void {
         networkAnalyzerPanel.applyState({ [message.attribute]: message.value });
       } else if (isGenericModule(message.module)) {
         applyGenericModuleValue(message.module, message.attribute, message.value);
-        if (message.module === "iir") void iirPlot?.refresh().catch((error: Error) => { moduleStatus.textContent = error.message; });
+        if (message.module === "iir") void iirPlot?.refresh().catch((error: Error) => { reportError(moduleStatus, error.message); });
         const controls = genericModuleControls.get(message.module);
         if (controls) {
           controls.status.textContent = `${message.attribute} = ${attributeValueLabel(message.attribute, message.value)}`;
@@ -4100,14 +4125,14 @@ function connectEvents(): void {
         applySamplerState(message.state ?? {});
       } else if (message.type === "module.state.changed" && isGenericModule(message.module)) {
         applyGenericModuleState(message.module, message.state ?? {});
-        if (message.module === "iir") void iirPlot?.refresh().catch((error: Error) => { moduleStatus.textContent = error.message; });
+        if (message.module === "iir") void iirPlot?.refresh().catch((error: Error) => { reportError(moduleStatus, error.message); });
         const controls = genericModuleControls.get(message.module);
         if (controls && !controls.owner && message.module !== "spectrumanalyzer") {
           controls.status.textContent = `${message.module} state updated`;
         }
       } else if (message.type === "module.state.changed" && message.module === "lockbox") {
         lockboxPanel.applySchema(message.state as LockboxSchema).catch((error: Error) => {
-          moduleStatus.textContent = error.message;
+          reportError(moduleStatus, error.message);
         });
       } else if (message.type === "module.state.changed" && message.module === "networkanalyzer") {
         networkAnalyzerPanel.applyState(message.state ?? {});
@@ -4187,7 +4212,7 @@ async function refreshControlStatus(): Promise<void> {
   try {
     applyControlStatus(await controlClient.refresh());
   } catch (error) {
-    controlStatus.value = error instanceof Error ? error.message : "Control unavailable";
+    reportError(controlStatus, error instanceof Error ? error.message : "Control unavailable");
   }
 }
 
@@ -4378,7 +4403,7 @@ connectButton.addEventListener("click", () => {
         startStream();
       }
     } catch (error) {
-      moduleStatus.textContent = error instanceof Error ? error.message : String(error);
+      reportError(moduleStatus, error instanceof Error ? error.message : String(error));
     }
   })();
 });
@@ -4390,7 +4415,7 @@ singleFrameButton.addEventListener("click", () => {
       ? callScopeAction("resume_single").then(() => startStream())
       : runSingleFrame();
   action.catch((error: Error) => {
-    status.textContent = error.message;
+    reportError(status, error.message);
   });
 });
 
@@ -4401,7 +4426,7 @@ stopScopeButton.addEventListener("click", () => {
       stopStream();
     })
     .catch((error: Error) => {
-      status.textContent = error.message;
+      reportError(status, error.message);
     });
 });
 
@@ -4418,7 +4443,7 @@ saveCurveButton.addEventListener("click", async () => {
     stream.downloadCsv(`scope-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
     moduleStatus.textContent = `saved ${curves} curve${curves === 1 ? "" : "s"}`;
   } catch (error) {
-    moduleStatus.textContent = error instanceof Error ? error.message : String(error);
+    reportError(moduleStatus, error instanceof Error ? error.message : String(error));
   } finally {
     saveCurveButton.disabled = false;
     saveCurveButton.textContent = "Save Curve";
@@ -4453,7 +4478,7 @@ spectrumSingleButton.addEventListener("click", () => {
         startSpectrumStream();
       }
     } catch (error) {
-      spectrumStatus.textContent = error instanceof Error ? error.message : String(error);
+      reportError(spectrumStatus, error instanceof Error ? error.message : String(error));
     }
   })();
 });
@@ -4476,7 +4501,7 @@ spectrumRunButton.addEventListener("click", () => {
         startSpectrumStream();
       }
     } catch (error) {
-      spectrumStatus.textContent = error instanceof Error ? error.message : String(error);
+      reportError(spectrumStatus, error instanceof Error ? error.message : String(error));
     }
   })();
 });
@@ -4485,7 +4510,7 @@ spectrumStopButton.addEventListener("click", () => {
   callSpectrumAction("stop")
     .then(() => stopSpectrumStream())
     .catch((error: Error) => {
-      spectrumStatus.textContent = error.message;
+      reportError(spectrumStatus, error.message);
     });
 });
 
@@ -4502,7 +4527,7 @@ spectrumSaveCurveButton.addEventListener("click", async () => {
     spectrumPlot.downloadCsv(`spectrum-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
     spectrumStatus.textContent = `saved ${curves} curve${curves === 1 ? "" : "s"}`;
   } catch (error) {
-    spectrumStatus.textContent = error instanceof Error ? error.message : String(error);
+    reportError(spectrumStatus, error instanceof Error ? error.message : String(error));
   } finally {
     spectrumSaveCurveButton.disabled = false;
     spectrumSaveCurveButton.textContent = "Save Curve";
@@ -4511,13 +4536,13 @@ spectrumSaveCurveButton.addEventListener("click", async () => {
 
 scopeCurveName.addEventListener("change", () => {
   setScopeAttribute("curve_name", scopeCurveName.value).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 spectrumCurveName.addEventListener("change", () => {
   setGenericModuleAttribute("spectrumanalyzer", "curve_name", spectrumCurveName.value, spectrumStatus)
-    .catch((error: Error) => { spectrumStatus.textContent = error.message; });
+    .catch((error: Error) => { reportError(spectrumStatus, error.message); });
 });
 
 spectrumZoomOutButton.addEventListener("click", () => spectrumPlot.zoom(1.8));
@@ -4533,7 +4558,7 @@ spectrumZoomResetButton.addEventListener("click", () => spectrumPlot.resetZoom()
 showCh1Toggle.addEventListener("change", () => {
   stream.setChannelVisible(1, showCh1Toggle.checked);
   setScopeAttribute("ch1_active", showCh1Toggle.checked).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
     showCh1Toggle.checked = stream.getChannelVisible(1);
   });
 });
@@ -4541,103 +4566,103 @@ showCh1Toggle.addEventListener("change", () => {
 showCh2Toggle.addEventListener("change", () => {
   stream.setChannelVisible(2, showCh2Toggle.checked);
   setScopeAttribute("ch2_active", showCh2Toggle.checked).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
     showCh2Toggle.checked = stream.getChannelVisible(2);
   });
 });
 
 scopeInput1.addEventListener("change", () => {
   setScopeAttribute("input1", scopeInput1.value).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeInput2.addEventListener("change", () => {
   setScopeAttribute("input2", scopeInput2.value).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeTrigger.addEventListener("change", () => {
   setScopeAttribute("trigger_source", scopeTrigger.value).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeTriggerNormal.addEventListener("change", () => {
   if (!scopeTriggerNormal.checked) return;
   setScopeAttribute("rolling_mode", false).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeTriggerRolling.addEventListener("change", () => {
   if (!scopeTriggerRolling.checked) return;
   setScopeAttribute("rolling_mode", true).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeDuration.addEventListener("change", () => {
   setScopeAttribute("duration", Number(scopeDuration.value)).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeAverage.addEventListener("change", () => {
   setScopeAttribute("average", scopeAverage.checked).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeXyMode.addEventListener("change", () => {
   updateScopeDisplaySettings();
   setScopeAttribute("xy_mode", scopeXyMode.checked).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeMathActive.addEventListener("change", () => {
   updateScopeDisplaySettings();
   setScopeAttribute("ch_math_active", scopeMathActive.checked).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeMathFormula.addEventListener("change", () => {
   updateScopeDisplaySettings();
   setScopeAttribute("math_formula", scopeMathFormula.value).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeTraceAverage.addEventListener("change", () => {
   setScopeAttribute("trace_average", Number(scopeTraceAverage.value)).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeTriggerDelay.addEventListener("change", () => {
   setScopeAttribute("trigger_delay", Number(scopeTriggerDelay.value)).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeThreshold.addEventListener("change", () => {
   setScopeAttribute("threshold", Number(scopeThreshold.value)).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeHysteresis.addEventListener("change", () => {
   setScopeAttribute("hysteresis", Number(scopeHysteresis.value)).catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeStateSave.addEventListener("click", () => {
   saveScopeState().catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
@@ -4649,13 +4674,13 @@ scopeStateSelect.addEventListener("change", () => {
 
 scopeStateLoad.addEventListener("click", () => {
   loadScopeState().catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
 scopeStateDelete.addEventListener("click", () => {
   deleteScopeState().catch((error: Error) => {
-    moduleStatus.textContent = error.message;
+    reportError(moduleStatus, error.message);
   });
 });
 
@@ -4663,76 +4688,76 @@ for (const moduleName of asgModules) {
   const controls = asgControls[moduleName];
   controls.waveform.addEventListener("change", () => {
     setAsgAttribute(moduleName, "waveform", controls.waveform.value).catch((error: Error) => {
-      controls.status.textContent = error.message;
+      reportError(controls.status, error.message);
     });
   });
   controls.frequency.addEventListener("change", () => {
     setAsgAttribute(moduleName, "frequency", Number(controls.frequency.value)).catch((error: Error) => {
-      controls.status.textContent = error.message;
+      reportError(controls.status, error.message);
     });
   });
   controls.amplitude.addEventListener("change", () => {
     setAsgAttribute(moduleName, "amplitude", Number(controls.amplitude.value)).catch((error: Error) => {
-      controls.status.textContent = error.message;
+      reportError(controls.status, error.message);
     });
   });
   controls.offset.addEventListener("change", () => {
     setAsgAttribute(moduleName, "offset", Number(controls.offset.value)).catch((error: Error) => {
-      controls.status.textContent = error.message;
+      reportError(controls.status, error.message);
     });
   });
   controls.triggerSource.addEventListener("change", () => {
     setAsgAttribute(moduleName, "trigger_source", controls.triggerSource.value).catch((error: Error) => {
-      controls.status.textContent = error.message;
+      reportError(controls.status, error.message);
     });
   });
   controls.outputDirect.addEventListener("change", () => {
     setAsgAttribute(moduleName, "output_direct", controls.outputDirect.value).catch((error: Error) => {
-      controls.status.textContent = error.message;
+      reportError(controls.status, error.message);
     });
   });
   controls.startPhase.addEventListener("change", () => {
     setAsgAttribute(moduleName, "start_phase", Number(controls.startPhase.value)).catch((error: Error) => {
-      controls.status.textContent = error.message;
+      reportError(controls.status, error.message);
     });
   });
   controls.cyclesPerBurst.addEventListener("change", () => {
     setAsgAttribute(moduleName, "cycles_per_burst", Number(controls.cyclesPerBurst.value)).catch((error: Error) => {
-      controls.status.textContent = error.message;
+      reportError(controls.status, error.message);
     });
   });
   controls.setup.addEventListener("click", () => {
     callAsgAction(moduleName, "setup").catch((error: Error) => {
-      controls.status.textContent = error.message;
+      reportError(controls.status, error.message);
     });
   });
   controls.trigger.addEventListener("click", () => {
     callAsgAction(moduleName, "trigger").catch((error: Error) => {
-      controls.status.textContent = error.message;
+      reportError(controls.status, error.message);
     });
   });
   controls.off.addEventListener("click", () => {
     callAsgAction(moduleName, "off").catch((error: Error) => {
-      controls.status.textContent = error.message;
+      reportError(controls.status, error.message);
     });
   });
 }
 
 hkLed.addEventListener("change", () => {
   setHkAttribute("led", Number(hkLed.value)).catch((error: Error) => {
-    hkStatus.textContent = error.message;
+    reportError(hkStatus, error.message);
   });
 });
 
 hkRefresh.addEventListener("click", () => {
   loadHkControls().catch((error: Error) => {
-    hkStatus.textContent = error.message;
+    reportError(hkStatus, error.message);
   });
 });
 
 telemetryRefresh.addEventListener("click", () => {
   loadTelemetry().catch((error: Error) => {
-    samplerStatus.textContent = error.message;
+    reportError(samplerStatus, error.message);
   });
 });
 
@@ -4743,11 +4768,11 @@ samplerStatsRun.addEventListener("click", () => {
 });
 
 amsInputs[2].addEventListener("change", () => {
-  setAmsDac(2).catch((error: Error) => { amsStatus.textContent = error.message; });
+  setAmsDac(2).catch((error: Error) => { reportError(amsStatus, error.message); });
 });
 
 amsInputs[3].addEventListener("change", () => {
-  setAmsDac(3).catch((error: Error) => { amsStatus.textContent = error.message; });
+  setAmsDac(3).catch((error: Error) => { reportError(amsStatus, error.message); });
 });
 
 async function startup(): Promise<void> {
@@ -4766,7 +4791,9 @@ async function startup(): Promise<void> {
   await loadGenericPanels();
   await networkAnalyzerPanel.initialize();
   await configPanel.load().catch((error: Error) => {
-    requireElement<HTMLOutputElement>("#config-status").textContent = error.message;
+    const output = requireElement<HTMLOutputElement>("#config-status");
+    if (isPanelVisible("pyrplconfig")) reportError(output, error.message);
+    else output.textContent = error.message;
   });
   await lockboxPanel.load();
   connectEvents();
@@ -4793,7 +4820,7 @@ async function startup(): Promise<void> {
 
 takeControlButton.addEventListener("click", () => {
   controlClient.claim(true).then(applyControlStatus).catch((error: Error) => {
-    controlStatus.value = error.message;
+    reportError(controlStatus, error.message);
   });
 });
 
@@ -4804,5 +4831,5 @@ new MutationObserver(updateObserverControls).observe(workspacePanels, { childLis
 
 exposeDebugState();
 startup().catch((error: Error) => {
-  status.textContent = error.message;
+  reportError(status, error.message);
 });

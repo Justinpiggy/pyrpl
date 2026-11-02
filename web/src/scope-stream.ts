@@ -17,7 +17,7 @@ const DEFAULT_SAMPLES = 2 ** 14;
 const DEFAULT_Y_MIN = -1.1;
 const DEFAULT_Y_MAX = 1.1;
 
-type StatusCallback = (message: string) => void;
+type StatusCallback = (message: string, error?: boolean) => void;
 type AverageCallback = (current: number) => void;
 
 export class ScopeStream {
@@ -99,7 +99,7 @@ export class ScopeStream {
     };
     socket.onerror = () => {
       if (this.socket === socket) {
-        this.setStatus("Scope stream error");
+        this.setStatus("Scope stream error", true);
       }
     };
     socket.onmessage = (event) => {
@@ -155,14 +155,30 @@ export class ScopeStream {
   }
 
   setTimeSettings(timeSettings: ScopeTimeSettings): void {
+    const previous = this.timeSettings;
+    if (previous && previous.duration === timeSettings.duration
+      && previous.triggerDelay === timeSettings.triggerDelay
+      && previous.triggerSource === timeSettings.triggerSource
+      && previous.rollingMode === timeSettings.rollingMode
+      && previous.hardware === timeSettings.hardware
+      && previous.threshold === timeSettings.threshold) {
+      return;
+    }
+    const range = this.getXRange();
     this.timeSettings = timeSettings;
     this.resetAveraging();
     if (this.latestFrame && this.displayedData) {
-      const frame = this.latestFrame;
-      this.plot.setData(this.plotData(this.displayedData), false);
+      // Recompute timestamps even while paused; keep the user's voltage view.
+      this.displayedData = frameToData(this.latestFrame, timeSettings);
+      const bounds = this.defaultXScale(this.latestFrame);
       this.plot.batch(() => {
-        this.plot.setScale("x", this.defaultXScale(frame));
-        this.resetYScale();
+        this.plot.setData(this.plotData(this.displayedData!), false);
+        if (!this.xyMode) {
+          if (!previous) this.plot.setScale("x", bounds);
+          else if (range.min < bounds.min || range.max > bounds.max) {
+            this.setXScale(range.min, range.max);
+          }
+        }
       });
       this.plot.redraw(true, true);
     }
@@ -432,7 +448,7 @@ export class ScopeStream {
     try {
       frame = parseScopeFrame(buffer);
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : "Invalid scope frame");
+      this.setStatus(error instanceof Error ? error.message : "Invalid scope frame", true);
       return;
     }
 
@@ -476,7 +492,7 @@ export class ScopeStream {
           data.x,
         );
       } catch (error) {
-        this.setStatus(`Math formula error: ${error instanceof Error ? error.message : String(error)}`);
+        this.setStatus(`Math formula error: ${error instanceof Error ? error.message : String(error)}`, true);
       }
     }
     return [
@@ -510,8 +526,12 @@ export class ScopeStream {
     }
     this.latestFrame = frame;
     this.plot.setData(this.frameData(frame), false);
-    if (firstFrame || sampleCountChanged) {
+    if (firstFrame) {
       this.resetZoom();
+    } else if (sampleCountChanged && !this.timeSettings && !this.xyMode) {
+      // Sample-index coordinates may shrink; timed captures retain their extent.
+      const range = this.getXRange();
+      this.plot.batch(() => this.setXScale(range.min, range.max));
     }
     this.plot.redraw(true, true);
   }
@@ -714,9 +734,19 @@ export class ScopeStream {
   }
 
   private applySeriesVisibility(): void {
-    this.plot.setSeries(1, { show: this.xyMode || this.channelVisible[0] });
-    this.plot.setSeries(2, { show: !this.xyMode && this.channelVisible[1] });
-    this.plot.setSeries(3, { show: !this.xyMode && this.mathActive });
+    const x = this.getXRange();
+    const y = this.getYRange();
+    const visible = [this.xyMode || this.channelVisible[0], !this.xyMode && this.channelVisible[1],
+      !this.xyMode && this.mathActive];
+    // In uPlot mode 2, setSeries({show}) resets both facet scales even when
+    // auto is false. Commit visibility and the existing ranges together.
+    this.plot.batch(() => {
+      visible.forEach((show, index) => {
+        if (this.plot.series[index + 1].show !== show) this.plot.setSeries(index + 1, { show });
+      });
+      this.plot.setScale("x", x);
+      this.plot.setScale("y", y);
+    });
   }
 
 }
