@@ -30,6 +30,8 @@ Fixed
    stale response changed the buttons back to Pause/running after acquisition
    had stopped. Actions now read current status after completion of the request;
    state updates also retain trace progress instead of erasing it.
+9. Live inspection found the Auto Bandwidth checkbox stretching to fill its grid
+   row. All Network Analyzer checkboxes now retain an explicit 18 px size.
 
 Validation
 - TypeScript production build and 38 frontend unit tests pass.

@@ -1599,6 +1599,7 @@
 .spectrum-controls { min-height: 140px; }
 .network-controls-pane { min-height: 160px; overflow: auto; }
 .network-control-group { grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); }
+.network-control-group input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; align-self: center; justify-self: start; }
 .lockbox-header-controls { max-width: 100%; }
 .lockbox-section-header { flex-wrap: wrap; }
 .curve-viewer-list-pane { min-width: 160px; }

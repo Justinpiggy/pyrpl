@@ -19,6 +19,11 @@ async function open(page: Page, observer = false) {
     await page.getByRole("button", { name: "Network Analyzer", exact: true }).click();
   }
   await expect(page.locator("#networkanalyzer-start-freq")).toBeVisible();
+  for (const checkbox of await page.locator("#networkanalyzer-panel input[type=checkbox]").all()) {
+    const box = (await checkbox.boundingBox())!;
+    expect(box.width).toBeLessThanOrEqual(24);
+    expect(box.height).toBeLessThanOrEqual(24);
+  }
 }
 
 const snapshot = (run = 900) => ({ snapshot: Array.from({ length: 100 }, (_, index) => ({
