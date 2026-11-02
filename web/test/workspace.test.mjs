@@ -162,3 +162,10 @@ test("workspace can represent no enabled panels", () => {
     null,
   );
 });
+
+test("workspace preserves valid controls-heavy split proportions", () => {
+  const { normalizeSplitSizes } = loadWorkspaceModule();
+  assert.deepEqual(Array.from(normalizeSplitSizes([80, 20])), [80, 20]);
+  assert.deepEqual(Array.from(normalizeSplitSizes([8, 2])), [80, 20]);
+  assert.deepEqual(Array.from(normalizeSplitSizes([1, 99])), [28, 72]);
+});

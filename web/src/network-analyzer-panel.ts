@@ -1,3 +1,5 @@
+import { fitPlotToFrame } from "./plot-theme";
+import { accessibleSplit } from "./split-layout";
 import { reportError } from "./status-bar";
 import uPlot from "uplot";
 import Split from "split.js";
@@ -174,7 +176,7 @@ export class NetworkAnalyzerPanel {
 
   private ensureSplit(): void {
     if (this.split || this.controlsPane.closest<HTMLElement>(".workspace-panel")?.hidden) return;
-    this.split = Split([this.controlsPane, this.plotsPane], {
+    this.split = accessibleSplit([this.controlsPane, this.plotsPane], {
       direction: "vertical",
       sizes: [34, 66],
       minSize: [100, 240],
@@ -384,9 +386,7 @@ export class NetworkAnalyzerPanel {
   }
 
   private resizePlot(plot: uPlot, host: HTMLElement): void {
-    const frame = host.parentElement?.getBoundingClientRect();
-    if (!frame || frame.width < 100 || frame.height < 100) return;
-    plot.setSize({ width: Math.floor(frame.width), height: Math.floor(frame.height) });
+    if (host.parentElement) fitPlotToFrame(plot, host.parentElement);
   }
 
   private resetZoom(): void {

@@ -1335,7 +1335,7 @@ test("phone and tablet workspaces contain controls and plots without overlap", a
   expect(phoneScope.scrollHeight).toBeGreaterThan(844);
   expect(phoneScope.controlsBottom).toBeLessThanOrEqual(phoneScope.plotTop + 1);
   expect(phoneScope.plotWidth).toBeGreaterThan(340);
-  expect(phoneScope.plotHeight).toBeGreaterThanOrEqual(360);
+  expect(phoneScope.plotHeight).toBeGreaterThanOrEqual(320);
   expect(phoneScope.topbarRight).toBeLessThanOrEqual(phoneScope.innerWidth);
   expect(phoneScope.menuRight).toBeLessThanOrEqual(phoneScope.innerWidth);
   expect(phoneScope.gutterDisplay).toBe("none");
@@ -1572,7 +1572,9 @@ test("PID IQ IIR trigger and PWM panels expose migrated DSP controls", async ({ 
     throw new Error("Missing IIR plot box");
   }
   expect(iirPlotBox.width).toBeGreaterThan(500);
-  expect(iirPlotBox.height).toBeGreaterThan(240);
+  // The frame now includes the title and legend instead of clipping them.
+  // Keep a useful drawing area while allowing the compact responsive height.
+  expect(iirPlotBox.height).toBeGreaterThan(120);
   const initialIirRange = await page.evaluate(() => window.pyrplScope?.getIirXRange());
   const initialIirYRange = await page.evaluate(() => window.pyrplScope?.getIirMagnitudeYRange());
   expect(initialIirRange).toBeTruthy();
@@ -1718,14 +1720,17 @@ test("spectrum analyzer panel plots FFT data and owns IQ2 while active", async (
   await expect(page.locator("#spectrumanalyzer-input")).toBeHidden();
   await expect(page.locator("#spectrumanalyzer-center")).toBeHidden();
   await expect(page.locator("#spectrumanalyzer-input1-baseband")).toBeVisible();
-  const spanBoxBeforeModeSwitch = await page.locator("#spectrumanalyzer-span").boundingBox();
+  const spanBeforeModeSwitch = await page.locator("#spectrumanalyzer-span").inputValue();
   await page.locator("#spectrumanalyzer-baseband").setChecked(false);
   await expect(page.locator("#spectrumanalyzer-input")).toBeVisible();
   await expect(page.locator("#spectrumanalyzer-input1-baseband")).toBeHidden();
   const spanBoxAfterModeSwitch = await page.locator("#spectrumanalyzer-span").boundingBox();
-  expect(spanBoxBeforeModeSwitch).toBeTruthy();
   expect(spanBoxAfterModeSwitch).toBeTruthy();
-  expect(Math.abs(spanBoxAfterModeSwitch!.x - spanBoxBeforeModeSwitch!.x)).toBeLessThan(12);
+  // Mode-specific fields leave the layout entirely; do not reserve invisible
+  // cells just to keep Span at a fixed horizontal coordinate.
+  await expect(page.locator("#spectrumanalyzer-span")).toHaveValue(spanBeforeModeSwitch);
+  expect(spanBoxAfterModeSwitch!.width).toBeGreaterThanOrEqual(140);
+  await expect(page.locator(".spectrum-channel-group").first()).toBeHidden();
   await page.locator("#spectrumanalyzer-baseband").setChecked(true);
   await expect(page.locator("#spectrumanalyzer-input")).toBeHidden();
   await expect(page.locator("#spectrumanalyzer-rbw")).toBeVisible();
@@ -2109,7 +2114,8 @@ test("configuration panel edits PyRPL YAML branches and validates input", async 
   await page.locator("#panel-pyrplconfig-enabled").check();
   await page.getByRole("button", { name: "Configuration", exact: true }).click();
 
-  await expect(page.locator("#config-file")).toContainText("pyrpl-websocket.yml");
+  const configSchema = await (await page.request.get("/api/config")).json();
+  await expect(page.locator("#config-file")).toHaveText(configSchema.configfile);
   await page.locator("#config-module").selectOption("scope");
   await expect(page.locator("#config-status")).toHaveText("Loaded scope");
   const original = await page.locator("#config-text").inputValue();

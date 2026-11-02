@@ -1,4 +1,6 @@
+import { accessibleSplit } from "./split-layout";
 import { ScopeStream } from "./scope-stream";
+import "./app.css";
 import { DIAGNOSTIC_SOURCES, debugEnabled, installStatusBar, reportError } from "./status-bar";
 import { SpectrumPlot } from "./spectrum-plot";
 import { IirPlot } from "./iir-plot";
@@ -74,21 +76,22 @@ app.innerHTML = `
           <div class="actions">
             <div class="action-row">
               <output id="scope-current-average">0 / 1</output>
-              <button id="single-frame" type="button">Run single</button>
+              <div class="action-group" role="group" aria-label="Acquisition"><button id="single-frame" type="button">Run single</button>
               <button id="connect-scope" type="button">Run continuous</button>
-              <button id="stop-scope" type="button" disabled>Stop</button>
-              <input id="scope-curve-name" class="curve-name-input" type="text" value="scope curve" aria-label="Curve Name" />
+              <button id="stop-scope" type="button" disabled>Stop</button></div>
+
             </div>
             <div class="action-row">
-              <button id="save-curve" type="button">Save Curve</button>
-              <button id="zoom-out" class="plot-button" type="button" title="Zoom X out">X-</button>
-              <button id="zoom-in" class="plot-button" type="button" title="Zoom X in">X+</button>
-              <button id="zoom-y-out" class="plot-button" type="button" title="Zoom Y out">Y-</button>
-              <button id="zoom-y-in" class="plot-button" type="button" title="Zoom Y in">Y+</button>
-              <button id="pan-left" class="plot-button" type="button" title="Move view left">&lt;</button>
-              <button id="pan-right" class="plot-button" type="button" title="Move view right">&gt;</button>
-              <button id="pan-up" class="plot-button" type="button" title="Move trace up">^</button>
-              <button id="pan-down" class="plot-button" type="button" title="Move trace down">v</button>
+              <div class="action-group" role="group" aria-label="Save curve"><input id="scope-curve-name" class="curve-name-input" type="text" value="scope curve" aria-label="Curve Name" />
+              <button id="save-curve" type="button">Save Curve</button></div>
+              <div class="action-group" role="group" aria-label="Horizontal zoom"><button id="zoom-out" class="plot-button" type="button" title="Zoom X out">X-</button>
+              <button id="zoom-in" class="plot-button" type="button" title="Zoom X in">X+</button></div>
+              <div class="action-group" role="group" aria-label="Vertical zoom"><button id="zoom-y-out" class="plot-button" type="button" title="Zoom Y out">Y-</button>
+              <button id="zoom-y-in" class="plot-button" type="button" title="Zoom Y in">Y+</button></div>
+              <div class="action-group" role="group" aria-label="Horizontal pan"><button id="pan-left" class="plot-button" type="button" title="Move view left">&lt;</button>
+              <button id="pan-right" class="plot-button" type="button" title="Move view right">&gt;</button></div>
+              <div class="action-group" role="group" aria-label="Vertical pan"><button id="pan-up" class="plot-button" type="button" title="Move trace up">^</button>
+              <button id="pan-down" class="plot-button" type="button" title="Move trace down">v</button></div>
               <button id="zoom-reset" type="button">Reset</button>
             </div>
           </div>
@@ -173,9 +176,9 @@ app.innerHTML = `
                 <span>State Name</span>
                 <input id="scope-state-name" type="text" value="default" />
               </label>
-              <button id="scope-state-save" type="button">Save</button>
+              <div class="action-group" role="group" aria-label="Saved state actions"><button id="scope-state-save" type="button">Save</button>
               <button id="scope-state-load" type="button">Load</button>
-              <button id="scope-state-delete" type="button">Delete</button>
+              <button id="scope-state-delete" type="button">Delete</button></div>
             </div>
             <output id="module-status">Scope controls loading...</output>
           </section>
@@ -236,9 +239,9 @@ app.innerHTML = `
                 <span>Cycles/Burst</span>
                 <input id="${moduleName}-cycles-per-burst" type="number" min="0" step="1" />
               </label>
-              <button id="${moduleName}-setup" type="button">Setup</button>
+              <div class="action-group module-actions" role="group" aria-label="Generator actions"><button id="${moduleName}-setup" type="button">Setup</button>
               <button id="${moduleName}-trigger" type="button">Trigger</button>
-              <button id="${moduleName}-off" type="button">Off</button>
+              <button id="${moduleName}-off" type="button">Off</button></div>
             </div>
           </section>`).join("")}
         </div>
@@ -266,21 +269,21 @@ app.innerHTML = `
           </div>
           <div class="actions">
             <div class="action-row">
-              <button id="spectrum-single" type="button">Run single</button>
+              <div class="action-group" role="group" aria-label="Acquisition"><button id="spectrum-single" type="button">Run single</button>
               <button id="spectrum-run" type="button">Run continuous</button>
-              <button id="spectrum-stop" type="button" disabled>Stop</button>
-              <input id="spectrum-curve-name" class="curve-name-input" type="text" value="pyrpl spectrum" aria-label="Curve Name" />
-              <button id="spectrum-save-curve" type="button">Save Curve</button>
+              <button id="spectrum-stop" type="button" disabled>Stop</button></div>
+              <div class="action-group" role="group" aria-label="Save curve"><input id="spectrum-curve-name" class="curve-name-input" type="text" value="pyrpl spectrum" aria-label="Curve Name" />
+              <button id="spectrum-save-curve" type="button">Save Curve</button></div>
             </div>
             <div class="action-row">
-              <button id="spectrum-zoom-out" class="plot-button" type="button" title="Zoom X out">X-</button>
-              <button id="spectrum-zoom-in" class="plot-button" type="button" title="Zoom X in">X+</button>
-              <button id="spectrum-zoom-y-out" class="plot-button" type="button" title="Zoom Y out">Y-</button>
-              <button id="spectrum-zoom-y-in" class="plot-button" type="button" title="Zoom Y in">Y+</button>
-              <button id="spectrum-pan-left" class="plot-button" type="button" title="Move view left">&lt;</button>
-              <button id="spectrum-pan-right" class="plot-button" type="button" title="Move view right">&gt;</button>
-              <button id="spectrum-pan-up" class="plot-button" type="button" title="Move trace up">^</button>
-              <button id="spectrum-pan-down" class="plot-button" type="button" title="Move trace down">v</button>
+              <div class="action-group" role="group" aria-label="Horizontal zoom"><button id="spectrum-zoom-out" class="plot-button" type="button" title="Zoom X out">X-</button>
+              <button id="spectrum-zoom-in" class="plot-button" type="button" title="Zoom X in">X+</button></div>
+              <div class="action-group" role="group" aria-label="Vertical zoom"><button id="spectrum-zoom-y-out" class="plot-button" type="button" title="Zoom Y out">Y-</button>
+              <button id="spectrum-zoom-y-in" class="plot-button" type="button" title="Zoom Y in">Y+</button></div>
+              <div class="action-group" role="group" aria-label="Horizontal pan"><button id="spectrum-pan-left" class="plot-button" type="button" title="Move view left">&lt;</button>
+              <button id="spectrum-pan-right" class="plot-button" type="button" title="Move view right">&gt;</button></div>
+              <div class="action-group" role="group" aria-label="Vertical pan"><button id="spectrum-pan-up" class="plot-button" type="button" title="Move trace up">^</button>
+              <button id="spectrum-pan-down" class="plot-button" type="button" title="Move trace down">v</button></div>
               <button id="spectrum-zoom-reset" type="button">Reset</button>
             </div>
           </div>
@@ -303,9 +306,9 @@ app.innerHTML = `
           <header class="panel-header">
             <div><h2>Network Analyzer</h2></div>
             <div class="action-row">
-              <button id="network-single" type="button">Single</button>
+              <div class="action-group" role="group" aria-label="Acquisition"><button id="network-single" type="button">Single</button>
               <button id="network-run" type="button">Continuous</button>
-              <button id="network-stop" type="button" disabled>Stop</button>
+              <button id="network-stop" type="button" disabled>Stop</button></div>
               <button id="network-save" type="button">Save Curve</button>
               <button id="network-reset" type="button">Reset Zoom</button>
             </div>
@@ -476,7 +479,7 @@ app.innerHTML = `
         </header>
         <div class="panel-content register-panel-content">
           <section class="module-panel register-panel">
-            <div class="control-row register-row">
+            <div class="control-row register-row"><div class="register-group" role="group" aria-label="Read registers">
               <label>
                 <span>Read Addr</span>
                 <input id="register-read-addr" type="text" value="0x40100014" />
@@ -486,7 +489,7 @@ app.innerHTML = `
                 <input id="register-read-length" type="number" min="1" max="64" step="1" value="1" />
               </label>
               <button id="register-read" type="button">Read</button>
-              <label>
+              </div><div class="register-group" role="group" aria-label="Write registers"><label>
                 <span>Write Addr</span>
                 <input id="register-write-addr" type="text" value="0x40100014" />
               </label>
@@ -495,9 +498,9 @@ app.innerHTML = `
                 <input id="register-write-values" type="text" value="8192" />
               </label>
               <button id="register-write" type="button">Write</button>
-            </div>
+            </div></div>
             <output id="register-status">Register debug ready</output>
-            <textarea id="register-output" readonly spellcheck="false"></textarea>
+            <textarea id="register-output" aria-label="Register results" readonly spellcheck="false"></textarea>
           </section>
         </div>
         </section>
@@ -511,1542 +514,7 @@ app.innerHTML = `
   </section>
 `;
 
-const style = document.createElement("style");
-style.textContent = `
-  :root {
-    color-scheme: dark;
-    --bg: #0d1114;
-    --panel: #12191e;
-    --panel-border: #27343d;
-    --text: #edf4f7;
-    --muted: #9aacb6;
-    --button: #1d272e;
-    --button-hover: #283640;
-    --plot-bg: #05080a;
-    --plot-text: #edf4f7;
-    --plot-axis: #93a7b3;
-    --plot-grid: #1c2a33;
-    --plot-yellow: #f2c94c;
-    --plot-magenta: #f05bd7;
-  }
 
-  * {
-    box-sizing: border-box;
-  }
-
-  body {
-    margin: 0;
-    min-width: 320px;
-    height: 100vh;
-    overflow: hidden;
-    background: var(--bg);
-    color: var(--text);
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  }
-
-  #app {
-    height: 100%;
-    min-height: 0;
-  }
-
-  .shell {
-	    display: grid;
-	    grid-template-rows: auto minmax(0, 1fr);
-    height: 100%;
-    min-height: 0;
-    gap: 8px;
-    padding: 8px;
-    overflow: hidden;
-  }
-
-	  .topbar,
-    .workspace-panel,
-	  .module-panel,
-	  .plot-panel,
-    .empty-workspace {
-    border: 1px solid var(--panel-border);
-    background: var(--panel);
-  }
-
-  .topbar {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 44px;
-    padding: 6px 10px;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 17px;
-    font-weight: 680;
-    letter-spacing: 0;
-  }
-
-  h2 {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 650;
-    letter-spacing: 0;
-  }
-
-  p {
-    margin: 2px 0 0;
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  .menubar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-left: auto;
-  }
-
-  .control-strip {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  .control-strip output {
-    max-width: 260px;
-    overflow: hidden;
-    color: var(--muted);
-    font-size: 11px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .control-strip.is-controller output,
-  .control-strip.is-shared output {
-    color: #63d98d;
-  }
-
-  .control-strip.is-observer output {
-    color: #f0c15a;
-  }
-
-  .menu-dropdown {
-    position: relative;
-  }
-
-  .menu-dropdown summary {
-    display: inline-flex;
-    align-items: center;
-    height: 28px;
-    border: 1px solid #53616b;
-    border-radius: 6px;
-    background: var(--button);
-    color: var(--text);
-    cursor: pointer;
-    font-size: 13px;
-    list-style: none;
-    padding: 0 10px;
-  }
-
-  .menu-dropdown summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .menu-content {
-    position: absolute;
-    right: 0;
-    z-index: 5;
-    min-width: 160px;
-    margin-top: 6px;
-    border: 1px solid var(--panel-border);
-    background: #090d10;
-    box-shadow: 0 12px 30px rgb(0 0 0 / 0.35);
-    padding: 8px;
-  }
-
-  .menu-check {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 30px;
-    color: var(--text);
-    font-size: 13px;
-    white-space: nowrap;
-  }
-
-  .menu-field {
-    display: grid;
-    gap: 4px;
-    margin-top: 6px;
-    padding-top: 8px;
-    border-top: 1px solid var(--panel-border);
-    color: var(--muted);
-    font-size: 12px;
-  }
-
-  .menu-field select {
-    height: 30px;
-  }
-
-  .actions,
-  .action-row,
-  .zoom-actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .actions {
-    flex-direction: column;
-    align-items: flex-end;
-  }
-
-  button {
-    min-width: 0;
-    height: 24px;
-    border: 1px solid #53616b;
-    border-radius: 6px;
-    background: var(--button);
-    color: var(--text);
-    font: inherit;
-    font-size: 11px;
-    padding: 0 7px;
-  }
-
-  .plot-button {
-    width: 30px;
-    padding: 0 4px;
-  }
-
-  .curve-name-input {
-    width: 130px !important;
-    height: 24px !important;
-  }
-
-  select {
-    height: 28px;
-    width: 100%;
-    border: 1px solid #53616b;
-    border-radius: 6px;
-    background: #090d10;
-    color: var(--text);
-    font: inherit;
-    font-size: 12px;
-    padding: 0 8px;
-  }
-
-  input[type="number"],
-  input[type="text"] {
-    height: 28px;
-    width: 100%;
-    border: 1px solid #53616b;
-    border-radius: 6px;
-    background: #090d10;
-    color: var(--text);
-    font: inherit;
-    font-size: 12px;
-    padding: 0 8px;
-  }
-
-  .select-control,
-  .toggle-control {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--muted);
-    font-size: 12px;
-  }
-
-  .select-control {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
-  }
-
-  .toggle-control {
-    height: 28px;
-    white-space: nowrap;
-  }
-
-  .toggle-control input {
-    accent-color: #4fd17f;
-  }
-
-  .segmented-control {
-    position: relative;
-    display: flex;
-    align-items: end;
-    height: 48px;
-    min-width: 230px;
-    margin: 0;
-    padding: 19px 0 0;
-    border: 0;
-  }
-
-  .segmented-control legend {
-    position: absolute;
-    top: 0;
-    left: 0;
-    color: var(--muted);
-    font-size: 11px;
-    line-height: 14px;
-  }
-
-  .segmented-control label {
-    position: relative;
-    display: block;
-  }
-
-  .segmented-control input {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    opacity: 0;
-    cursor: pointer;
-  }
-
-  .segmented-control span {
-    display: grid;
-    height: 28px;
-    padding: 0 8px;
-    place-items: center;
-    border: 1px solid #53616b;
-    color: var(--muted);
-    cursor: pointer;
-    pointer-events: none;
-  }
-
-  .segmented-control label:first-of-type span {
-    border-radius: 6px 0 0 6px;
-  }
-
-  .segmented-control label:last-of-type span {
-    border-left: 0;
-    border-radius: 0 6px 6px 0;
-  }
-
-  .segmented-control input:checked + span {
-    background: #344550;
-    color: var(--text);
-  }
-
-  .segmented-control:disabled span {
-    cursor: not-allowed;
-    opacity: 0.45;
-  }
-
-  button:hover {
-    background: var(--button-hover);
-  }
-
-	  .plot-panel {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 8px;
-    min-height: 0;
-    padding: 8px;
-    overflow: hidden;
-	  }
-
-  .workspace {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    height: 100%;
-    gap: 6px;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .workspace-tabs {
-    grid-row: 1;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    min-height: 32px;
-    overflow: hidden;
-  }
-
-  .workspace-tabs:empty {
-    display: none;
-  }
-
-  .workspace-tabs[hidden] {
-    display: none;
-  }
-
-  .workspace.is-split-workspace {
-    row-gap: 0;
-  }
-
-  .workspace-tab {
-    height: 28px;
-    border-color: var(--panel-border);
-    background: #0f1519;
-    color: var(--muted);
-  }
-
-  .workspace-tab.is-active {
-    border-color: #71828e;
-    background: var(--panel);
-    color: var(--text);
-  }
-
-  .workspace-pane-selector {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: auto;
-    min-width: 0;
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  .workspace-pane-selector select {
-    min-width: 116px;
-    max-width: 180px;
-  }
-
-  .workspace-panel {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .workspace-panel[hidden],
-  .empty-workspace[hidden] {
-    display: none;
-  }
-
-  .workspace-panels {
-    grid-row: 2;
-    align-self: stretch;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .workspace-panels.is-tabs {
-    display: block;
-  }
-
-  .workspace-panels.is-split {
-    display: flex;
-    height: auto;
-    min-width: 0;
-    align-items: stretch;
-  }
-
-  .workspace-panels.is-split > .workspace-panel {
-    height: 100%;
-    min-height: 0;
-    min-width: 0;
-  }
-
-  .workspace-panels.is-horizontal {
-    flex-direction: row;
-  }
-
-  .workspace-panels.is-vertical {
-    flex-direction: column;
-  }
-
-  .panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 42px;
-    border-bottom: 1px solid var(--panel-border);
-    padding: 5px 8px;
-    flex-wrap: wrap;
-  }
-
-  .spectrum-header {
-    min-height: 42px;
-    padding-block: 5px;
-  }
-
-  .network-content {
-    display: flex;
-  }
-
-  .network-controls-pane {
-    padding: 6px;
-    overflow: auto;
-  }
-
-  .network-controls {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-    gap: 6px;
-  }
-
-  .network-control-group {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 5px;
-    min-width: 0;
-    margin: 0;
-    border: 1px solid var(--panel-border);
-    padding: 5px;
-  }
-
-  .network-control-group legend {
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  .network-control-group label {
-    display: grid;
-    min-width: 0;
-    gap: 2px;
-    color: var(--muted);
-    font-size: 10px;
-  }
-
-  .network-plots {
-    display: grid;
-    grid-template-rows: repeat(2, minmax(0, 1fr));
-    min-height: 240px;
-    gap: 6px;
-    overflow: hidden;
-  }
-
-  .network-plot-frame {
-    position: relative;
-    min-height: 0;
-    contain: size layout;
-    overflow: hidden;
-    background: var(--plot-bg);
-  }
-
-  .panel-content.curve-viewer-content {
-    display: flex;
-    flex-direction: row;
-  }
-
-  .curve-viewer-list-pane,
-  .curve-viewer-params-pane {
-    display: grid;
-    min-width: 0;
-    gap: 6px;
-    padding: 6px;
-    overflow: hidden;
-  }
-
-  .curve-viewer-list-pane label,
-  .curve-viewer-params-pane label {
-    display: grid;
-    min-height: 0;
-    gap: 3px;
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  #curve-viewer-select {
-    height: 100%;
-  }
-
-  #curve-viewer-params {
-    width: 100%;
-    min-height: 0;
-    resize: none;
-    border: 1px solid #53616b;
-    background: #090d10;
-    color: var(--text);
-    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
-    padding: 6px;
-  }
-
-  .curve-viewer-params-pane {
-    grid-template-rows: auto minmax(96px, 1fr) auto;
-    overflow: auto;
-  }
-
-  .curve-viewer-plot-pane {
-    display: grid;
-    grid-template-rows: minmax(0, 1fr);
-    min-height: 0;
-    gap: 6px;
-    overflow: hidden;
-  }
-
-  .curve-viewer-plot-pane.is-complex {
-    grid-template-rows: repeat(2, minmax(0, 1fr));
-  }
-
-  .curve-viewer-plot-frame {
-    min-height: 0;
-    contain: size layout;
-    overflow: hidden;
-    background: var(--plot-bg);
-  }
-
-  .panel-header p {
-    margin-top: 2px;
-    font-size: 12px;
-  }
-
-  .panel-content {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    gap: 6px;
-    padding: 6px;
-    overflow: hidden;
-  }
-
-  .split-pane {
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .gutter {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    background: #27343d;
-  }
-
-  .gutter.gutter-vertical {
-    height: 8px;
-    cursor: row-resize;
-  }
-
-  .gutter.gutter-horizontal {
-    width: 8px;
-    cursor: col-resize;
-  }
-
-  .gutter.gutter-vertical::before {
-    display: block;
-    width: 44px;
-    height: 2px;
-    background: #71828e;
-    content: "";
-  }
-
-  .gutter.gutter-horizontal::before {
-    display: block;
-    width: 2px;
-    height: 44px;
-    background: #71828e;
-    content: "";
-  }
-
-  .gutter:hover,
-  .gutter:active {
-    background: #344550;
-  }
-
-  .empty-workspace {
-    display: grid;
-    height: 100%;
-    place-content: center;
-    gap: 6px;
-    color: var(--muted);
-    text-align: center;
-  }
-
-  .register-panel-content {
-    display: block;
-  }
-
-  .register-panel {
-    height: 100%;
-    align-content: start;
-  }
-
-  .register-row {
-    grid-template-columns: minmax(130px, 1fr) minmax(80px, 0.4fr) auto minmax(130px, 1fr) minmax(160px, 1fr) auto;
-  }
-
-  .instrument-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-    align-items: start;
-    overflow: auto;
-  }
-
-  .instrument-card {
-    align-content: start;
-  }
-
-  .instrument-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .instrument-card-header h3 {
-    margin: 0;
-    font-size: 14px;
-  }
-
-  .instrument-card-header output {
-    min-height: 24px;
-    text-align: right;
-  }
-
-  .asg-row {
-    grid-template-columns: repeat(4, minmax(92px, 1fr)) repeat(3, auto);
-  }
-
-  .generic-module-row {
-    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-  }
-
-  .spectrum-module-row {
-    grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
-  }
-
-  .spectrum-module-row label {
-    min-width: 0;
-  }
-
-  .spectrum-module-row label[hidden] {
-    display: grid;
-    visibility: hidden;
-    pointer-events: none;
-  }
-
-  .iir-card {
-    grid-column: 1 / -1;
-    min-height: 0;
-    display: grid;
-    grid-template-rows: auto auto auto;
-  }
-
-  .iir-card .generic-module-row {
-    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-  }
-
-  .iir-plot {
-    min-height: 0;
-    display: grid;
-    grid-template-rows: auto auto auto;
-    gap: 8px;
-  }
-
-  .iir-plot-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  .iir-plot-toolbar button {
-    padding: 4px 10px;
-    min-height: 26px;
-  }
-
-  .iir-plot-grid {
-    display: grid;
-    grid-template-rows: repeat(2, clamp(360px, 40vh, 520px));
-    gap: 8px;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .iir-plot-frame {
-    min-width: 0;
-    min-height: 0;
-    position: relative;
-    contain: size layout;
-    overflow: hidden;
-    background: var(--plot-bg);
-  }
-
-  .iir-list-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(170px, 1fr));
-    gap: 8px;
-    min-height: 0;
-  }
-
-  .iir-list-editor {
-    display: grid;
-    gap: 5px;
-    min-width: 0;
-    border: 1px solid var(--border);
-    padding: 6px;
-  }
-
-  .iir-list-editor header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 48px 26px 26px;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .iir-list-editor header span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 11px;
-    color: var(--muted);
-  }
-
-  .iir-list-editor button {
-    min-width: 0;
-    padding: 3px 0;
-  }
-
-  .iir-list-values {
-    display: grid;
-    gap: 3px;
-    max-height: 116px;
-    overflow: auto;
-  }
-
-  .iir-list-value {
-    display: grid;
-    grid-template-columns: 22px minmax(0, 1fr);
-    align-items: center;
-    gap: 4px;
-    padding: 2px;
-  }
-
-  .iir-list-value.is-selected {
-    outline: 1px solid var(--plot-yellow);
-    background: rgba(242, 201, 76, 0.08);
-  }
-
-  .iir-marker {
-    position: absolute;
-    width: 18px;
-    height: 18px;
-    margin-left: -9px;
-    margin-top: -9px;
-    display: grid;
-    place-items: center;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--plot-yellow);
-    font-size: 13px;
-    font-weight: 700;
-    line-height: 1;
-    cursor: grab;
-    z-index: 4;
-  }
-
-  .iir-marker.is-zero {
-    color: var(--plot-magenta);
-  }
-
-  .iir-marker.is-complex {
-    font-size: 16px;
-  }
-
-  .iir-marker.is-selected,
-  .iir-marker.is-dragging {
-    outline: 2px solid var(--plot-yellow);
-    background: rgba(242, 201, 76, 0.14);
-  }
-
-  .module-panel.is-owned {
-    opacity: 0.62;
-  }
-
-  .spectrum-content {
-    min-height: 0;
-    padding: 8px;
-  }
-
-  .spectrum-controls {
-    min-height: 0;
-    align-content: start;
-    overflow: auto;
-  }
-
-  .spectrum-controls .module-panel {
-    border: 0;
-    padding: 0;
-  }
-
-  .spectrum-plot-panel {
-    min-height: 0;
-  }
-
-  .housekeeping-panel {
-    align-content: start;
-    overflow: auto;
-  }
-
-  .telemetry-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
-    gap: 8px;
-    align-content: start;
-  }
-
-  .telemetry-section {
-    min-width: 0;
-  }
-
-  .sampler-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-    gap: 4px 8px;
-    margin-bottom: 8px;
-  }
-
-  .sampler-reading {
-    display: grid;
-    grid-template-columns: minmax(38px, auto) minmax(0, 1fr);
-    gap: 5px;
-    align-items: baseline;
-    padding: 3px 5px;
-    border-bottom: 1px solid var(--panel-border);
-  }
-
-  .sampler-reading span {
-    color: var(--muted);
-  }
-
-  .sampler-reading output {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .sampler-stats-controls output {
-    min-width: min(100%, 360px);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .ams-controls input[readonly] {
-    color: var(--muted);
-    cursor: default;
-  }
-
-  @media (max-width: 760px) {
-    .telemetry-layout {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
-
-  .lockbox-header-controls {
-    display: grid;
-    grid-template-columns: minmax(150px, 220px) auto;
-    align-items: end;
-    gap: 8px;
-  }
-
-  .config-content {
-    display: grid;
-    grid-template-rows: auto minmax(360px, 1fr);
-    gap: 8px;
-    padding: 8px;
-    min-height: 0;
-  }
-
-  .config-toolbar {
-    display: flex;
-    align-items: end;
-    gap: 10px;
-    min-width: 0;
-    flex-wrap: wrap;
-  }
-
-  .config-toolbar label {
-    display: grid;
-    gap: 3px;
-    min-width: 160px;
-  }
-
-  .config-toolbar label:first-child {
-    flex: 1 1 360px;
-  }
-
-  #config-file {
-    overflow-wrap: anywhere;
-  }
-
-  .config-editor {
-    box-sizing: border-box;
-    width: 100%;
-    min-height: 360px;
-    resize: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: #11161c;
-    color: var(--text);
-    padding: 10px;
-    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
-
-  #lockbox-actions {
-    display: flex;
-    flex-flow: row nowrap;
-    align-items: end;
-    justify-content: flex-end;
-    gap: 6px;
-  }
-
-  #lockbox-actions button {
-    flex: 0 0 auto;
-    white-space: nowrap;
-  }
-
-  .lockbox-header-controls label {
-    display: grid;
-    gap: 3px;
-  }
-
-  .lockbox-header-controls label span {
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  .lockbox-content {
-    overflow: hidden;
-  }
-
-  .lockbox-overview {
-    flex: 0 0 auto;
-  }
-
-  .lockbox-attributes {
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  }
-
-  .lockbox-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(280px, 1fr));
-    flex: 1 1 0;
-    gap: 6px;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .lockbox-column {
-    display: grid;
-    grid-template-rows: auto max-content auto;
-    align-content: start;
-    gap: 6px;
-    min-width: 0;
-    min-height: 0;
-  }
-
-  .lockbox-sequence-column {
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .lockbox-section-header,
-  .lockbox-card-title {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .lockbox-section-header h3,
-  .lockbox-card-title h3 {
-    margin: 0;
-    font-size: 13px;
-  }
-
-  .lockbox-section-header label {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  }
-
-  .lockbox-section-header label span {
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  .lockbox-section-header select {
-    min-width: 110px;
-  }
-
-  .lockbox-card-title span {
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  .lockbox-card-actions {
-    display: flex;
-    gap: 4px;
-  }
-
-  #lockbox-inputs,
-  #lockbox-outputs,
-  #lockbox-stages {
-    display: grid;
-    gap: 6px;
-  }
-
-  #lockbox-stages {
-    grid-template-columns: minmax(0, 1fr);
-    grid-auto-rows: max-content;
-    align-content: start;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-  }
-
-  .lockbox-card {
-    display: grid;
-    gap: 8px;
-    min-width: 0;
-    border: 1px solid var(--panel-border);
-    border-radius: 6px;
-    padding: 6px;
-  }
-
-  .lockbox-stage-card {
-    align-content: start;
-    height: var(--lockbox-stage-height, auto);
-  }
-
-  .lockbox-control-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
-    gap: 6px;
-    align-items: end;
-  }
-
-  .lockbox-card label {
-    display: grid;
-    gap: 3px;
-  }
-
-  .lockbox-card label span {
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  .lockbox-card label.is-disabled {
-    opacity: 0.5;
-  }
-
-  .lockbox-stage-output-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 6px;
-  }
-
-  .lockbox-stage-output {
-    display: grid;
-    gap: 6px;
-    min-width: 0;
-    border: 1px solid #1e2a31;
-    border-radius: 6px;
-    padding: 6px;
-  }
-
-  .lockbox-stage-output h4 {
-    margin: 0;
-    font-size: 12px;
-  }
-
-  .lockbox-stage-output label {
-    display: grid;
-    gap: 3px;
-  }
-
-  .lockbox-plot {
-    min-width: 0;
-    min-height: 224px;
-    contain: size layout;
-    overflow: hidden;
-    background: var(--plot-bg);
-  }
-
-  .lockbox-plot,
-  .lockbox-plot * {
-    pointer-events: none;
-  }
-
-  .lockbox-plot > .uplot {
-    max-width: 100%;
-    max-height: 100%;
-  }
-
-  #lockbox-output-plot {
-    display: grid;
-    grid-template-rows: repeat(2, minmax(224px, 1fr));
-    gap: 6px;
-    min-height: 454px;
-  }
-
-  .lockbox-output-plot-frame {
-    min-width: 0;
-    min-height: 0;
-    contain: size layout;
-    overflow: hidden;
-    background: var(--plot-bg);
-  }
-
-  .housekeeping-top-row {
-    grid-template-columns: minmax(110px, 180px) auto minmax(180px, 1fr);
-  }
-
-  .housekeeping-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 8px;
-  }
-
-  .housekeeping-bank {
-    display: grid;
-    gap: 6px;
-    padding: 8px;
-    border: 1px solid var(--panel-border);
-    border-radius: 6px;
-  }
-
-  .housekeeping-bank h3 {
-    margin: 0;
-    font-size: 13px;
-  }
-
-  .housekeeping-pin {
-    display: grid;
-    grid-template-columns: 36px minmax(80px, 1fr) minmax(96px, 1fr);
-    align-items: center;
-    gap: 8px;
-  }
-
-  #register-output {
-    width: 100%;
-    min-height: 260px;
-    resize: none;
-    border: 1px solid #53616b;
-    border-radius: 6px;
-    background: #05080a;
-    color: var(--text);
-    font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    padding: 10px;
-  }
-	
-	  .module-panel {
-	    display: grid;
-	    grid-template-columns: 1fr;
-	    align-items: end;
-	    gap: 6px;
-	    min-height: 0;
-	    padding: 8px;
-	    overflow: hidden;
-	  }
-
-    .control-row {
-      display: grid;
-      align-items: end;
-      gap: 6px;
-    }
-
-    .signal-row {
-      grid-template-columns: minmax(170px, 1.3fr) minmax(170px, 1.3fr) minmax(110px, 0.8fr) minmax(150px, auto) minmax(110px, 0.8fr) repeat(2, minmax(58px, auto));
-    }
-
-    .tune-row {
-      grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-    }
-
-    .channel-control {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      align-items: end;
-      gap: 8px;
-    }
-	
-	  .module-panel label,
-    .control-row label {
-	    display: grid;
-	    gap: 3px;
-	  }
-
-    .module-panel label[hidden],
-    .control-row label[hidden] {
-      display: none;
-    }
-
-    .module-panel .spectrum-module-row label[hidden] {
-      display: grid;
-      visibility: hidden;
-      pointer-events: none;
-    }
-	
-	  .module-panel label span {
-	    color: var(--muted);
-	    font-size: 11px;
-	  }
-
-  .control-row label.toggle-control {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .plot-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  output {
-    min-height: 36px;
-    align-content: center;
-    overflow: hidden;
-    color: var(--muted);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  #scope-plot,
-  #spectrum-plot {
-    min-width: 0;
-    min-height: 0;
-    height: 100%;
-    contain: size layout;
-    overflow: hidden;
-    background: var(--plot-bg);
-  }
-
-  #scope-plot > .uplot,
-  #spectrum-plot > .uplot,
-  .iir-plot-frame > .uplot,
-  .lockbox-plot > .uplot {
-    max-width: 100%;
-    max-height: 100%;
-  }
-
-  .uplot {
-    color: var(--plot-text);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
-
-  .uplot .u-title,
-  .uplot .u-legend,
-  .uplot .u-legend th,
-  .uplot .u-legend td {
-    color: var(--plot-text);
-  }
-
-  .uplot .u-cursor-x,
-  .uplot .u-cursor-y {
-    border-color: var(--plot-axis);
-  }
-
-  .uplot .u-over {
-    cursor: crosshair;
-    touch-action: none;
-  }
-
-  .uplot .u-over.is-panning {
-    cursor: grabbing;
-  }
-
-  .uplot .u-over.is-zooming {
-    cursor: ew-resize;
-  }
-
-  @media (max-width: 680px) {
-    body {
-      height: auto;
-      min-height: 100dvh;
-      overflow-x: hidden;
-      overflow-y: auto;
-    }
-
-    #app,
-    .shell {
-      height: auto;
-      min-height: 100dvh;
-    }
-
-    .shell {
-      grid-template-rows: auto auto;
-      width: 100%;
-      max-width: 100vw;
-      overflow: visible;
-    }
-
-    .topbar {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .topbar > div:first-child {
-      min-width: 0;
-    }
-
-    #session-line {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .menubar {
-      flex-direction: row;
-      align-items: center;
-      gap: 6px;
-      margin-left: 0;
-    }
-
-    .control-strip output {
-      max-width: 110px;
-    }
-
-    .menu-content {
-      left: auto;
-      right: 0;
-      max-height: min(70dvh, 520px);
-      overflow: auto;
-    }
-
-    .workspace {
-      grid-template-rows: auto auto;
-      overflow: visible;
-    }
-
-    .workspace-tabs {
-      overflow-x: auto;
-      overflow-y: hidden;
-      scrollbar-width: thin;
-    }
-
-    .workspace-tab {
-      flex: 0 0 auto;
-    }
-
-    .workspace-panels,
-    .workspace-panel,
-    .panel-content,
-    .split-pane,
-    .module-panel,
-    .plot-panel,
-    .lockbox-content,
-    #lockbox-stages {
-      min-width: 0;
-      max-width: 100%;
-      height: auto;
-      min-height: 0;
-      overflow: visible;
-    }
-
-    .workspace-panel {
-      grid-template-rows: auto auto;
-    }
-
-    .panel-header {
-      align-items: stretch;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .actions {
-      align-items: flex-start;
-      gap: 4px;
-      min-width: 0;
-      max-width: 100%;
-    }
-
-    .action-row,
-    .zoom-actions,
-    #lockbox-actions {
-      width: 100%;
-      min-width: 0;
-      max-width: 100%;
-      gap: 4px;
-      flex-wrap: wrap;
-      justify-content: flex-start;
-    }
-
-    .actions button,
-    .zoom-actions button {
-      flex: 0 0 auto;
-    }
-
-    .module-panel,
-    .plot-toolbar {
-      align-items: stretch;
-      min-width: 0;
-      max-width: 100%;
-    }
-
-    .plot-toolbar output {
-      min-width: 0;
-      max-width: 100%;
-      white-space: normal;
-      overflow-wrap: anywhere;
-    }
-
-    .panel-content > .split-pane,
-    .network-content > .split-pane,
-    .curve-viewer-content > .split-pane {
-      width: auto !important;
-      height: auto !important;
-      flex-basis: auto !important;
-    }
-
-    .panel-content > .gutter,
-    .network-content > .gutter,
-    .curve-viewer-content > .gutter {
-      display: none;
-    }
-
-    #scope-plot-pane,
-    .spectrum-plot-panel {
-      height: 360px !important;
-      min-height: 360px;
-    }
-
-    .spectrum-content,
-    .network-content,
-    .curve-viewer-content {
-      display: grid !important;
-      grid-template-columns: minmax(0, 1fr);
-      height: auto !important;
-      overflow: visible;
-    }
-
-    .network-plots {
-      height: 520px !important;
-      min-height: 520px;
-    }
-
-    .lockbox-grid,
-    .lockbox-header-controls {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .lockbox-column,
-    .lockbox-sequence-column {
-      grid-template-rows: auto;
-    }
-
-    .signal-row,
-    .tune-row,
-    .register-row {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .module-panel output {
-      grid-column: 1 / -1;
-    }
-  }
-`;
-document.head.appendChild(style);
 
 const statusStyle = document.createElement("style");
 statusStyle.textContent = `
@@ -2063,6 +531,8 @@ statusStyle.textContent = `
   #debug-status { display: flex; flex-wrap: wrap; gap: 4px 16px; }
   #debug-status > span { overflow-wrap: anywhere; }
   #application-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #ff9f93; }
+  #application-error > span { min-width: 0; overflow-wrap: anywhere; }
+  #application-error > button { flex: none; }
 `;
 document.head.appendChild(statusStyle);
 installStatusBar(requireElement<HTMLElement>(".shell"), debugEnabled(window.location.search));
@@ -2720,7 +1190,7 @@ function ensureScopeSplit(): void {
   if (scopeSplit || scopePanel.hidden) {
     return;
   }
-  scopeSplit = Split([scopeControlsPane, scopePlotPane], {
+  scopeSplit = accessibleSplit([scopeControlsPane, scopePlotPane], {
     direction: "vertical",
     sizes: workspaceState.panels.scope.splitSizes,
     minSize: [132, 260],
@@ -2755,9 +1225,9 @@ function ensureSpectrumSplit(): void {
   if (spectrumSplit || spectrumPanel.hidden) {
     return;
   }
-  spectrumSplit = Split([spectrumControlsPane, spectrumPlotPane], {
+  spectrumSplit = accessibleSplit([spectrumControlsPane, spectrumPlotPane], {
     direction: "vertical",
-    sizes: [32, 68],
+    sizes: workspaceState.panels.spectrumanalyzer.splitSizes,
     minSize: [96, 220],
     gutterSize: 8,
     snapOffset: 16,
@@ -2768,7 +1238,16 @@ function ensureSpectrumSplit(): void {
       height: "8px",
     }),
     onDrag: () => spectrumPlot.refreshLayout(),
-    onDragEnd: () => spectrumPlot.refreshLayout(),
+    onDragEnd: (sizes) => {
+      workspaceState = {
+        ...workspaceState,
+        panels: { ...workspaceState.panels, spectrumanalyzer: {
+          ...workspaceState.panels.spectrumanalyzer, splitSizes: normalizeSplitSizes(sizes),
+        } },
+      };
+      saveWorkspaceState(workspaceState);
+      spectrumPlot.refreshLayout();
+    },
   });
 }
 
@@ -2788,7 +1267,7 @@ function ensureWorkspaceSplit(panelIds: PanelId[]): void {
   orderWorkspacePanels(panelIds);
   workspaceSplitMode = workspaceState.layoutMode;
   workspaceSplitPanelSignature = panelSignature;
-  workspaceSplit = Split(
+  workspaceSplit = accessibleSplit(
     panelIds.map((panelId) => panelElements[panelId]),
     {
       direction: workspaceState.layoutMode === "split-horizontal" ? "horizontal" : "vertical",
@@ -3716,10 +2195,24 @@ async function buildGenericModuleCard(container: HTMLElement, moduleName: string
     controls.fields.set(attribute.name, field.label);
     row.appendChild(field.label);
   }
+  if (moduleName === "spectrumanalyzer") {
+    for (const [toggle, input] of [["display_input1_baseband", "input1_baseband"], ["display_input2_baseband", "input2_baseband"]]) {
+      const visibility = controls.fields.get(toggle), signal = controls.fields.get(input);
+      if (!visibility || !signal) continue;
+      const group = document.createElement("div");
+      group.className = "spectrum-channel-group";
+      row.insertBefore(group, visibility);
+      group.append(visibility, signal);
+    }
+  }
   const visibleActions =
     moduleName === "spectrumanalyzer"
       ? []
       : (actionsPayload.actions ?? []);
+  const actionGroup = document.createElement("div");
+  actionGroup.className = "action-group module-actions";
+  actionGroup.setAttribute("role", "group");
+  actionGroup.setAttribute("aria-label", `${moduleName} actions`);
   for (const action of visibleActions) {
     const button = document.createElement("button");
     button.type = "button";
@@ -3730,8 +2223,9 @@ async function buildGenericModuleCard(container: HTMLElement, moduleName: string
       });
     });
     controls.actions.push(button);
-    row.appendChild(button);
+    actionGroup.appendChild(button);
   }
+  if (actionGroup.childElementCount) row.appendChild(actionGroup);
   genericModuleControls.set(moduleName, controls);
   card.append(header, row);
   if (moduleName === "iir") {

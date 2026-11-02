@@ -1092,7 +1092,9 @@ class WebSession:
     def _lockbox_monitor_loop(self) -> None:
         """Run PyRPL's lock-status monitor independently of browser sessions."""
 
+        last_check = float("-inf")
         while not self._lockbox_monitor_stop.is_set():
+            self._lockbox_monitor_wakeup.clear()
             schema = None
             active = False
             interval = 1.0
@@ -1100,8 +1102,12 @@ class WebSession:
                 with self._lock:
                     active = self.lockbox.current_stage() is not None
                     interval = max(0.001, float(self.lockbox.lockstatus_interval))
-                    if active and self._monitor_lockbox_once_no_lock():
-                        schema = self.lockbox.schema()
+                    # Sequence notifications wake this loop too. They must not
+                    # bypass the interval and form a self-sustaining relock loop.
+                    if active and time.monotonic() >= last_check + interval:
+                        last_check = time.monotonic()
+                        if self._monitor_lockbox_once_no_lock():
+                            schema = self.lockbox.schema()
             except Exception:
                 LOGGER.exception("Lockbox status monitor failed; retrying at the configured interval")
 
@@ -1111,8 +1117,8 @@ class WebSession:
                 except Exception:
                     LOGGER.exception("Lockbox status callback failed")
 
-            self._lockbox_monitor_wakeup.wait(interval if active else None)
-            self._lockbox_monitor_wakeup.clear()
+            delay = max(0.001, last_check + interval - time.monotonic()) if active else None
+            self._lockbox_monitor_wakeup.wait(delay)
 
     def _monitor_lockbox_once_no_lock(self) -> bool:
         previous_status = self.lockbox.lock_status
@@ -1121,6 +1127,7 @@ class WebSession:
             self.lockbox.current_state == "lock_on"
             and not new_status
             and bool(self.lockbox.auto_lock)
+            and self._lockbox_sequence_thread is None
         )
         self.lockbox.lock_status = new_status
         if should_relock:

@@ -1,3 +1,4 @@
+import { fitPlotToFrame } from "./plot-theme";
 import { reportError } from "./status-bar";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
@@ -34,6 +35,8 @@ interface LockboxStage {
 }
 
 export interface LockboxSchema {
+  schema_epoch?: string;
+  revision?: number;
   classname: string;
   attributes: LockboxAttribute[];
   inputs: LockboxNode[];
@@ -67,6 +70,12 @@ export class LockboxPanel {
   private resizeFrame: number | null = null;
   private stageLayoutWidth = 0;
   private stageHeight = 0;
+  private structureKey = "";
+  private plotKey = "";
+  private actionKey = "";
+  private fields: Array<HTMLInputElement | HTMLSelectElement> = [];
+  private inputPlotRequest = 0;
+  private outputPlotRequest = 0;
 
   constructor(private readonly elements: LockboxPanelElements) {
     this.resizeObserver = new ResizeObserver(() => this.scheduleLayoutRefresh());
@@ -105,19 +114,72 @@ export class LockboxPanel {
   }
 
   async applySchema(schema: LockboxSchema): Promise<void> {
+    if (schema.schema_epoch && schema.schema_epoch === this.schema?.schema_epoch
+      && (schema.revision ?? 0) < (this.schema.revision ?? 0)) return;
     this.schema = schema;
     if (schema.actions) this.renderActions(schema.actions);
-    this.populateClassSelect(schema);
-    this.renderLockboxAttributes(schema.attributes);
-    this.renderInputs(schema.inputs);
-    this.renderOutputs(schema.outputs);
-    this.renderStages(schema.sequence);
-    this.populatePlotSelect(this.elements.inputPlotSelect, schema.inputs.map((input) => input.name));
-    this.populatePlotSelect(this.elements.outputPlotSelect, schema.outputs.map((output) => output.name));
+    const configuration = {
+      classname: schema.classname,
+      attributes: schema.attributes,
+      inputs: schema.inputs,
+      outputs: schema.outputs,
+      sequence: schema.sequence,
+    };
+    const structureKey = JSON.stringify(configuration, (key, value) =>
+      ["value", "state", "calibration"].includes(key) ? undefined : value);
+    if (structureKey !== this.structureKey) {
+      this.structureKey = structureKey;
+      this.fields = [];
+      this.populateClassSelect(schema);
+      this.renderLockboxAttributes(schema.attributes);
+      this.renderInputs(schema.inputs);
+      this.renderOutputs(schema.outputs);
+      this.renderStages(schema.sequence);
+      this.populatePlotSelect(this.elements.inputPlotSelect, schema.inputs.map((input) => input.name));
+      this.populatePlotSelect(this.elements.outputPlotSelect, schema.outputs.map((output) => output.name));
+    } else {
+      // Status events and writes from other clients must preserve DOM identity,
+      // focus, unfinished edits, scroll positions, and pending button clicks.
+      const attributes = [
+        ...schema.attributes.filter(attribute => attribute.name !== "classname"),
+        ...schema.inputs.flatMap(input => input.attributes),
+        ...schema.outputs.flatMap(output => output.attributes),
+        ...schema.sequence.flatMap(stage => [...stage.attributes, ...stage.outputs.flatMap(output => output.attributes)]),
+      ];
+      this.fields.forEach((input, index) => {
+        const attribute = attributes[index];
+        if (!attribute || input === document.activeElement) return;
+        if (input instanceof HTMLInputElement && input.type === "checkbox") input.checked = Boolean(attribute.value);
+        else input.value = Array.isArray(attribute.value) ? attribute.value.join(", ") : String(attribute.value ?? "");
+      });
+      for (const output of schema.outputs) {
+        const card = Array.from(this.elements.outputs.querySelectorAll<HTMLElement>("[data-node-name]"))
+          .find(element => element.dataset.nodeName === output.name);
+        if (!card) continue;
+        const assisted = Boolean(output.attributes.find(attribute => attribute.name === "assisted_design")?.value);
+        const tfType = output.attributes.find(attribute => attribute.name === "tf_type")?.value;
+        for (const field of card.querySelectorAll<HTMLLabelElement>("label[data-attribute]")) {
+          const name = field.dataset.attribute;
+          if (name === "p" || name === "i") this.setFieldDisabled(field, assisted);
+          if (name === "desired_unity_gain_frequency" || name === "analog_filter_cutoff") this.setFieldDisabled(field, !assisted);
+          if (name === "tf_curve") this.setFieldDisabled(field, tfType !== "curve");
+        }
+      }
+      for (const input of schema.inputs) {
+        const card = Array.from(this.elements.inputs.querySelectorAll<HTMLElement>("[data-node-name]"))
+          .find(element => element.dataset.nodeName === input.name);
+        const calibration = card?.querySelector("output");
+        if (calibration && input.calibration) calibration.textContent = this.calibrationText(input.calibration);
+      }
+    }
     this.setStatus(
       `${schema.classname}: ${schema.state.current_state ?? "ready"} | ${schema.state.lock_status ? "locked" : "not locked"}`,
     );
-    await Promise.all([this.refreshInputPlot(), this.refreshOutputPlot()]);
+    const plotKey = JSON.stringify(configuration, (key, value) => key === "state" ? undefined : value);
+    if (plotKey !== this.plotKey) {
+      this.plotKey = plotKey;
+      await Promise.all([this.refreshInputPlot(), this.refreshOutputPlot()]);
+    }
     this.scheduleLayoutRefresh();
   }
 
@@ -163,6 +225,9 @@ export class LockboxPanel {
   }
 
   private renderActions(actions: Array<{ name: string; label: string }>): void {
+    const key = JSON.stringify(actions);
+    if (key === this.actionKey) return;
+    this.actionKey = key;
     this.elements.actions.textContent = "";
     for (const action of actions) {
       const button = document.createElement("button");
@@ -221,11 +286,7 @@ export class LockboxPanel {
       card.appendChild(row);
       if (input.calibration) {
         const calibration = document.createElement("output");
-        calibration.textContent = Object.entries(input.calibration)
-          .filter(([, value]) => typeof value === "number")
-          .slice(0, 4)
-          .map(([key, value]) => `${key} ${Number(value).toPrecision(3)}`)
-          .join(" | ");
+        calibration.textContent = this.calibrationText(input.calibration);
         card.appendChild(calibration);
       }
       this.elements.inputs.appendChild(card);
@@ -258,6 +319,11 @@ export class LockboxPanel {
       card.appendChild(row);
       this.elements.outputs.appendChild(card);
     }
+  }
+
+  private calibrationText(calibration: Record<string, number>): string {
+    return Object.entries(calibration).filter(([, value]) => typeof value === "number")
+      .slice(0, 4).map(([key, value]) => `${key} ${Number(value).toPrecision(3)}`).join(" | ");
   }
 
   private renderStages(stages: LockboxStage[]): void {
@@ -397,6 +463,7 @@ export class LockboxPanel {
         number.step = String(attribute.step);
       }
       number.addEventListener("change", () => {
+        if (number.value.trim() === "" || !Number.isFinite(number.valueAsNumber)) return;
         onChange(Number(number.value)).catch((error: Error) => reportError(this.elements.status, error.message));
       });
       input = number;
@@ -410,6 +477,7 @@ export class LockboxPanel {
       input = text;
     }
     input.id = `lockbox-${attribute.name.replaceAll("_", "-")}-${++nextFieldId}`;
+    this.fields.push(input);
     label.appendChild(input);
     return label;
   }
@@ -458,6 +526,7 @@ export class LockboxPanel {
   }
 
   private async refreshInputPlot(): Promise<void> {
+    const request = ++this.inputPlotRequest;
     const input = this.schema?.inputs.find((candidate) => candidate.name === this.elements.inputPlotSelect.value)
       ?? this.schema?.inputs[0];
     if (!input) {
@@ -468,10 +537,12 @@ export class LockboxPanel {
       return;
     }
     const payload = await response.json() as { x: number[]; series: Array<{ label: string; values: number[] }> };
+    if (request !== this.inputPlotRequest) return;
     this.drawInputPlot(this.elements.inputPlot, "Expected Signal", payload);
   }
 
   private async refreshOutputPlot(): Promise<void> {
+    const request = ++this.outputPlotRequest;
     const output = this.schema?.outputs.find((candidate) => candidate.name === this.elements.outputPlotSelect.value)
       ?? this.schema?.outputs[0];
     if (!output) {
@@ -482,6 +553,7 @@ export class LockboxPanel {
       return;
     }
     const payload = await response.json() as { x: number[]; series: Array<{ label: string; values: number[] }> };
+    if (request !== this.outputPlotRequest) return;
     this.drawOutputPlot(this.elements.outputPlot, payload);
   }
 
@@ -490,6 +562,11 @@ export class LockboxPanel {
     title: string,
     payload: { x: number[]; series: Array<{ label: string; values: number[] }> },
   ): void {
+    if (this.inputPlot && this.inputPlot.series.length === payload.series.length + 1
+      && payload.series.every((series, index) => this.inputPlot!.series[index + 1].label === series.label)) {
+      this.inputPlot.setData([payload.x, ...payload.series.map(series => series.values)], false);
+      return;
+    }
     this.inputPlot?.destroy();
     host.textContent = "";
     const size = this.plotSize(host);
@@ -522,8 +599,13 @@ export class LockboxPanel {
     host: HTMLElement,
     payload: { x: number[]; series: Array<{ label: string; values: number[] }> },
   ): void {
-    this.outputMagnitudePlot?.destroy();
-    this.outputPhasePlot?.destroy();
+    const magnitude = payload.series.find((series) => series.label === "magnitude")?.values ?? [];
+    const phase = payload.series.find((series) => series.label === "phase")?.values ?? [];
+    if (this.outputMagnitudePlot && this.outputPhasePlot) {
+      this.outputMagnitudePlot.setData([payload.x, magnitude.map(value => Math.max(1e-30, value))], false);
+      this.outputPhasePlot.setData([payload.x, phase], false);
+      return;
+    }
     host.textContent = "";
     const magnitudeFrame = document.createElement("div");
     const phaseFrame = document.createElement("div");
@@ -532,8 +614,6 @@ export class LockboxPanel {
     host.append(magnitudeFrame, phaseFrame);
     this.resizeObserver.observe(magnitudeFrame);
     this.resizeObserver.observe(phaseFrame);
-    const magnitude = payload.series.find((series) => series.label === "magnitude")?.values ?? [];
-    const phase = payload.series.find((series) => series.label === "phase")?.values ?? [];
     this.outputMagnitudePlot = new uPlot(
       {
         title: "Open-loop magnitude",
@@ -579,16 +659,7 @@ export class LockboxPanel {
   }
 
   private fitPlotToHost(plot: uPlot, host: HTMLElement): void {
-    const bounds = host.getBoundingClientRect();
-    if (bounds.width < 1 || bounds.height < 1) {
-      return;
-    }
-    const wrap = plot.root.querySelector<HTMLElement>(".u-wrap")?.getBoundingClientRect();
-    const chromeHeight = Math.max(0, Math.ceil(plot.root.getBoundingClientRect().height - (wrap?.height ?? 0)));
-    plot.setSize({
-      width: Math.floor(bounds.width),
-      height: Math.max(80, Math.floor(bounds.height) - chromeHeight),
-    });
+    fitPlotToFrame(plot, host);
   }
 
   private scheduleLayoutRefresh(): void {

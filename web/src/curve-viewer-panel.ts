@@ -1,3 +1,5 @@
+import { fitPlotToFrame } from "./plot-theme";
+import { accessibleSplit } from "./split-layout";
 import { reportError } from "./status-bar";
 import Split from "split.js";
 import uPlot from "uplot";
@@ -178,7 +180,7 @@ export class CurveViewerPanel {
 
   private ensureSplit(): void {
     if (this.split || this.root.hidden) return;
-    this.split = Split([this.listPane, this.plotPane, this.paramsPane], {
+    this.split = accessibleSplit([this.listPane, this.plotPane, this.paramsPane], {
       direction: "horizontal",
       sizes: [18, 57, 25],
       minSize: [140, 300, 200],
@@ -207,10 +209,7 @@ export class CurveViewerPanel {
       const frames = this.plotPane.querySelectorAll<HTMLElement>(".curve-viewer-plot-frame:not([hidden])");
       const plots = [this.magnitudePlot, this.phasePlot];
       frames.forEach((frame, index) => {
-        const bounds = frame.getBoundingClientRect();
-        if (bounds.width > 100 && bounds.height > 80) {
-          plots[index].setSize({ width: Math.floor(bounds.width), height: Math.floor(bounds.height) });
-        }
+        fitPlotToFrame(plots[index], frame);
       });
     });
   }

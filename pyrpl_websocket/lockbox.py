@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import ast
 import os
+from itertools import count
+from uuid import uuid4
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
 from math import pi
@@ -19,6 +21,11 @@ from typing import Any, Callable
 import numpy as np
 
 from .modules import SCOPE_INPUTS
+
+# HTTP responses and worker-thread events can arrive out of order. The epoch
+# also lets an already-open browser accept snapshots after a server restart.
+_SCHEMA_EPOCH = uuid4().hex
+_SCHEMA_REVISIONS = count(1)
 
 
 ASG_WAVEFORMS = ["sin", "cos", "ramp", "halframp", "square", "dc", "noise"]
@@ -819,6 +826,8 @@ class LockboxState(UnitConversion):
 
     def schema(self) -> dict[str, Any]:
         return {
+            "schema_epoch": _SCHEMA_EPOCH,
+            "revision": next(_SCHEMA_REVISIONS),
             "classname": self.classname,
             "classes": self.class_list(),
             "state": {

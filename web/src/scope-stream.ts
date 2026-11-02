@@ -1,3 +1,4 @@
+import { trimFixed } from "./plot-format";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
@@ -784,12 +785,6 @@ function timeDisplayUnit(spanSeconds: number): { scale: number; suffix: string }
   return { scale: 1, suffix: "s" };
 }
 
-function trimFixed(value: number, decimals: number): string {
-  if (!Number.isFinite(value)) {
-    return "0";
-  }
-  return value.toFixed(decimals).replace(/\.?0+$/, "");
-}
 
 function minMax(data: Float32Array, prefix: "ch1" | "ch2"): Record<`${typeof prefix}Min` | `${typeof prefix}Max`, number> {
   let min = Number.POSITIVE_INFINITY;

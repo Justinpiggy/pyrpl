@@ -139,8 +139,10 @@ export function normalizeSplitSizes(
   if (Array.isArray(value) && value.length === 2) {
     const first = Number(value[0]);
     const second = Number(value[1]);
-    if (Number.isFinite(first) && Number.isFinite(second) && first >= 15 && second >= 35) {
-      const total = first + second;
+    const total = first + second;
+    // Pixel minimums belong to the layout. Do not discard a valid large controls
+    // pane just because the plot occupies less than the old fixed 35% threshold.
+    if (Number.isFinite(total) && total > 0 && first / total >= 0.05 && second / total >= 0.05) {
       return [Math.round((first / total) * 1000) / 10, Math.round((second / total) * 1000) / 10];
     }
   }

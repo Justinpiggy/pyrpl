@@ -1,3 +1,5 @@
+import { fitPlotToFrame } from "./plot-theme";
+import { frequencyTick } from "./plot-format";
 import { reportError } from "./status-bar";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
@@ -188,7 +190,8 @@ export class IirPlot {
       axes: [
         plotAxis({
           label: "Frequency",
-          values: (_plot, ticks) => (ticks as number[]).map((tick) => formatFrequency(10 ** tick)),
+          space: 90,
+          values: (_plot, ticks) => (ticks as number[]).map((tick) => frequencyTick(10 ** tick)),
         }),
         plotAxis({ label: unit }),
       ],
@@ -393,6 +396,7 @@ export class IirPlot {
       count.step = "1";
       count.value = String(values.length);
       count.id = `iir-${config.name.replaceAll("_", "-")}-count`;
+      count.setAttribute("aria-label", `${config.label} count`);
       count.addEventListener("change", () => {
         this.setListCount(config.name, Number(count.value)).catch((error: Error) => reportError(this.plotStatus(), error.message));
       });
@@ -418,6 +422,7 @@ export class IirPlot {
       raw.type = "text";
       raw.id = `iir-${config.name.replaceAll("_", "-")}`;
       raw.value = values.join(", ");
+      raw.setAttribute("aria-label", `${config.label} values`);
       raw.addEventListener("change", () => {
         const parsed = config.complex ? splitList(raw.value) : splitList(raw.value).map(Number);
         this.setList(config.name, parsed).catch((error: Error) => reportError(this.plotStatus(), error.message));
@@ -822,13 +827,8 @@ export class IirPlot {
     }
     this.resizeFrame = requestAnimationFrame(() => {
       this.resizeFrame = null;
-      const magnitudeSize = plotFrameSize(this.magnitudeHost);
-      const phaseSize = plotFrameSize(this.phaseHost);
-      if (!magnitudeSize || !phaseSize) {
-        return;
-      }
-      this.magnitudePlot.setSize(magnitudeSize);
-      this.phasePlot.setSize(phaseSize);
+      fitPlotToFrame(this.magnitudePlot, this.magnitudeHost);
+      fitPlotToFrame(this.phasePlot, this.phaseHost);
       this.renderMarkers();
     });
   }
@@ -842,15 +842,6 @@ export class IirPlot {
   }
 }
 
-function plotFrameSize(element: HTMLElement): { width: number; height: number } | null {
-  const rect = element.getBoundingClientRect();
-  const width = Math.floor(rect.width);
-  const height = Math.floor(rect.height);
-  if (width < 40 || height < 40) {
-    return null;
-  }
-  return { width, height };
-}
 
 function plotArray(values: Array<number | null>): Float32Array {
   return Float32Array.from(values, (value) => value === null ? Number.NaN : value);

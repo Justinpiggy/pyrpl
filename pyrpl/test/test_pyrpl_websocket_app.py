@@ -1092,6 +1092,57 @@ class WebAppTest(unittest.TestCase):
         finally:
             session.close()
 
+    def test_session_auto_relock_respects_interval_and_unlock_cancels_it(self):
+        session = WebSession(ServerSettings(hostname="_FAKE_"))
+        attempts = []
+        try:
+            original = session._execute_lockbox_stage_no_lock
+
+            def execute(stage):
+                attempts.append(time.monotonic())
+                original(stage)
+
+            with (
+                mock.patch.object(session, "_lockbox_is_locked_no_lock", return_value=False),
+                mock.patch.object(session, "_execute_lockbox_stage_no_lock", side_effect=execute),
+            ):
+                session.set_lockbox_attribute("lockstatus_interval", 0.08)
+                session.set_lockbox_attribute("auto_lock", True)
+                session.call_lockbox_action("lock")
+                time.sleep(0.3)
+                session.call_lockbox_action("unlock")
+                count = len(attempts)
+                time.sleep(0.12)
+                self.assertEqual(session.lockbox.current_state, "unlock")
+                self.assertEqual(len(attempts), count)
+                self.assertGreaterEqual(count, 2)
+                self.assertLessEqual(count, 6, "sequence notifications must not trigger an immediate relock loop")
+        finally:
+            session.close()
+
+    def test_lockbox_plot_does_not_block_http_event_loop(self):
+        async def exercise():
+            app = create_app(ServerSettings(hostname="_FAKE_"))
+            async with app.router.lifespan_context(app):
+                started = Event()
+                finished = Event()
+
+                def slow_plot(*args):
+                    started.set()
+                    time.sleep(0.2)
+                    finished.set()
+                    return {"x": [], "series": []}
+
+                with mock.patch.object(app.state.session, "lockbox_output_transfer_function", side_effect=slow_plot):
+                    request = asyncio.create_task(asgi_http_request(app, "/api/lockbox/outputs/output1/transfer_function"))
+                    await asyncio.to_thread(started.wait, 1)
+                    await asgi_http_request(app, "/api/health")
+                    was_finished = finished.is_set()
+                    await request
+                    self.assertFalse(was_finished, "Lockbox work blocked unrelated HTTP requests")
+
+        asyncio.run(exercise())
+
     def test_session_auto_relock_runs_without_a_browser_connection(self):
         session = WebSession(ServerSettings(hostname="_FAKE_"))
         relocked = Event()

@@ -130,6 +130,18 @@ page; removing it (or using `?debug=0`) restores the normal view. Operation
 errors remain visible in the bottom bar in either mode. Reload the page after
 deploying frontend changes so an already-open tab loads the new code.
 
+Web layouts are defined in `web/src/app.css`. Instrument panels use container
+queries so controls reflow within split panes as well as narrow browser windows.
+Related actions stay grouped; constrained forms scroll and card rows size to their
+contents. Keep these rules when adding controls instead of hiding form overflow.
+Splitters support arrow keys, Shift for larger steps, and Home/End for limits.
+
+Run `npm --prefix web test` for type checking and unit tests. After building,
+`npm --prefix web run test:e2e` also checks all panels at narrow/short viewports,
+three-pane layouts, minimum-width panes, keyboard resizing, and chart resizing
+using fake hardware. `web/test/responsive-ui.spec.ts` checks actual control
+reachability and clipping, not just whether elements exist.
+
 A GUI should open, let you configure the RedPitaya device you would like to use, and you can start playing around with pyrpl. Different strings for 'your_configuration_name' create different configurations that will be automatically remembered by PyRPL, for example if you have several different redpitayas. Different RedPitayas with different configuration names can be run simultaneously in separate terminals.
 
 ## Issues

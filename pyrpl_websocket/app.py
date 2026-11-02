@@ -281,10 +281,10 @@ async def handle_control_message(
         if events is not None:
             await events.publish(module_attribute_event(module_name, attribute, value))
             if module_name in {"spectrumanalyzer", "networkanalyzer"}:
-                state = session.module_state(module_name)
+                state = await asyncio.to_thread(session.module_state, module_name)
                 await events.publish(module_state_event(module_name, state))
                 for resource_module in _resource_event_modules(module_name, state):
-                    await events.publish(module_state_event(resource_module, session.module_state(resource_module)))
+                    await events.publish(module_state_event(resource_module, await asyncio.to_thread(session.module_state, resource_module)))
         return {
             "id": _message_id(message),
             "ok": True,
@@ -327,7 +327,7 @@ async def handle_control_message(
             await events.publish(module_action_event(module_name, action, state))
             await events.publish(module_state_event(module_name, state))
             for resource_module in _resource_event_modules(module_name, state):
-                await events.publish(module_state_event(resource_module, session.module_state(resource_module)))
+                await events.publish(module_state_event(resource_module, await asyncio.to_thread(session.module_state, resource_module)))
         return {
             "id": _message_id(message),
             "ok": True,
@@ -580,13 +580,15 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             settings.control_lease_seconds,
         )
         loop = asyncio.get_running_loop()
+        lockbox_resource_states = {}
 
         async def publish_lockbox_state_events(schema: dict) -> None:
             await app.state.events.publish(module_state_event("lockbox", schema))
             for module_name in _lockbox_resource_event_modules():
-                await app.state.events.publish(
-                    module_state_event(module_name, app.state.session.module_state(module_name))
-                )
+                state = await asyncio.to_thread(app.state.session.module_state, module_name)
+                if lockbox_resource_states.get(module_name) != state:
+                    lockbox_resource_states[module_name] = state
+                    await app.state.events.publish(module_state_event(module_name, state))
 
         def publish_lockbox_state(schema: dict) -> None:
             loop.call_soon_threadsafe(
@@ -778,7 +780,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if module_name in {item["name"] for item in app.state.session.modules()}:
             await app.state.events.publish(
-                module_state_event(module_name, app.state.session.module_state(module_name))
+                module_state_event(module_name, await asyncio.to_thread(app.state.session.module_state, module_name))
             )
         return schema
 
@@ -816,27 +818,27 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @app.get("/api/lockbox/classes")
     async def lockbox_classes():
-        return {"classes": app.state.session.lockbox_classes()}
+        return {"classes": await asyncio.to_thread(app.state.session.lockbox_classes)}
 
     @app.get("/api/lockbox")
     async def lockbox_schema():
-        return app.state.session.lockbox_schema()
+        return await asyncio.to_thread(app.state.session.lockbox_schema)
 
     @app.post("/api/lockbox/class")
     async def set_lockbox_class(request: LockboxClassRequest):
         try:
-            schema = app.state.session.set_lockbox_class(request.classname)
+            schema = await asyncio.to_thread(app.state.session.set_lockbox_class, request.classname)
         except (ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
         for resource_module in _lockbox_resource_event_modules():
-            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
+            await app.state.events.publish(module_state_event(resource_module, await asyncio.to_thread(app.state.session.module_state, resource_module)))
         return schema
 
     @app.post("/api/lockbox/attributes/{attribute}")
     async def set_lockbox_attribute(attribute: str, request: ModuleAttributeWriteRequest):
         try:
-            schema = app.state.session.set_lockbox_attribute(attribute, request.value)
+            schema = await asyncio.to_thread(app.state.session.set_lockbox_attribute, attribute, request.value)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox attribute") from exc
         except (TypeError, ValueError, TrustedModelError) as exc:
@@ -847,19 +849,19 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @app.post("/api/lockbox/inputs/{input_name}/attributes/{attribute}")
     async def set_lockbox_input_attribute(input_name: str, attribute: str, request: ModuleAttributeWriteRequest):
         try:
-            schema = app.state.session.set_lockbox_input_attribute(input_name, attribute, request.value)
+            schema = await asyncio.to_thread(app.state.session.set_lockbox_input_attribute, input_name, attribute, request.value)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox input or attribute") from exc
         except (TypeError, ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
         for resource_module in _lockbox_resource_event_modules():
-            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
+            await app.state.events.publish(module_state_event(resource_module, await asyncio.to_thread(app.state.session.module_state, resource_module)))
         return schema
 
     @app.post("/api/lockbox/inputs/{input_name}/actions/{action}")
     async def call_lockbox_input_action(input_name: str, action: str):
-        state = app.state.session.module_state("scope")
+        state = await asyncio.to_thread(app.state.session.module_state, "scope")
         state["owner"] = "lockbox"
         await app.state.events.publish(module_state_event("scope", state))
         try:
@@ -869,16 +871,16 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         except (TypeError, ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         finally:
-            await app.state.events.publish(module_state_event("scope", app.state.session.module_state("scope")))
+            await app.state.events.publish(module_state_event("scope", await asyncio.to_thread(app.state.session.module_state, "scope")))
         await app.state.events.publish(module_state_event("lockbox", schema))
         for resource_module in _lockbox_resource_event_modules():
-            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
+            await app.state.events.publish(module_state_event(resource_module, await asyncio.to_thread(app.state.session.module_state, resource_module)))
         return schema
 
     @app.post("/api/lockbox/outputs/{output_name}/attributes/{attribute}")
     async def set_lockbox_output_attribute(output_name: str, attribute: str, request: ModuleAttributeWriteRequest):
         try:
-            schema = app.state.session.set_lockbox_output_attribute(output_name, attribute, request.value)
+            schema = await asyncio.to_thread(app.state.session.set_lockbox_output_attribute, output_name, attribute, request.value)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox output or attribute") from exc
         except (TypeError, ValueError, TrustedModelError) as exc:
@@ -888,14 +890,14 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @app.post("/api/lockbox/stages")
     async def append_lockbox_stage():
-        schema = app.state.session.append_lockbox_stage()
+        schema = await asyncio.to_thread(app.state.session.append_lockbox_stage)
         await app.state.events.publish(module_state_event("lockbox", schema))
         return schema
 
     @app.delete("/api/lockbox/stages/{index}")
     async def delete_lockbox_stage(index: int):
         try:
-            schema = app.state.session.delete_lockbox_stage(index)
+            schema = await asyncio.to_thread(app.state.session.delete_lockbox_stage, index)
         except IndexError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox stage") from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
@@ -904,7 +906,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @app.post("/api/lockbox/stages/{index}/attributes/{attribute}")
     async def set_lockbox_stage_attribute(index: int, attribute: str, request: ModuleAttributeWriteRequest):
         try:
-            schema = app.state.session.set_lockbox_stage_attribute(index, attribute, request.value)
+            schema = await asyncio.to_thread(app.state.session.set_lockbox_stage_attribute, index, attribute, request.value)
         except (IndexError, KeyError) as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox stage or attribute") from exc
         except (TypeError, ValueError, TrustedModelError) as exc:
@@ -920,7 +922,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         request: ModuleAttributeWriteRequest,
     ):
         try:
-            schema = app.state.session.set_lockbox_stage_output_attribute(index, output_name, attribute, request.value)
+            schema = await asyncio.to_thread(app.state.session.set_lockbox_stage_output_attribute, index, output_name, attribute, request.value)
         except (IndexError, KeyError) as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox stage output or attribute") from exc
         except (TypeError, ValueError, TrustedModelError) as exc:
@@ -932,25 +934,25 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     async def call_lockbox_stage_action(index: int, action: str):
         try:
             await asyncio.to_thread(app.state.session.call_lockbox_stage_action, index, action)
-            schema = app.state.session.lockbox_schema()
+            schema = await asyncio.to_thread(app.state.session.lockbox_schema)
         except (IndexError, KeyError) as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox stage or action") from exc
         except (TypeError, ValueError, TrustedModelError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_state_event("lockbox", schema))
         for resource_module in _lockbox_resource_event_modules():
-            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
+            await app.state.events.publish(module_state_event(resource_module, await asyncio.to_thread(app.state.session.module_state, resource_module)))
         return schema
 
     @app.get("/api/lockbox/actions")
     async def get_lockbox_actions():
-        return {"actions": app.state.session.lockbox_actions()}
+        return {"actions": await asyncio.to_thread(app.state.session.lockbox_actions)}
 
     @app.post("/api/lockbox/actions/{action}")
     async def call_lockbox_action(action: str):
         lockbox_uses_scope = action in {"calibrate_all", "get_analog_offsets"}
         if lockbox_uses_scope:
-            state = app.state.session.module_state("scope")
+            state = await asyncio.to_thread(app.state.session.module_state, "scope")
             state["owner"] = "lockbox"
             await app.state.events.publish(module_state_event("scope", state))
         try:
@@ -961,17 +963,17 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         finally:
             if lockbox_uses_scope:
-                await app.state.events.publish(module_state_event("scope", app.state.session.module_state("scope")))
+                await app.state.events.publish(module_state_event("scope", await asyncio.to_thread(app.state.session.module_state, "scope")))
         await app.state.events.publish(module_action_event("lockbox", action, schema))
         await app.state.events.publish(module_state_event("lockbox", schema))
         for resource_module in _lockbox_resource_event_modules():
-            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
+            await app.state.events.publish(module_state_event(resource_module, await asyncio.to_thread(app.state.session.module_state, resource_module)))
         return schema
 
     @app.get("/api/lockbox/inputs/{input_name}/plot")
     async def lockbox_input_plot(input_name: str, points: int = 200):
         try:
-            return app.state.session.lockbox_input_plot(input_name, points)
+            return await asyncio.to_thread(app.state.session.lockbox_input_plot, input_name, points)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox input") from exc
         except (TypeError, ValueError, TrustedModelError) as exc:
@@ -980,14 +982,14 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     @app.get("/api/lockbox/outputs/{output_name}/transfer_function")
     async def lockbox_output_transfer_function(output_name: str, points: int = 200):
         try:
-            return app.state.session.lockbox_output_transfer_function(output_name, points)
+            return await asyncio.to_thread(app.state.session.lockbox_output_transfer_function, output_name, points)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown lockbox output") from exc
 
     @app.get("/api/modules/{module_name}")
     async def module_state(module_name: str):
         try:
-            state = app.state.session.module_state(module_name)
+            state = await asyncio.to_thread(app.state.session.module_state, module_name)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=f"Unknown module {module_name}") from exc
         return {"module": module_name, "state": state}
@@ -1034,10 +1036,10 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await app.state.events.publish(module_attribute_event(module_name, attribute, value))
         if module_name in {"spectrumanalyzer", "networkanalyzer"}:
-            state = app.state.session.module_state(module_name)
+            state = await asyncio.to_thread(app.state.session.module_state, module_name)
             await app.state.events.publish(module_state_event(module_name, state))
             for resource_module in _resource_event_modules(module_name, state):
-                await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
+                await app.state.events.publish(module_state_event(resource_module, await asyncio.to_thread(app.state.session.module_state, resource_module)))
         return {"module": module_name, "attribute": attribute, "value": value}
 
     @app.post("/api/modules/{module_name}/actions/{action}")
@@ -1055,7 +1057,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         await app.state.events.publish(module_action_event(module_name, action, state))
         await app.state.events.publish(module_state_event(module_name, state))
         for resource_module in _resource_event_modules(module_name, state):
-            await app.state.events.publish(module_state_event(resource_module, app.state.session.module_state(resource_module)))
+            await app.state.events.publish(module_state_event(resource_module, await asyncio.to_thread(app.state.session.module_state, resource_module)))
         return {"module": module_name, "action": action, "state": state}
 
     @app.post("/api/modules/{module_name}/states/{state_name}/save")
@@ -1225,7 +1227,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                     state = session.scope_settings
                     publish(average.add(acquisition.frame, session.acquisition_revision["scope"], state.trace_average, session._hardware_rolling_mode_active(state.running_state)))
                     app.state.acquisition_sequences["scope"] += 1
-                    snapshot = session.module_state("scope")
+                    snapshot = await asyncio.to_thread(session.module_state, "scope")
                     if snapshot != previous_state:
                         await app.state.events.publish(module_state_event("scope", snapshot))
                         previous_state = snapshot
@@ -1245,7 +1247,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 snapshot = await asyncio.to_thread(average.add, frame, revision, state)
                 publish(snapshot)
                 app.state.acquisition_sequences["spectrumanalyzer"] += 1
-                state = session.module_state("spectrumanalyzer")
+                state = await asyncio.to_thread(session.module_state, "spectrumanalyzer")
                 if state != previous_state:
                     await publish_acquisition_state("spectrumanalyzer")
                     previous_state = state
@@ -1269,10 +1271,10 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 await asyncio.sleep(0.05)
 
     async def publish_acquisition_state(module):
-        state = app.state.session.module_state(module)
+        state = await asyncio.to_thread(app.state.session.module_state, module)
         await app.state.events.publish(module_state_event(module, state))
         for resource in _resource_event_modules(module, state):
-            await app.state.events.publish(module_state_event(resource, app.state.session.module_state(resource)))
+            await app.state.events.publish(module_state_event(resource, await asyncio.to_thread(app.state.session.module_state, resource)))
 
     async def publish_hardware_status():
         previous = {}

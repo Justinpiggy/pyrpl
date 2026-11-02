@@ -1,0 +1,65 @@
+GUI fixes following GUI_REVIEW_2026-11-01.txt
+
+Checkpoint: b799a82f — current trigger/diagnostic changes and the original review
+were committed before implementing these fixes. The fixes described here are
+subsequent working-tree changes. No deployment was performed.
+
+Implemented
+
+- Moved the application stylesheet from main.ts to web/src/app.css. Panels use
+  inline-size container queries, so narrow desktop splits receive compact layouts.
+- Replaced incompatible fixed field columns with readable, wrapping field layouts.
+  Acquisition, save/load/delete, curve saving, and paired zoom/pan actions stay
+  grouped. Long action labels fit their buttons. Spectrum channel controls stay
+  together, and hidden mode-specific fields no longer reserve empty cells.
+- Established scrolling for constrained forms and content-sized rows for card
+  grids. Scope, Network Analyzer, Housekeeping, Telemetry, Register Debug, and
+  Configuration controls remain reachable in short panes. PID/IQ cards no longer
+  overlap. Narrow Curve Viewer subpanes stack instead of shrinking to fragments.
+- Fixed Lockbox's collapsed mobile grid and inconsistent column scrolling. Mobile
+  chrome stays content-sized instead of absorbing unused screen height.
+- Constrained the Panels menu at every viewport width and made the tab strip
+  scroll horizontally without squeezing its labels into multiple lines.
+- Corrected Scope's integer tick formatting: 50 stays 50 and zero stays visible.
+  IIR frequency ticks use concise labels and wider spacing. Chart sizing now
+  includes titles/legends, measures them after synchronous uPlot layout, and
+  preserves useful minimum drawing areas with scrolling when necessary.
+- Added keyboard-accessible splitters, explicit IIR list/register-result labels,
+  visible focus styling, larger marker targets, and wrapping for long footer errors.
+- Persisted Spectrum's controls/plot split through the same workspace path as
+  Scope. Valid controls-heavy proportions are retained rather than discarded by
+  the former percentage restriction. Existing zoom/pan behavior remains covered
+  by the instrument tests.
+- Added regression tests and documented the shared layout rules. Browser tests run
+  serially because they share a fake hardware backend; their default configuration
+  now uses a portable, isolated directory under .cache.
+
+Coverage of the review
+
+The changes address findings 1–25 in the original report. Shared field/grid rules
+cover multiple findings rather than adding a separate special-case patch for every
+panel. The undefined border token and long-error wrapping risks were also addressed.
+The original report is retained as the historical pre-fix evidence, including its
+original source references and screenshots.
+
+Validation
+
+- Production build and TypeScript checks passed.
+- 34 unit tests passed, including integer tick formatting and split persistence.
+- Full browser suite: 42 tests passed using the Anaconda pyrpl-env fake backend.
+  This includes all 15 panels across 11 layout constraints (165 combinations),
+  actual control hit-testing/reachability, menu scrolling, mobile Lockbox,
+  keyboard resizing, reload persistence, chart shrink/grow behavior, and long errors.
+- Existing acquisition, observer, zoom/pan, DSP, saved-curve, and configuration
+  workflows passed as part of that full suite.
+- Final screenshot review found a remaining Network Analyzer minimum-height
+  cascade conflict. After correcting it, all four affected follow-up tests passed:
+  900x600 panel reachability, three-row panel reachability, chart resizing/minimum
+  dimensions, and a complete Network Analyzer sweep.
+- The documented npm test:e2e command passed a smoke test with Anaconda on Windows.
+- Selected final screenshots are in artifacts/gui-fixes-2026-11-01/.
+
+Small panels intentionally scroll or stack when all controls and a useful plot
+cannot fit at once. They do not force every control onto a single row. Validation
+used Chromium and fake hardware; real-board operation, other browser engines,
+actual browser zoom, and real touch/screen-reader use were not revalidated here.
